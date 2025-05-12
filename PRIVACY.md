@@ -1,7 +1,7 @@
-# Privacy Policy for MedLet
+# Privacy Policy for VidLet
 
 ## Data Collection
-MedLet tools are designed with privacy as fundamental principle:
+VidLet is designed with privacy as fundamental principle:
 - We only process files you explicitly select
 - All processing happens locally on your machine
 - No data is transmitted to external servers
@@ -19,12 +19,7 @@ MedLet tools are designed with privacy as fundamental principle:
 - No external services are used 
 - No internet connection required for core functionality
 
-## Tools and Components
-This privacy policy applies to all MedLet components:
-- Piclet (image processing tools)
-- VidLet (video processing tools)
-
 ## Contact
 For questions about privacy or the tools, please open an issue on GitHub.
 
-Last updated: 2024
+Last updated: 2025
