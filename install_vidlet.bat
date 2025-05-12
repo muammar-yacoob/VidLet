@@ -25,9 +25,7 @@ if not exist "%INSTALL_DIR%\src\icons" mkdir "%INSTALL_DIR%\src\icons" 2>nul
 if not exist "%INSTALL_DIR%\libs" mkdir "%INSTALL_DIR%\libs" 2>nul
 
 :: Copy files
-color 0E
 echo Installing VidLet...
-color 0A
 
 :: Suppress individual file copy messages
 set "files_copied=0"
@@ -37,25 +35,28 @@ echo n | xcopy /y "%CURRENT_DIR%src\icons\*.ico" "%INSTALL_DIR%\src\icons\" /i /
 echo n | xcopy /y "%CURRENT_DIR%libs\ffmpeg.exe" "%INSTALL_DIR%\libs\" /i /q >nul && set /a "files_copied+=1"
 
 echo %files_copied% files copied successfully.
+echo.
 
 :: Import registry
 reg import "%CURRENT_DIR%\src\vidlet.reg" >nul 2>&1 || (
-    color 4F
+    color 04
     echo Registry import failed!
     pause
     exit /b 1
 )
 
-echo.
-color 0A
-echo Installation complete!
+echo Installation complete
 echo.
 color 0B
 echo * MP4 compression
 echo * MKV to MP4 conversion
-color 0A
 echo.
-echo VidLet has been successfully installed to %INSTALL_DIR%!
+color 0A
+echo VidLet has been successfully installed to %INSTALL_DIR%
+echo.
+echo How to use:
+echo 1. Right-click on an MP4 file -^> Select "Compress Video"
+echo 2. Right-click on an MKV file -^> Select "Convert to MP4"
 echo.
 echo You may need to restart Windows Explorer for changes to take effect.
 
