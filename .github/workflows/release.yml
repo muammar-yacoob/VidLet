@@ -1,0 +1,85 @@
+name: Build VidLet Installer
+
+on:
+  push:
+    branches: [ main ]
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  auto-version:
+    if: github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, 'skip-ci')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get latest tag and increment
+        id: version
+        run: |
+          git fetch --tags
+          latestTag=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          echo "Latest tag: $latestTag"
+          
+          # Extract parts of version
+          major=$(echo $latestTag | sed -r 's/v([0-9]+)\.([0-9]+)\.([0-9]+)/\1/')
+          minor=$(echo $latestTag | sed -r 's/v([0-9]+)\.([0-9]+)\.([0-9]+)/\2/')
+          patch=$(echo $latestTag | sed -r 's/v([0-9]+)\.([0-9]+)\.([0-9]+)/\3/')
+          
+          # Increment patch
+          newPatch=$((patch + 1))
+          newTag="v$major.$minor.$newPatch"
+          echo "NEW_TAG=$newTag" >> $GITHUB_OUTPUT
+          echo "New tag will be: $newTag"
+
+      - name: Create and push tag
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git tag -a ${{ steps.version.outputs.NEW_TAG }} -m "Auto-increment version to ${{ steps.version.outputs.NEW_TAG }}"
+          git push origin ${{ steps.version.outputs.NEW_TAG }}
+        
+  build:
+    needs: [auto-version]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Download FFmpeg
+        run: |
+          mkdir -p libs
+          $ProgressPreference = 'SilentlyContinue'
+          Invoke-WebRequest -Uri "https://github.com/GyanD/codexffmpeg/releases/download/6.0/ffmpeg-6.0-essentials_build.zip" -OutFile "ffmpeg.zip"
+          Expand-Archive -Path "ffmpeg.zip" -DestinationPath "temp_ffmpeg"
+          Copy-Item "temp_ffmpeg\ffmpeg-6.0-essentials_build\bin\ffmpeg.exe" -Destination "libs\"
+          Remove-Item -Path "ffmpeg.zip" -Force
+          Remove-Item -Path "temp_ffmpeg" -Recurse -Force
+        shell: pwsh
+          
+      - name: Create Release Package
+        run: |
+          mkdir -p release/src release/libs
+          Copy-Item "install_vidlet.bat" -Destination "release\"
+          Copy-Item "uninstall_vidlet.bat" -Destination "release\"
+          Copy-Item "src\*" -Destination "release\src\" -Recurse
+          Copy-Item "libs\*" -Destination "release\libs\" -Recurse
+          Copy-Item "Readme.md" -Destination "release\"
+          Compress-Archive -Path "release\*" -DestinationPath "VidLet-${{ github.ref_name }}.zip" -Force
+        shell: pwsh
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: VidLet-${{ github.ref_name }}.zip
+          name: VidLet ${{ github.ref_name }}
+          draft: false
+          generate_release_notes: true
+          token: ${{ secrets.GITHUB_TOKEN }} 
