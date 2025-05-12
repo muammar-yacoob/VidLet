@@ -3,15 +3,15 @@ Windows Registry Editor Version 5.00
 ; MP4 Compression
 [HKEY_CLASSES_ROOT\SystemFileAssociations\.mp4\Shell\CompressVideo]
 @="Compress Video"
-"Icon"="%ProgramFiles%\\VidLet\\src\\icons\\compress.ico"
+"Icon"="C:\\Program Files\\VidLet\\src\\icons\\compress.ico"
 
 [HKEY_CLASSES_ROOT\SystemFileAssociations\.mp4\Shell\CompressVideo\command]
-@="%ProgramFiles%\\VidLet\\src\\compress.bat \"%1\""
+@="\"C:\\Program Files\\VidLet\\src\\compress.bat\" \"%1\""
 
 ; MKV to MP4 Conversion
 [HKEY_CLASSES_ROOT\SystemFileAssociations\.mkv\Shell\ConvertToMP4]
 @="Convert to MP4"
-"Icon"="%ProgramFiles%\\VidLet\\src\\icons\\mkv2mp4.ico"
+"Icon"="C:\\Program Files\\VidLet\\src\\icons\\mkv2mp4.ico"
 
 [HKEY_CLASSES_ROOT\SystemFileAssociations\.mkv\Shell\ConvertToMP4\command]
-@="%ProgramFiles%\\VidLet\\src\\mkv2mp4.bat \"%1\""
+@="\"C:\\Program Files\\VidLet\\src\\mkv2mp4.bat\" \"%1\""
