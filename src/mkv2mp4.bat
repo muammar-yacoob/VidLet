@@ -9,6 +9,7 @@ set "OUTPUT=%~dpn1.mp4"
 
 :: Check if ffmpeg exists
 if not exist "!FFMPEG!" (
+    color 0C
     echo Error: FFmpeg not found at "!FFMPEG!"
     echo Please ensure FFmpeg is installed correctly.
     pause
@@ -37,9 +38,11 @@ echo.
 
 :: Check if conversion was successful
 if !errorlevel! equ 0 (
+    color 0A
     echo.
     echo Conversion complete: !OUTPUT!
 ) else (
+    color 0C
     echo.
     echo Error: Conversion failed with error code !errorlevel!
 )

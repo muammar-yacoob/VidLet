@@ -1,22 +1,37 @@
 @echo off
 setlocal enabledelayedexpansion
 
-set "input_file=%~1"
-set "default_bitrate=1500"
-set "default_preset=medium"
-set "ffmpeg_exe=%ProgramFiles%\VidLet\libs\ffmpeg.exe"
+set "ROOT_DIR=%ProgramFiles%\VidLet"
+set "FFMPEG=%ROOT_DIR%\libs\ffmpeg.exe"
+
+:: Default settings
+set "default_bitrate=2500"
+
+set "INPUT=%~1"
+set "OUTPUT=%~dpn1_compressed.mp4"
 
 :: Check if ffmpeg exists
-if not exist "!ffmpeg_exe!" (
-    echo Error: FFmpeg not found at "!ffmpeg_exe!"
+if not exist "!FFMPEG!" (
+    color 0C
+    echo Error: FFmpeg not found at "!FFMPEG!"
     echo Please ensure FFmpeg is installed correctly.
     pause
     exit /b 1
 )
 
-:: Simple input prompt in console instead of GUI
+:: Get basic info from input file
+for /f "tokens=1-4 delims=:., " %%a in ('""%FFMPEG%" -i "!INPUT!" 2>&1 | find "Duration""') do (
+    set "duration=%%b:%%c:%%d"
+)
+
+echo --------------------
+echo Video Compression
+echo --------------------
 echo.
-echo Compression Settings:
+echo Input: "!INPUT!"
+echo Duration: !duration!
+echo.
+
 echo --------------------
 echo.
 echo Bitrate determines the output file size and quality:
@@ -63,31 +78,34 @@ echo - Bitrate: !bitrate! kb/s
 echo - Preset: !preset!
 echo.
 
-:: Create output filename
-set "output_file=%~d1%~p1%~n1_compressed.mp4"
+:: Delete existing output file if it exists
+if exist "!OUTPUT!" del "!OUTPUT!"
 
-:: Compress the video
-echo Compressing video...
+echo Starting compression...
 echo This may take a while, please wait...
 echo.
 
-:: Run one-pass compression if quality is more important than speed
-"!ffmpeg_exe!" -i "!input_file!" -c:v libx264 -preset !preset! -b:v !bitrate!k -c:a aac -b:a 128k -loglevel warning "!output_file!" || (
+:: Compress the video with specified settings
+"!FFMPEG!" -i "!INPUT!" -c:v libx264 -b:v !bitrate!k -preset !preset! -c:a aac -b:a 128k -movflags +faststart -loglevel warning "!OUTPUT!"
+
+:: Check for errors
+if %errorlevel% neq 0 (
+    color 0C
     echo.
-    echo Error: Compression failed!
+    echo Error: Compression failed with error code %errorlevel%
+    echo Please check that the input file exists and is a valid video file.
     echo.
-    echo Press any key to exit...
-    pause > nul
-    exit /b 1
+    goto end
 )
 
 :: If we get here, compression was successful
+color 0A
 echo.
 echo Compression complete!
-echo Output saved as: !output_file!
-echo.
+echo Output saved as: !OUTPUT!
 
 :: Force pause at the end
+:end
 echo Press any key to exit...
 pause > nul
 endlocal
