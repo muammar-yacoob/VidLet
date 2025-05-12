@@ -28,10 +28,15 @@ if not exist "%INSTALL_DIR%\libs" mkdir "%INSTALL_DIR%\libs" 2>nul
 color 0E
 echo Installing VidLet...
 color 0A
-xcopy /y "%CURRENT_DIR%src\compress.bat" "%INSTALL_DIR%\src\" /i /q
-xcopy /y "%CURRENT_DIR%src\mkv2mp4.bat" "%INSTALL_DIR%\src\" /i /q
-xcopy /y "%CURRENT_DIR%src\icons\*.ico" "%INSTALL_DIR%\src\icons\" /i /q
-xcopy /y "%CURRENT_DIR%libs\ffmpeg.exe" "%INSTALL_DIR%\libs\" /i /q
+
+:: Suppress individual file copy messages
+set "files_copied=0"
+echo n | xcopy /y "%CURRENT_DIR%src\compress.bat" "%INSTALL_DIR%\src\" /i /q >nul && set /a "files_copied+=1"
+echo n | xcopy /y "%CURRENT_DIR%src\mkv2mp4.bat" "%INSTALL_DIR%\src\" /i /q >nul && set /a "files_copied+=1"
+echo n | xcopy /y "%CURRENT_DIR%src\icons\*.ico" "%INSTALL_DIR%\src\icons\" /i /q >nul && set /a "files_copied+=2"
+echo n | xcopy /y "%CURRENT_DIR%libs\ffmpeg.exe" "%INSTALL_DIR%\libs\" /i /q >nul && set /a "files_copied+=1"
+
+echo %files_copied% files copied successfully.
 
 :: Import registry
 reg import "%CURRENT_DIR%\src\vidlet.reg" >nul 2>&1 || (
