@@ -2,10 +2,9 @@
 setlocal enabledelayedexpansion
 color 0A
 
-echo ================================
-echo   VidLet Video Tools Installer  
-echo ================================
-echo.
+:: Set paths and create directories
+set "CURRENT_DIR=%~dp0"
+set "INSTALL_DIR=%ProgramFiles%\VidLet"
 
 :: Check for Administrator privileges
 net session >nul 2>&1
@@ -16,9 +15,11 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-:: Set paths and create directories
-set "CURRENT_DIR=%~dp0"
-set "INSTALL_DIR=%ProgramFiles%\VidLet"
+echo ================================
+echo   VidLet Video Tools Installer  
+echo ================================
+echo.
+
 if not exist "%INSTALL_DIR%" mkdir "%INSTALL_DIR%" 2>nul
 if not exist "%INSTALL_DIR%\src" mkdir "%INSTALL_DIR%\src" 2>nul
 if not exist "%INSTALL_DIR%\src\icons" mkdir "%INSTALL_DIR%\src\icons" 2>nul
@@ -37,21 +38,20 @@ echo n | xcopy /y "%CURRENT_DIR%libs\ffmpeg.exe" "%INSTALL_DIR%\libs\" /i /q >nu
 echo %files_copied% files copied successfully.
 echo.
 
-:: Import registry
-reg import "%CURRENT_DIR%\src\vidlet.reg" >nul 2>&1 || (
+:: Import registry file
+echo Installing context menu integration...
+reg import "%CURRENT_DIR%src\vidlet.reg" || (
     color 04
-    echo Registry import failed!
+    echo Registry import failed! Path: "%CURRENT_DIR%src\vidlet.reg"
     pause
     exit /b 1
 )
 
 echo Installation complete
 echo.
-color 0B
 echo * MP4 compression
 echo * MKV to MP4 conversion
 echo.
-color 0A
 echo VidLet has been successfully installed to %INSTALL_DIR%
 echo.
 echo How to use:
