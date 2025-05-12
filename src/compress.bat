@@ -14,30 +14,54 @@ if not exist "!ffmpeg_exe!" (
     exit /b 1
 )
 
-:: Create a simple GUI to get compression settings
-echo Set oShell = CreateObject("WScript.Shell") > "%temp%\compress_prompt.vbs"
-echo Set oExec = oShell.Exec("mshta.exe ""about:<html><head><title>Compress Video</title></head><body><script>moveTo(screen.width/2-150,screen.height/2-100);resizeTo(330,220);document.title='Compress Video';</script><div style='font-family:Segoe UI;padding:20px;'><div style='margin-bottom:10px;'>Compression Settings:</div><div style='margin-bottom:10px;'>Bitrate (kb/s): <input type='text' id='bitrate' value='%default_bitrate%' style='width:100px;'></div><div style='margin-bottom:10px;'>Preset: <select id='preset' style='width:100px;'><option value='ultrafast'>Ultrafast</option><option value='superfast'>Superfast</option><option value='veryfast'>Very Fast</option><option value='faster'>Faster</option><option value='fast'>Fast</option><option selected value='medium'>Medium</option><option value='slow'>Slow</option><option value='slower'>Slower</option><option value='veryslow'>Very Slow</option></select></div><button onclick='window.returnValue = document.getElementById(""bitrate"").value + ""|"" + document.getElementById(""preset"").value; window.close();' style='margin-top:10px;'>Compress</button></div></body></html>""") >> "%temp%\compress_prompt.vbs"
-echo Do While oExec.Status = 0 >> "%temp%\compress_prompt.vbs"
-echo     WScript.Sleep 100 >> "%temp%\compress_prompt.vbs"
-echo Loop >> "%temp%\compress_prompt.vbs"
-echo strOutput = oExec.StdOut.ReadAll >> "%temp%\compress_prompt.vbs"
-echo Wscript.Echo strOutput >> "%temp%\compress_prompt.vbs"
+:: Simple input prompt in console instead of GUI
+echo.
+echo Compression Settings:
+echo --------------------
+echo.
+echo Bitrate determines the output file size and quality:
+echo - Higher value = Better quality but larger file size
+echo - Lower value = Smaller file size but lower quality
+echo.
+echo Recommended values:
+echo - HD video (1080p): 2000-4000 kb/s
+echo - SD video (720p): 1500-2500 kb/s
+echo - Low resolution: 800-1500 kb/s
+echo.
+set /p bitrate=Enter bitrate in kb/s [%default_bitrate%]: 
+if "!bitrate!"=="" set "bitrate=%default_bitrate%"
 
-for /f "delims=" %%i in ('cscript //nologo "%temp%\compress_prompt.vbs"') do (
-    set "result=%%i"
-)
+echo.
+echo Available presets:
+echo 1. ultrafast (Fastest, lowest quality)
+echo 2. superfast
+echo 3. veryfast
+echo 4. faster
+echo 5. fast
+echo 6. medium (Default)
+echo 7. slow
+echo 8. slower
+echo 9. veryslow (Slowest, highest quality)
+echo.
 
-if "!result!" NEQ "" (
-    for /f "tokens=1,2 delims=|" %%a in ("!result!") do (
-        set "bitrate=%%a"
-        set "preset=%%b"
-    )
-) else (
-    echo Compression canceled by user.
-    goto :EOF
-)
+set /p preset_choice=Choose preset [6]: 
+if "!preset_choice!"=="" set "preset_choice=6"
 
-del "%temp%\compress_prompt.vbs" >nul 2>&1
+if "!preset_choice!"=="1" set "preset=ultrafast"
+if "!preset_choice!"=="2" set "preset=superfast"
+if "!preset_choice!"=="3" set "preset=veryfast"
+if "!preset_choice!"=="4" set "preset=faster"
+if "!preset_choice!"=="5" set "preset=fast"
+if "!preset_choice!"=="6" set "preset=medium"
+if "!preset_choice!"=="7" set "preset=slow"
+if "!preset_choice!"=="8" set "preset=slower"
+if "!preset_choice!"=="9" set "preset=veryslow"
+
+echo.
+echo Selected settings:
+echo - Bitrate: !bitrate! kb/s
+echo - Preset: !preset!
+echo.
 
 :: Create output filename
 set "output_file=%~d1%~p1%~n1_compressed.mp4"
@@ -48,23 +72,22 @@ echo This may take a while, please wait...
 echo.
 
 :: Run one-pass compression if quality is more important than speed
-"!ffmpeg_exe!" -i "!input_file!" -c:v libx264 -preset !preset! -b:v !bitrate!k -c:a aac -b:a 128k -loglevel warning "!output_file!"
-
-:: Check if compression was successful
-if !errorlevel! equ 0 (
-    :: Show completion message
-    echo Set oShell = CreateObject("WScript.Shell") > "%temp%\done_msg.vbs"
-    echo oShell.Popup "Video compressed successfully! Saved as: %~n1_compressed.mp4", 5, "Compression Complete", 64 >> "%temp%\done_msg.vbs"
-    cscript //nologo "%temp%\done_msg.vbs"
-    del "%temp%\done_msg.vbs" >nul 2>&1
+"!ffmpeg_exe!" -i "!input_file!" -c:v libx264 -preset !preset! -b:v !bitrate!k -c:a aac -b:a 128k -loglevel warning "!output_file!" || (
     echo.
-    echo Compression complete: !output_file!
-) else (
+    echo Error: Compression failed!
     echo.
-    echo Error: Compression failed with error code !errorlevel!
+    echo Press any key to exit...
+    pause > nul
+    exit /b 1
 )
 
-endlocal
+:: If we get here, compression was successful
 echo.
-echo Press any key to close this window...
+echo Compression complete!
+echo Output saved as: !output_file!
+echo.
+
+:: Force pause at the end
+echo Press any key to exit...
 pause > nul
+endlocal
