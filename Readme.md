@@ -2,37 +2,35 @@
 [privacy-link]: ./PRIVACY.md
 [coffee-link]: https://buymeacoffee.com/spark88
 [issues-link]: ../../issues
-[releases-link]: ../../releases/latest
 
 <div align="center">
 
 
-# 🖼️ PicLet - Image Tools for Windows
+# 🎬 VidLet - Video Tools for Windows
 
-Handy right-click tools for everyday image tasks!
+Handy right-click tools for everyday video tasks!
 
 [![Buy Me Coffee](https://img.shields.io/badge/Buy%20Me-☕%20Coffee-green?logo=buy-me-a-coffee&logoColor=white)][coffee-link] 
 [![Report Bug](https://img.shields.io/badge/Report-🐞%20Bug-red?logo=github&logoColor=white)][issues-link]
-[![Latest Release](https://img.shields.io/github/v/release/grayfox8/piclet?label=Latest%20Release&logo=github)][releases-link]
 </div>
 
 ## ✨ Features
 
 <div align="center">
-<img src="res/imgs/menu.png" style="border: 1px solid #eee; border-radius: 8px; max-width: 500px;" alt="PicLet Menu">
+<img src="res/imgs/menu.png" style="border: 1px solid #eee; border-radius: 8px; max-width: 500px;" alt="VidLet Menu">
 </div>
 
-- <img src="src/icons/png2icon.ico" width="16" height="16" alt="Icon creator"> **Create Icons**: Convert PNG images to ICO files with multiple resolutions
-- <img src="src/icons/removebg.ico" width="16" height="16" alt="Remove background"> **Remove Background**: Quickly remove backgrounds from PNG images
+- <img src="src/icons/compress.ico" width="16" height="16" alt="Compress icon"> **Compress Videos**: Reduce MP4 video size with customizable settings
+- <img src="src/icons/mkv2mp4.ico" width="16" height="16" alt="Convert icon"> **Convert MKV to MP4**: Quick format conversion without quality loss
 
 ## 🚀 Quick Start
-1. [Download the latest release][releases-link]
-2. Run `install_piclet.bat` as Administrator
-3. Right-click on PNG files to access new context menu options!
+1. Download this repository
+2. Run `install_vidlet.bat` as Administrator
+3. Right-click on video files to access new context menu options!
 
 ## 💡 How to use
-- <img src="src/icons/png2icon.ico" width="16" height="16"> **Make Icon**: Right-click on any PNG file → Select "Make Icon"
-- <img src="src/icons/removebg.ico" width="16" height="16"> **Remove Background**: Right-click on any PNG file → Select "Remove Background"
+- <img src="src/icons/compress.ico" width="16" height="16"> **Compress Video**: Right-click on any MP4 file → Select "Compress Video"
+- <img src="src/icons/mkv2mp4.ico" width="16" height="16"> **Convert to MP4**: Right-click on any MKV file → Select "Convert to MP4"
 
 ## 🌱 Support & Contributions
 If these tools save you time:
