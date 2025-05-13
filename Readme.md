@@ -2,7 +2,7 @@
 [privacy-link]: ./PRIVACY.md
 [coffee-link]: https://buymeacoffee.com/spark88
 [issues-link]: ../../issues
-[fork-link]:  ../../calendify/fork
+[fork-link]:  ../../fork
 
 <div align="center">
 
