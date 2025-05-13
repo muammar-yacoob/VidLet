@@ -30,7 +30,7 @@ jobs:
         run: |
           mkdir -p libs
           curl -L "https://github.com/GyanD/codexffmpeg/releases/download/6.0/ffmpeg-6.0-essentials_build.zip" -o "ffmpeg.zip"
-          unzip -j "ffmpeg.zip" "ffmpeg-6.0-essentials_build/bin/ffmpeg.exe" -d "libs/"
+          unzip -jo "ffmpeg.zip" "ffmpeg-6.0-essentials_build/bin/ffmpeg.exe" -d "libs/"
           rm "ffmpeg.zip"
       
       - name: Create Package
@@ -48,4 +48,4 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          npx semantic-release 
+          npx semantic-release
