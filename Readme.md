@@ -32,11 +32,13 @@ Handy right-click tools for everyday video tasks!
 - <img src="src/icons/compress.ico" width="16" height="16"> **Compress Video**: Right-click on any MP4 file → Select "Compress Video"
 - <img src="src/icons/mkv2mp4.ico" width="16" height="16"> **Convert to MP4**: Right-click on any MKV file → Select "Convert to MP4"
 
-## 🔒 Privacy
-VidLet works entirely on your computer. [Read our simple privacy policy][privacy-link].
-
 ## 🌱 Support & Contributions
 If these tools save you time:
 - Please ⭐ <a href="../../stargazers" target="_blank">Star</a> to help spread useful tools.
 - <a href="[coffee-link]" target="_blank">Buy me a coffee</a> to fuel more dev tools.
 - or <a href="../../fork" target="_blank">Contribute</a> - Released under MIT license.
+
+---
+<div align="center">
+<sub>Released under MIT License | <a href="[privacy-link]">Privacy Policy</a></sub>
+</div>
