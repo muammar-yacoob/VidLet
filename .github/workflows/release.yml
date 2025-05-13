@@ -10,6 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      issues: write
+      pull-requests: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -20,51 +22,29 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: 'lts/*'
-
-      - name: Semantic Release
-        uses: semantic-release/semantic-release@v21
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          branches: |
-            [
-              'main'
-            ]
-  
-  build:
-    needs: [release]
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: windows-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
+          
+      - name: Install dependencies
+        run: npm install -g semantic-release @semantic-release/github @semantic-release/changelog
+        
       - name: Download FFmpeg
         run: |
           mkdir -p libs
-          $ProgressPreference = 'SilentlyContinue'
-          Invoke-WebRequest -Uri "https://github.com/GyanD/codexffmpeg/releases/download/6.0/ffmpeg-6.0-essentials_build.zip" -OutFile "ffmpeg.zip"
-          Expand-Archive -Path "ffmpeg.zip" -DestinationPath "temp_ffmpeg"
-          Copy-Item "temp_ffmpeg\ffmpeg-6.0-essentials_build\bin\ffmpeg.exe" -Destination "libs\"
-          Remove-Item -Path "ffmpeg.zip" -Force
-          Remove-Item -Path "temp_ffmpeg" -Recurse -Force
-        shell: pwsh
-          
-      - name: Create Release Package
+          curl -L "https://github.com/GyanD/codexffmpeg/releases/download/6.0/ffmpeg-6.0-essentials_build.zip" -o "ffmpeg.zip"
+          unzip -j "ffmpeg.zip" "ffmpeg-6.0-essentials_build/bin/ffmpeg.exe" -d "libs/"
+          rm "ffmpeg.zip"
+      
+      - name: Create Package
         run: |
           mkdir -p release/src release/libs
-          Copy-Item "install_vidlet.bat" -Destination "release\"
-          Copy-Item "uninstall_vidlet.bat" -Destination "release\"
-          Copy-Item "src\*" -Destination "release\src\" -Recurse
-          Copy-Item "libs\*" -Destination "release\libs\" -Recurse
-          Copy-Item "Readme.md" -Destination "release\"
-          Compress-Archive -Path "release\*" -DestinationPath "VidLet-${{ github.ref_name }}.zip" -Force
-        shell: pwsh
+          cp install_vidlet.bat release/
+          cp uninstall_vidlet.bat release/
+          cp -r src/* release/src/
+          cp -r libs/* release/libs/
+          cp Readme.md release/
+          zip -r VidLet.zip release/*
 
-      - name: Upload Release Assets
-        uses: softprops/action-gh-release@v1
-        with:
-          files: VidLet-${{ github.ref_name }}.zip
-          token: ${{ secrets.GITHUB_TOKEN }} 
+      - name: Semantic Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          npx semantic-release 
