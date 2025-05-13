@@ -1,40 +1,42 @@
 [//]: # (Constants)
 [privacy-link]: ./PRIVACY.md
 [coffee-link]: https://buymeacoffee.com/spark88
+[issues-link]: ../../issues
 
 <div align="center">
-<img src="res/imgs/vidlet-logo.png" width="250" style="border-radius: 15px;" alt="VidLet Logo">
+
 
 # 🎬 VidLet - Video Tools for Windows
 
-[Privacy Policy][privacy-link] • <a href="../../issues" target="_blank">Report Bug</a> • <a href="[coffee-link]" target="_blank">Buy me a Coffee</a>
-
 Handy right-click tools for everyday video tasks!
 
+[![Buy Me Coffee](https://img.shields.io/badge/Buy%20Me-☕%20Coffee-green?logo=buy-me-a-coffee&logoColor=white)][coffee-link] 
+[![Report Bug](https://img.shields.io/badge/Report-🐞%20Bug-red?logo=github&logoColor=white)][issues-link]
 </div>
 
-## ✨ What it does
+## ✨ Features
 
-### 🎬 VidLet - Video Tools
-- **Compress Videos**: Reduce MP4 video size with customizable settings
-- **Convert MKV to MP4**: Quick format conversion without quality loss
+<div align="center">
+<img src="res/imgs/menu.png" style="border: 1px solid #eee; border-radius: 8px; max-width: 500px;" alt="VidLet Menu">
+</div>
+
+- <img src="src/icons/compress.ico" width="16" height="16" alt="Compress icon"> **Compress Videos**: Reduce MP4 video size with customizable settings
+- <img src="src/icons/mkv2mp4.ico" width="16" height="16" alt="Convert icon"> **Convert MKV to MP4**: Quick format conversion without quality loss
 
 ## 🚀 Quick Start
 1. Download this repository
 2. Run `install_vidlet.bat` as Administrator
 3. Right-click on video files to access new context menu options!
 
-<div align="center">
-<img src="res/imgs/vidlet-menu.png" width="400" style="border: 1px solid #ddd; margin: 20px 0;" alt="VidLet Menu">
-</div>
-
 ## 💡 How to use
-- **Compress Video**: Right-click on any MP4 file → Select "Compress Video"
-- **Convert to MP4**: Right-click on any MKV file → Select "Convert to MP4"
+- <img src="src/icons/compress.ico" width="16" height="16"> **Compress Video**: Right-click on any MP4 file → Select "Compress Video"
+- <img src="src/icons/mkv2mp4.ico" width="16" height="16"> **Convert to MP4**: Right-click on any MKV file → Select "Convert to MP4"
 
+## 🔒 Privacy
+VidLet works entirely on your computer. [Read our simple privacy policy][privacy-link].
 
 ## 🌱 Support & Contributions
 If these tools save you time:
-- Please⭐ <a href="../../stargazers" target="_blank">Star</a> to help spread useful tools.
+- Please ⭐ <a href="../../stargazers" target="_blank">Star</a> to help spread useful tools.
 - <a href="[coffee-link]" target="_blank">Buy me a coffee</a> to fuel more dev tools.
 - or <a href="../../fork" target="_blank">Contribute</a> - Released under MIT license.
