@@ -1,4 +1,4 @@
-name: Build VidLet Installer
+name: Build PicLet Installer
 
 on:
   push:
@@ -25,24 +25,17 @@ jobs:
           
       - name: Install dependencies
         run: npm install -g semantic-release @semantic-release/github @semantic-release/changelog
-        
-      - name: Download FFmpeg
-        run: |
-          mkdir -p libs
-          curl -L "https://github.com/GyanD/codexffmpeg/releases/download/6.0/ffmpeg-6.0-essentials_build.zip" -o "ffmpeg.zip"
-          unzip -jo "ffmpeg.zip" "ffmpeg-6.0-essentials_build/bin/ffmpeg.exe" -d "libs/"
-          rm "ffmpeg.zip"
       
       - name: Create Package
         run: |
           mkdir -p release/src/icons release/libs
-          cp install_vidlet.bat release/
-          cp uninstall_vidlet.bat release/
+          cp install_piclet.bat release/
+          cp uninstall_piclet.bat release/
           cp -r src/* release/src/
           cp src/icons/* release/src/icons/
-          cp -r libs/* release/libs/
+          cp libs/convert.exe release/libs/
           cp Readme.md release/
-          zip -r VidLet.zip release/*
+          zip -r PicLet.zip release/*
 
       - name: Semantic Release
         env:
