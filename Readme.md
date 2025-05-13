@@ -2,6 +2,7 @@
 [privacy-link]: ./PRIVACY.md
 [coffee-link]: https://buymeacoffee.com/spark88
 [issues-link]: ../../issues
+[fork-link]:  ../../calendify/fork
 
 <div align="center">
 
@@ -33,10 +34,9 @@ Handy right-click tools for everyday video tasks!
 - <img src="src/icons/mkv2mp4.ico" width="16" height="16"> **Convert to MP4**: Right-click on any MKV file → Select "Convert to MP4"
 
 ## 🌱 Support & Contributions
-If these tools save you time:
-- Please ⭐ <a href="../../stargazers" target="_blank">Star</a> to help spread useful tools.
-- <a href="[coffee-link]" target="_blank">Buy me a coffee</a> to fuel more dev tools.
-- or <a href="../../fork" target="_blank">Contribute</a> - Released under MIT license.
+Star the repo ⭐ & I power up like Mario 🍄<br>
+Devs run on [coffee][coffee-link] ☕<br>
+[contributions][fork-link] are welcome.
 
 ---
 <div align="center">
