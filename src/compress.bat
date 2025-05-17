@@ -1,95 +1,89 @@
 @echo off
 setlocal enabledelayedexpansion
 
+:: Setup paths
 set "ROOT_DIR=%ProgramFiles%\VidLet"
 set "FFMPEG=%ROOT_DIR%\libs\ffmpeg.exe"
 
 :: Default settings
-set "default_bitrate=2500"
-set "default_preset=medium"
-set "preset_choice=6"
+set "bitrate=2500"
 set "preset=medium"
+set "hidden_mode=0"
 set "non_interactive=0"
 
+:: Get input file from command line
 set "INPUT=%~1"
 set "OUTPUT=%~dpn1_compressed.mp4"
 set "INI_FILE=%~dpn0.ini"
 
-:: Check if compress.ini exists in the same directory as the batch file
-if exist "!INI_FILE!" (
-    echo Using configuration from !INI_FILE!
-    
-    :: Read bitrate from INI
-    for /f "tokens=2 delims==" %%a in ('findstr /b "bitrate=" "!INI_FILE!"') do (
-        set "bitrate=%%a"
-        set "non_interactive=1"
-    )
-    
-    :: Read preset from INI
-    for /f "tokens=2 delims==" %%a in ('findstr /b "preset=" "!INI_FILE!"') do (
-        set "preset=%%a"
-        set "non_interactive=1"
-    )
-    
-    echo - Using bitrate: !bitrate! kb/s
-    echo - Using preset: !preset!
-    echo.
-)
-
-:: Check if ffmpeg exists
+:: Check for FFmpeg
 if not exist "!FFMPEG!" (
     color 0C
     echo Error: FFmpeg not found at "!FFMPEG!"
-    echo Please ensure FFmpeg is installed correctly.
     pause
     exit /b 1
 )
 
-:: Get basic info from input file
+:: Check for input file
+if "%INPUT%"=="" (
+    color 0C
+    echo Error: No input file specified.
+    echo Usage: compress.bat videofile.mp4
+    pause
+    exit /b 1
+)
+
+:: Load settings from INI if available
+if exist "!INI_FILE!" (
+    for /f "tokens=* delims=" %%a in ('type "!INI_FILE!" ^| findstr /v "^#" ^| findstr /v "^$"') do (
+        set "%%a"
+    )
+    
+    if defined bitrate (
+        set "non_interactive=1"
+        echo Using bitrate: !bitrate! kb/s
+    )
+    
+    if defined preset (
+        set "non_interactive=1" 
+        echo Using preset: !preset!
+    )
+    
+    :: If hidden mode is enabled, minimize the window
+    if "!hidden_mode!"=="1" (
+        start /min cmd /c "%~f0" "%~1"
+        exit /b
+    )
+)
+
+:: Get video duration
 for /f "tokens=1-4 delims=:., " %%a in ('""%FFMPEG%" -i "!INPUT!" 2>&1 | find "Duration""') do (
     set "duration=%%b:%%c:%%d"
 )
 
-echo --------------------
-echo Video Compression
-echo --------------------
-echo.
-echo Input: "!INPUT!"
-echo Duration: !duration!
-echo.
-
-:: Skip interactive prompts if we loaded from INI
+:: Show header
 if "!non_interactive!"=="0" (
     echo --------------------
+    echo Video Compression
+    echo --------------------
     echo.
-    echo Bitrate determines the output file size and quality:
-    echo - Higher value = Better quality but larger file size
-    echo - Lower value = Smaller file size but lower quality
+    echo Input: "!INPUT!"
+    echo Duration: !duration!
     echo.
-    echo Recommended values:
-    echo - HD video (1080p): 2000-4000 kb/s
-    echo - SD video (720p): 1500-2500 kb/s
-    echo - Low resolution: 800-1500 kb/s
+    
+    :: Ask for bitrate
+    echo Enter bitrate in kb/s (higher = better quality but larger file):
+    echo Recommended: 2000-4000 for HD, 1500-2500 for SD
+    set /p bitrate=Enter bitrate [!bitrate!]: 
+    if "!bitrate!"=="" set "bitrate=2500"
+    
+    :: Ask for preset
     echo.
-    set /p bitrate=Enter bitrate in kb/s [%default_bitrate%]: 
-    if "!bitrate!"=="" set "bitrate=%default_bitrate%"
-
-    echo.
-    echo Available presets:
-    echo 1. ultrafast (Fastest, lowest quality)
-    echo 2. superfast
-    echo 3. veryfast
-    echo 4. faster
-    echo 5. fast
-    echo 6. medium (Default)
-    echo 7. slow
-    echo 8. slower
-    echo 9. veryslow (Slowest, highest quality)
-    echo.
-
+    echo Choose encoding preset (1-9):
+    echo 1=ultrafast (fastest), 5=fast, 6=medium (default), 9=veryslow (best quality)
     set /p preset_choice=Choose preset [6]: 
+    
     if "!preset_choice!"=="" set "preset_choice=6"
-
     if "!preset_choice!"=="1" set "preset=ultrafast"
     if "!preset_choice!"=="2" set "preset=superfast"
     if "!preset_choice!"=="3" set "preset=veryfast"
@@ -99,42 +93,29 @@ if "!non_interactive!"=="0" (
     if "!preset_choice!"=="7" set "preset=slow"
     if "!preset_choice!"=="8" set "preset=slower"
     if "!preset_choice!"=="9" set "preset=veryslow"
+) else (
+    echo Converting: "!INPUT!"
 )
 
-echo.
-echo Selected settings:
-echo - Bitrate: !bitrate! kb/s
-echo - Preset: !preset!
-echo.
-
-:: Delete existing output file if it exists
+:: Remove existing output file
 if exist "!OUTPUT!" del "!OUTPUT!"
 
-echo Starting compression...
-echo This may take a while, please wait...
-echo.
-
-:: Compress the video with specified settings
+:: Start compression
+echo Processing... Please wait.
 "!FFMPEG!" -i "!INPUT!" -c:v libx264 -b:v !bitrate!k -preset !preset! -c:a aac -b:a 128k -movflags +faststart -loglevel warning "!OUTPUT!"
 
-:: Check for errors
+:: Check result
 if %errorlevel% neq 0 (
     color 0C
-    echo.
-    echo Error: Compression failed with error code %errorlevel%
-    echo Please check that the input file exists and is a valid video file.
-    echo.
-    goto end
+    echo Error: Compression failed.
+) else (
+    color 0A
+    echo Success! Output: "!OUTPUT!"
 )
 
-:: If we get here, compression was successful
-color 0A
-echo.
-echo Compression complete!
-echo Output saved as: !OUTPUT!
-
-:: Force pause at the end
-:end
-echo Press any key to exit...
-pause > nul
+:: Exit
+if "!non_interactive!"=="0" (
+    echo Press any key to exit...
+    pause > nul
+)
 endlocal

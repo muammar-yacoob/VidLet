@@ -1,88 +1,84 @@
 @echo off
 setlocal enabledelayedexpansion
 
+:: Setup paths
 set "ROOT_DIR=%ProgramFiles%\VidLet"
 set "FFMPEG=%ROOT_DIR%\libs\ffmpeg.exe"
+
+:: Default settings
 set "TARGET_DURATION=59.5"
 set "QUALITY=18"
 set "PRESET=slow"
 set "AUDIO_BITRATE=192"
+set "hidden_mode=0"
 
+:: Get input file from command line
 set "INPUT=%~1"
 set "OUTPUT=%~dpn1_shrinked.mp4"
 set "INI_FILE=%~dpn0.ini"
 
-:: Check if shrink.ini exists in the same directory as the batch file
-if exist "!INI_FILE!" (
-    echo Using configuration from !INI_FILE!
-    
-    :: Read target duration from INI
-    for /f "tokens=2 delims==" %%a in ('findstr /b "target_duration=" "!INI_FILE!"') do (
-        set "TARGET_DURATION=%%a"
-    )
-    
-    :: Read quality from INI
-    for /f "tokens=2 delims==" %%a in ('findstr /b "quality=" "!INI_FILE!"') do (
-        set "QUALITY=%%a"
-    )
-    
-    :: Read preset from INI
-    for /f "tokens=2 delims==" %%a in ('findstr /b "preset=" "!INI_FILE!"') do (
-        set "PRESET=%%a"
-    )
-    
-    :: Read audio bitrate from INI
-    for /f "tokens=2 delims==" %%a in ('findstr /b "audio_bitrate=" "!INI_FILE!"') do (
-        set "AUDIO_BITRATE=%%a"
-    )
-    
-    echo - Target Duration: !TARGET_DURATION! seconds
-    echo - Video Quality (CRF): !QUALITY!
-    echo - Preset: !PRESET!
-    echo - Audio Bitrate: !AUDIO_BITRATE!k
-    echo.
-)
-
-:: Check if ffmpeg exists
+:: Check for FFmpeg
 if not exist "!FFMPEG!" (
     color 0C
     echo Error: FFmpeg not found at "!FFMPEG!"
-    echo Please ensure FFmpeg is installed correctly.
     pause
     exit /b 1
 )
 
+:: Check for input file
+if "%INPUT%"=="" (
+    color 0C
+    echo Error: No input file specified.
+    echo Usage: shrink.bat videofile.mp4
+    pause
+    exit /b 1
+)
+
+:: Load settings from INI if available
+if exist "!INI_FILE!" (
+    for /f "tokens=* delims=" %%a in ('type "!INI_FILE!" ^| findstr /v "^#" ^| findstr /v "^$"') do (
+        set "%%a"
+    )
+    
+    echo Using settings from INI file
+    echo - Target Duration: !TARGET_DURATION! seconds
+    echo - Video Quality: !QUALITY!
+    echo - Preset: !PRESET!
+    echo - Audio Bitrate: !AUDIO_BITRATE!k
+    
+    :: If hidden mode is enabled, minimize the window
+    if "!hidden_mode!"=="1" (
+        start /min cmd /c "%~f0" "%~1"
+        exit /b
+    )
+)
+
 :: Get video duration
-set hh_str=0
-set mm_str=0
-set ss_str=0
+echo Analyzing video...
 set original_duration_seconds=0
 
-echo Analyzing video duration...
 for /f "tokens=1-4 delims=:., " %%a in ('""!FFMPEG!" -i "!INPUT!" 2>&1 | find "Duration""') do (
     if "%%b" NEQ "N/A" (
         set "hh_str=%%b"
         set "mm_str=%%c"
         set "ss_str=%%d"
         set "duration_display=%%b:%%c:%%d"
+        
+        set /A hh_int = !hh_str! + 0
+        set /A mm_int = !mm_str! + 0
+        set /A ss_int_val = !ss_str! + 0
+        set /a "original_duration_seconds = (hh_int * 3600) + (mm_int * 60) + ss_int_val"
     )
 )
 
-if NOT "!duration_display!"=="N/A" (
-    set /A hh_int = !hh_str! + 0
-    set /A mm_int = !mm_str! + 0
-    set /A ss_int_val = !ss_str! + 0
-    set /a "original_duration_seconds = (hh_int * 3600) + (mm_int * 60) + ss_int_val"
-) else (
+if "!original_duration_seconds!"=="0" (
     color 0C
     echo Error: Could not determine video duration.
     pause
     exit /b 1
 )
 
-echo --------------------
-echo Video Shrinking
-echo --------------------
+echo Video Shrink Tool
 echo.
 echo Input: "!INPUT!"
 echo Original Duration: !duration_display! (!original_duration_seconds!s)
@@ -92,8 +88,7 @@ echo.
 :: Check if video is already shorter than target
 if !original_duration_seconds! LEQ !TARGET_DURATION! (
     color 0E
-    echo.
-    echo Video is already shorter than or equal to !TARGET_DURATION! seconds.
+    echo Video is already shorter than target duration.
     echo No processing needed.
     pause
     exit /b 0
@@ -107,38 +102,24 @@ echo Speed factor: !speed_factor_decimal!x
 :: Set ffmpeg filters for changing speed
 set "speed_filters=-vf ""setpts=PTS*!TARGET_DURATION!/!original_duration_seconds!"" -af ""atempo=!original_duration_seconds!/!TARGET_DURATION!"""
 
-:: Delete existing output file if it exists
+:: Remove existing output file
 if exist "!OUTPUT!" del "!OUTPUT!"
 
-echo.
-echo Processing: "!INPUT!" to "!OUTPUT!"
-echo This will create a !TARGET_DURATION! second version by increasing the speed.
-echo Maintaining original video quality...
-echo.
+echo Processing... Please wait.
 
 :: Process the video with speed change
-:: Using high quality settings to preserve video quality
 "!FFMPEG!" -i "!INPUT!" !speed_filters! -c:v libx264 -crf !QUALITY! -preset !PRESET! -c:a aac -b:a !AUDIO_BITRATE!k -movflags +faststart -loglevel warning "!OUTPUT!"
 
-:: Check for errors
+:: Check result
 if !errorlevel! neq 0 (
     color 0C
-    echo.
-    echo Error: Processing failed with error code !errorlevel!
-    echo Please check that the input file exists and is a valid video file.
-    echo.
-    goto end
+    echo Error: Processing failed.
+) else (
+    color 0A
+    echo Success! Output: "!OUTPUT!"
 )
 
-:: If we get here, processing was successful
-color 0A
 echo.
-echo Success! Shrunk video saved as:
-echo "!OUTPUT!"
-echo.
-
-:: Force pause at the end
-:end
 echo Press any key to exit...
 pause > nul
 endlocal 
