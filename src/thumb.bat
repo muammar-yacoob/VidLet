@@ -109,6 +109,23 @@ if !errorlevel! neq 0 (
     echo Success! Video with custom thumbnail saved as:
     echo "!OUTPUT!"
     echo.
+    
+    echo Refreshing thumbnail cache for this file...
+    
+    :: Create a temporary file with the same name but different extension
+    set "TEMP_NAME=%~dpn1_thumbed_temp%~x1"
+    
+    :: Copy content to temp file
+    copy /b "!OUTPUT!" "!TEMP_NAME!" >nul
+    
+    :: Delete original and rename temp back to original
+    del "!OUTPUT!" >nul
+    ren "!TEMP_NAME!" "%~nx1_thumbed%~x1" >nul
+    
+    :: Touch the file to update timestamps
+    copy /b "!OUTPUT!"+"" "!OUTPUT!" >nul 2>&1
+    
+    echo Thumbnail cache refreshed.
 )
 
 echo Press any key to exit...
