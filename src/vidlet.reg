@@ -15,3 +15,19 @@ Windows Registry Editor Version 5.00
 
 [HKEY_CLASSES_ROOT\SystemFileAssociations\.mkv\Shell\ConvertToMP4\command]
 @="\"C:\\Program Files\\VidLet\\src\\mkv2mp4.bat\" \"%1\""
+
+; Shrink
+[HKEY_CLASSES_ROOT\SystemFileAssociations\.mp4\Shell\ShrinkVideo]
+@="Shrink"
+"Icon"="C:\\Program Files\\VidLet\\src\\icons\\shrink.ico" ; Assuming same icon for now
+
+[HKEY_CLASSES_ROOT\SystemFileAssociations\.mp4\Shell\ShrinkVideo\command]
+@="\"C:\\Program Files\\VidLet\\src\\shrink.bat\" \"%1\""
+
+; Set Thumbnail
+[HKEY_CLASSES_ROOT\SystemFileAssociations\.mp4\Shell\SetThumbnail]
+@="Set Thumbnail"
+"Icon"="C:\\Program Files\\VidLet\\src\\icons\\thumb.ico" ; Assuming same icon for now
+
+[HKEY_CLASSES_ROOT\SystemFileAssociations\.mp4\Shell\SetThumbnail\command]
+@="\"C:\\Program Files\\VidLet\\src\\thumb.bat\" \"%1\""
