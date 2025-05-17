@@ -4,9 +4,44 @@ setlocal enabledelayedexpansion
 set "ROOT_DIR=%ProgramFiles%\VidLet"
 set "FFMPEG=%ROOT_DIR%\libs\ffmpeg.exe"
 set "TARGET_DURATION=59.5"
+set "QUALITY=18"
+set "PRESET=slow"
+set "AUDIO_BITRATE=192"
 
 set "INPUT=%~1"
 set "OUTPUT=%~dpn1_59s.mp4"
+set "INI_FILE=%~dpn0.ini"
+
+:: Check if shrink.ini exists in the same directory as the batch file
+if exist "!INI_FILE!" (
+    echo Using configuration from !INI_FILE!
+    
+    :: Read target duration from INI
+    for /f "tokens=2 delims==" %%a in ('findstr /b "target_duration=" "!INI_FILE!"') do (
+        set "TARGET_DURATION=%%a"
+    )
+    
+    :: Read quality from INI
+    for /f "tokens=2 delims==" %%a in ('findstr /b "quality=" "!INI_FILE!"') do (
+        set "QUALITY=%%a"
+    )
+    
+    :: Read preset from INI
+    for /f "tokens=2 delims==" %%a in ('findstr /b "preset=" "!INI_FILE!"') do (
+        set "PRESET=%%a"
+    )
+    
+    :: Read audio bitrate from INI
+    for /f "tokens=2 delims==" %%a in ('findstr /b "audio_bitrate=" "!INI_FILE!"') do (
+        set "AUDIO_BITRATE=%%a"
+    )
+    
+    echo - Target Duration: !TARGET_DURATION! seconds
+    echo - Video Quality (CRF): !QUALITY!
+    echo - Preset: !PRESET!
+    echo - Audio Bitrate: !AUDIO_BITRATE!k
+    echo.
+)
 
 :: Check if ffmpeg exists
 if not exist "!FFMPEG!" (
@@ -65,12 +100,12 @@ if !original_duration_seconds! LEQ !TARGET_DURATION! (
 )
 
 :: Calculate speed factor
-set /a "speed_factor_int = (original_duration_seconds * 100) / 595"
+set /a "speed_factor_int = (original_duration_seconds * 100) / (!TARGET_DURATION! * 10)"
 set "speed_factor_decimal=!speed_factor_int:~0,-2!.!speed_factor_int:~-2!"
 echo Speed factor: !speed_factor_decimal!x
 
 :: Set ffmpeg filters for changing speed
-set "speed_filters=-vf ""setpts=PTS*59.5/!original_duration_seconds!"" -af ""atempo=!original_duration_seconds!/59.5"""
+set "speed_filters=-vf ""setpts=PTS*!TARGET_DURATION!/!original_duration_seconds!"" -af ""atempo=!original_duration_seconds!/!TARGET_DURATION!"""
 
 :: Delete existing output file if it exists
 if exist "!OUTPUT!" del "!OUTPUT!"
@@ -83,7 +118,7 @@ echo.
 
 :: Process the video with speed change
 :: Using high quality settings to preserve video quality
-"!FFMPEG!" -i "!INPUT!" !speed_filters! -c:v libx264 -crf 18 -preset slow -c:a aac -b:a 192k -movflags +faststart -loglevel warning "!OUTPUT!"
+"!FFMPEG!" -i "!INPUT!" !speed_filters! -c:v libx264 -crf !QUALITY! -preset !PRESET! -c:a aac -b:a !AUDIO_BITRATE!k -movflags +faststart -loglevel warning "!OUTPUT!"
 
 :: Check for errors
 if !errorlevel! neq 0 (
