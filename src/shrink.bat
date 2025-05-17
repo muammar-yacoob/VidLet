@@ -9,7 +9,7 @@ set "PRESET=slow"
 set "AUDIO_BITRATE=192"
 
 set "INPUT=%~1"
-set "OUTPUT=%~dpn1_59s.mp4"
+set "OUTPUT=%~dpn1_shrinked.mp4"
 set "INI_FILE=%~dpn0.ini"
 
 :: Check if shrink.ini exists in the same directory as the batch file

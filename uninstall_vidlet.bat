@@ -23,6 +23,7 @@ echo Removing registry entries...
 reg delete "HKEY_CLASSES_ROOT\SystemFileAssociations\.mp4\Shell\CompressVideo" /f
 reg delete "HKEY_CLASSES_ROOT\SystemFileAssociations\.mkv\Shell\ConvertToMP4" /f
 reg delete "HKEY_CLASSES_ROOT\SystemFileAssociations\.mp4\Shell\ShrinkVideo" /f
+reg delete "HKEY_CLASSES_ROOT\SystemFileAssociations\.mp4\Shell\SetThumbnail" /f
 
 :: Remove installation directory
 echo Removing installation directory...
@@ -30,7 +31,11 @@ if exist "%INSTALL_DIR%" (
     :: Remove specific files first to ensure they're gone
     if exist "%INSTALL_DIR%\src\compress.bat" del /f /q "%INSTALL_DIR%\src\compress.bat"
     if exist "%INSTALL_DIR%\src\mkv2mp4.bat" del /f /q "%INSTALL_DIR%\src\mkv2mp4.bat"
-    if exist "%INSTALL_DIR%\src\ShrinkVideo.bat" del /f /q "%INSTALL_DIR%\src\ShrinkVideo.bat"
+    if exist "%INSTALL_DIR%\src\shrink.bat" del /f /q "%INSTALL_DIR%\src\shrink.bat"
+    if exist "%INSTALL_DIR%\src\set_thumbnail.bat" del /f /q "%INSTALL_DIR%\src\thumb.bat"
+    if exist "%INSTALL_DIR%\src\compress.ini" del /f /q "%INSTALL_DIR%\src\compress.ini"
+    if exist "%INSTALL_DIR%\src\mkv2mp4.ini" del /f /q "%INSTALL_DIR%\src\mkv2mp4.ini"
+    if exist "%INSTALL_DIR%\src\shrink.ini" del /f /q "%INSTALL_DIR%\src\shrink.ini"
     if exist "%INSTALL_DIR%\src\icons\*.ico" del /f /q "%INSTALL_DIR%\src\icons\*.ico"
     if exist "%INSTALL_DIR%\libs\ffmpeg.exe" del /f /q "%INSTALL_DIR%\libs\ffmpeg.exe"
     
