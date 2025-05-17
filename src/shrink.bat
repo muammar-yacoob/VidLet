@@ -16,6 +16,7 @@ set "hidden_mode=0"
 set "INPUT=%~1"
 set "OUTPUT=%~dpn1_shrinked.mp4"
 set "INI_FILE=%~dpn0.ini"
+set "TEMP_THUMB=%TEMP%\vidlet_thumb_%RANDOM%.png"
 
 :: Prevent immediate closing on error
 if not defined IS_RESTARTED (
@@ -63,6 +64,18 @@ if exist "!INI_FILE!" (
 
 :: Mark as restarted to prevent recursive restarts
 set "IS_RESTARTED=1"
+
+:: First, extract thumbnail from input file if it exists
+echo Checking for existing thumbnail...
+"!FFMPEG!" -i "!INPUT!" -map v:1 -map_metadata 0 -c:v copy -f image2 "!TEMP_THUMB!" -y >nul 2>&1
+set "HAS_THUMBNAIL=0"
+if exist "!TEMP_THUMB!" (
+    echo Thumbnail found, will preserve it.
+    set "HAS_THUMBNAIL=1"
+) else (
+    echo No thumbnail found.
+    if exist "!TEMP_THUMB!" del "!TEMP_THUMB!"
+)
 
 :: Get video duration
 echo Analyzing video...
@@ -120,16 +133,43 @@ if exist "!OUTPUT!" del "!OUTPUT!"
 
 echo Processing... Please wait.
 
+:: Create a temporary output file
+set "TEMP_OUTPUT=%~dpn1_temp.mp4"
+if exist "!TEMP_OUTPUT!" del "!TEMP_OUTPUT!"
+
 :: Process the video with speed change
-"!FFMPEG!" -i "!INPUT!" !speed_filters! -c:v libx264 -crf !QUALITY! -preset !PRESET! -c:a aac -b:a !AUDIO_BITRATE!k -movflags +faststart -loglevel warning "!OUTPUT!"
+"!FFMPEG!" -i "!INPUT!" !speed_filters! -c:v libx264 -crf !QUALITY! -preset !PRESET! -c:a aac -b:a !AUDIO_BITRATE!k -movflags +faststart -loglevel warning "!TEMP_OUTPUT!"
 
 :: Check result
 if !errorlevel! neq 0 (
     color 0C
     echo Error: Processing failed.
+    :: Clean up
+    if exist "!TEMP_THUMB!" del "!TEMP_THUMB!"
+    if exist "!TEMP_OUTPUT!" del "!TEMP_OUTPUT!"
 ) else (
     color 0A
+    
+    :: Add thumbnail if one was found
+    if "!HAS_THUMBNAIL!"=="1" (
+        echo Restoring thumbnail...
+        "!FFMPEG!" -i "!TEMP_OUTPUT!" -i "!TEMP_THUMB!" -map 0:v:0? -map 0:a? -map 1 -c copy -c:v:1 png -disposition:v:1 attached_pic -loglevel warning "!OUTPUT!"
+        
+        :: Check if thumbnail addition succeeded
+        if !errorlevel! neq 0 (
+            echo Failed to add thumbnail. Using output without thumbnail.
+            move /y "!TEMP_OUTPUT!" "!OUTPUT!" >nul
+        )
+    ) else (
+        :: Just rename the temp file to final output
+        move /y "!TEMP_OUTPUT!" "!OUTPUT!" >nul
+    )
+    
     echo Success! Output: "!OUTPUT!"
+    
+    :: Clean up
+    if exist "!TEMP_THUMB!" del "!TEMP_THUMB!"
+    if exist "!TEMP_OUTPUT!" del "!TEMP_OUTPUT!"
 )
 
 :: If not hidden, pause before exiting
