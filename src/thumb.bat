@@ -1,58 +1,68 @@
 @echo off
 setlocal enabledelayedexpansion
 
+:: Create a log file in a location we can definitely write to
+set "LOG_FILE=%TEMP%\vidlet_thumb.log"
+echo VidLet Thumbnail Tool started at %date% %time% > "!LOG_FILE!"
+
+:: Setup paths
 set "ROOT_DIR=%ProgramFiles%\VidLet"
 set "FFMPEG=%ROOT_DIR%\libs\ffmpeg.exe"
 
+:: Get input file from command line
 set "INPUT=%~1"
 set "OUTPUT=%~dpn1_thumbed%~x1"
 
-:: Check if ffmpeg exists
+echo INPUT="!INPUT!" >> "!LOG_FILE!"
+echo OUTPUT="!OUTPUT!" >> "!LOG_FILE!"
+
+:: Check for FFmpeg
 if not exist "!FFMPEG!" (
     color 0C
-    echo Error: FFmpeg not found at "!FFMPEG!"
-    echo Please ensure FFmpeg is installed correctly.
-    pause
-    exit /b 1
+    echo Error: FFmpeg not found at "!FFMPEG!" | tee -a "!LOG_FILE!"
+    echo This tool requires FFmpeg to be installed.
+    goto :end_with_pause
 )
 
-:: Check if input file was provided
+:: Check for input file
 if "%INPUT%"=="" (
     color 0C
-    echo Error: No input file specified.
+    echo Error: No input file specified. | tee -a "!LOG_FILE!"
     echo Usage: thumb.bat videofile.mp4
-    pause
-    exit /b 1
+    goto :end_with_pause
 )
 
-echo --------------------
+if not exist "!INPUT!" (
+    color 0C
+    echo Error: Input file "!INPUT!" does not exist. | tee -a "!LOG_FILE!"
+    goto :end_with_pause
+)
+
 echo Video Thumbnail Tool
-echo --------------------
 echo.
 echo Input: "!INPUT!"
 echo.
-echo This tool will create a new video file with your custom thumbnail.
-echo.
-echo Please select an image file to use as the thumbnail...
-echo.
+echo Select an image file for the thumbnail...
 
-:: Create a unique temp file name
+echo Showing file browser dialog >> "!LOG_FILE!"
+
+:: Create temp file for image selection
 set "TEMP_FILE=%TEMP%\vidlet_image_%RANDOM%.txt"
 
-:: Use PowerShell to create a file browser dialog
-:: Use -Encoding ASCII to avoid BOM issues
-powershell -Command "Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.OpenFileDialog; $f.Filter = 'Image files (*.jpg;*.jpeg;*.png;*.bmp)|*.jpg;*.jpeg;*.png;*.bmp'; $f.Title = 'Select Thumbnail Image'; if($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { [System.IO.File]::WriteAllText('%TEMP_FILE%', $f.FileName, [System.Text.Encoding]::ASCII) }"
+:: Create file browser dialog
+echo powershell.exe -ExecutionPolicy Bypass -Command "Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.OpenFileDialog; $f.Filter = 'Image files (*.jpg;*.jpeg;*.png;*.bmp)|*.jpg;*.jpeg;*.png;*.bmp'; $f.Title = 'Select Thumbnail Image'; if($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { [System.IO.File]::WriteAllText('%TEMP_FILE%', $f.FileName) }" >> "!LOG_FILE!"
 
-:: Check if user canceled the dialog
+powershell.exe -ExecutionPolicy Bypass -Command "Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.OpenFileDialog; $f.Filter = 'Image files (*.jpg;*.jpeg;*.png;*.bmp)|*.jpg;*.jpeg;*.png;*.bmp'; $f.Title = 'Select Thumbnail Image'; if($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { [System.IO.File]::WriteAllText('%TEMP_FILE%', $f.FileName) }"
+
+:: Check if user canceled
 if not exist "!TEMP_FILE!" (
+    echo User canceled image selection >> "!LOG_FILE!"
     color 0E
-    echo.
     echo Operation canceled. No image was selected.
-    pause
-    exit /b 0
+    goto :end_with_pause
 )
 
-:: Read the selected image path more safely
+:: Read the selected image path
 set "IMAGE_PATH="
 for /f "usebackq delims=" %%i in ("!TEMP_FILE!") do (
     set "IMAGE_PATH=%%i"
@@ -60,74 +70,70 @@ for /f "usebackq delims=" %%i in ("!TEMP_FILE!") do (
 )
 :got_path
 
-:: Clean up temp file
+:: Delete temp file
 del "!TEMP_FILE!" >nul 2>&1
 
-:: Check if path is empty
+echo Selected image: "!IMAGE_PATH!" >> "!LOG_FILE!"
+
+:: Verify image path
 if "!IMAGE_PATH!"=="" (
     color 0C
-    echo.
-    echo Error: Failed to obtain image path.
-    pause
-    exit /b 1
+    echo Error: Failed to get image path. | tee -a "!LOG_FILE!"
+    goto :end_with_pause
 )
 
-echo.
+if not exist "!IMAGE_PATH!" (
+    color 0C
+    echo Error: Selected image "!IMAGE_PATH!" does not exist. | tee -a "!LOG_FILE!"
+    goto :end_with_pause
+)
+
 echo Selected image: "!IMAGE_PATH!"
 echo.
 
-:: Verify the image path exists
-if not exist "!IMAGE_PATH!" (
-    color 0C
-    echo.
-    echo Error: The selected image file does not exist.
-    echo Path: "!IMAGE_PATH!"
-    pause
-    exit /b 1
+:: Delete existing output file
+if exist "!OUTPUT!" (
+    echo Deleting existing output file >> "!LOG_FILE!"
+    del "!OUTPUT!" 
 )
 
-:: Delete existing output file if it exists
-if exist "!OUTPUT!" del "!OUTPUT!"
+echo Processing video... Please wait.
+echo Running FFMPEG command >> "!LOG_FILE!"
 
-echo Processing video to add thumbnail...
-echo Output will be saved as: "!OUTPUT!"
-echo.
+:: Apply thumbnail to video
+"!FFMPEG!" -i "!INPUT!" -i "!IMAGE_PATH!" -map 0:v:0? -map 0:a? -map 1 -c copy -c:v:1 png -disposition:v:1 attached_pic -loglevel warning "!OUTPUT!" 2>>"!LOG_FILE!"
 
-:: Apply the thumbnail to the video
-:: Modified to explicitly map only the main video and audio streams, excluding any existing thumbnails
-"!FFMPEG!" -i "!INPUT!" -i "!IMAGE_PATH!" -map 0:v:0? -map 0:a? -map 1 -c copy -c:v:1 png -disposition:v:1 attached_pic -loglevel warning "!OUTPUT!"
-
-:: Check for errors
+:: Check result
 if !errorlevel! neq 0 (
     color 0C
-    echo.
-    echo Error: Processing failed with error code !errorlevel!
-    echo.
+    echo Error: Processing failed with error code !errorlevel! | tee -a "!LOG_FILE!"
 ) else (
     color 0A
-    echo.
-    echo Success! Video with custom thumbnail saved as:
-    echo "!OUTPUT!"
-    echo.
+    echo Success! Output: "!OUTPUT!" | tee -a "!LOG_FILE!"
     
-    echo Refreshing thumbnail cache for this file...
+    echo Refreshing thumbnail cache... | tee -a "!LOG_FILE!"
     
     :: Create a temporary file with the same name but different extension
     set "TEMP_NAME=%~dpn1_thumbed_temp%~x1"
     
     :: Copy content to temp file
-    copy /b "!OUTPUT!" "!TEMP_NAME!" >nul
+    copy /b "!OUTPUT!" "!TEMP_NAME!" >>"%TEMP%\vidlet_thumb_refresh.log" 2>&1
     
     :: Delete original and rename temp back to original
-    del "!OUTPUT!" >nul
-    ren "!TEMP_NAME!" "%~nx1_thumbed%~x1" >nul
+    del "!OUTPUT!" >>"%TEMP%\vidlet_thumb_refresh.log" 2>&1
+    ren "!TEMP_NAME!" "%~nx1_thumbed%~x1" >>"%TEMP%\vidlet_thumb_refresh.log" 2>&1
     
     :: Touch the file to update timestamps
-    copy /b "!OUTPUT!"+"" "!OUTPUT!" >nul 2>&1
+    copy /b "!OUTPUT!"+"" "!OUTPUT!" >>"%TEMP%\vidlet_thumb_refresh.log" 2>&1
     
-    echo Thumbnail cache refreshed.
+    echo Thumbnail cache refreshed. | tee -a "!LOG_FILE!"
 )
 
+:end_with_pause
+echo.
+echo Log file created at: "!LOG_FILE!"
+echo.
 echo Press any key to exit...
 pause > nul
+echo User pressed a key to exit >> "!LOG_FILE!"
 endlocal 
