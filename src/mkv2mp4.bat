@@ -17,37 +17,48 @@ set "INPUT=%~1"
 set "OUTPUT=%~dpn1.mp4"
 set "INI_FILE=%~dpn0.ini"
 
-:: Check for FFmpeg
-if not exist "!FFMPEG!" (
-    color 0C
-    echo Error: FFmpeg not found at "!FFMPEG!"
-    pause
-    exit /b 1
-)
-
-:: Check for input file
-if "%INPUT%"=="" (
-    color 0C
-    echo Error: No input file specified.
-    echo Usage: mkv2mp4.bat videofile.mkv
-    pause
-    exit /b 1
+:: Prevent immediate closing on error
+if not defined IS_RESTARTED (
+    :: Check for FFmpeg
+    if not exist "!FFMPEG!" (
+        color 0C
+        echo Error: FFmpeg not found at "!FFMPEG!"
+        echo This window will close in 10 seconds...
+        timeout /t 10
+        exit /b 1
+    )
+    
+    :: Check for input file
+    if "%INPUT%"=="" (
+        color 0C
+        echo Error: No input file specified.
+        echo Usage: mkv2mp4.bat videofile.mkv
+        echo This window will close in 10 seconds...
+        timeout /t 10
+        exit /b 1
+    )
 )
 
 :: Load settings from INI if available
 if exist "!INI_FILE!" (
-    for /f "tokens=* delims=" %%a in ('type "!INI_FILE!" ^| findstr /v "^#" ^| findstr /v "^$"') do (
+    for /f "tokens=*" %%a in ('type "!INI_FILE!" ^| findstr /v "^#" ^| findstr /v "^$"') do (
         set "%%a"
     )
     
     echo Using settings from INI file
     
-    :: If hidden mode is enabled, minimize the window
+    :: If hidden mode is enabled and not already restarted, restart minimized
     if "!hidden_mode!"=="1" (
-        start /min cmd /c "%~f0" "%~1"
-        exit /b
+        if not defined IS_RESTARTED (
+            set IS_RESTARTED=1
+            start /min cmd /c "%~f0" "%~1"
+            exit /b
+        )
     )
 )
+
+:: Mark as restarted to prevent recursive restarts
+set "IS_RESTARTED=1"
 
 :: Get video duration
 for /f "tokens=1-4 delims=:., " %%a in ('""%FFMPEG%" -i "!INPUT!" 2>&1 | find "Duration""') do (
@@ -88,7 +99,11 @@ if !errorlevel! equ 0 (
     echo Error: Conversion failed.
 )
 
-echo.
-echo Press any key to exit...
-pause > nul
+:: If non-interactive but not hidden, pause briefly so user can see result
+if not "!hidden_mode!"=="1" (
+    echo.
+    echo Press any key to exit...
+    pause > nul
+)
+
 endlocal

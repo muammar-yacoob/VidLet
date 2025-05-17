@@ -9,18 +9,20 @@ set "FFMPEG=%ROOT_DIR%\libs\ffmpeg.exe"
 set "INPUT=%~1"
 set "OUTPUT=%~dpn1_thumbed%~x1"
 
-:: Use a simpler technique to start minimized
-if not defined IS_MINIMIZED (
-    set IS_MINIMIZED=1
+:: Start minimized but ensure we don't enter an infinite loop
+if not defined IS_RESTARTED (
+    set IS_RESTARTED=1
     start /min cmd /c "%~f0" "%~1"
     exit /b
 )
 
+:: Prevent immediate closing on errors
 :: Check for FFmpeg
 if not exist "!FFMPEG!" (
     color 0C
     echo Error: FFmpeg not found at "!FFMPEG!"
-    pause
+    echo This window will close in 10 seconds...
+    timeout /t 10
     exit /b 1
 )
 
@@ -29,7 +31,8 @@ if "%INPUT%"=="" (
     color 0C
     echo Error: No input file specified.
     echo Usage: thumb.bat videofile.mp4
-    pause
+    echo This window will close in 10 seconds...
+    timeout /t 10
     exit /b 1
 )
 
@@ -42,14 +45,13 @@ echo Select an image file for the thumbnail...
 :: Create temp file for image selection
 set "TEMP_FILE=%TEMP%\vidlet_image_%RANDOM%.txt"
 
-:: Create file browser dialog
+:: Create file browser dialog with more robust approach
 powershell -Command ^
   "Add-Type -AssemblyName System.Windows.Forms; ^
    $f = New-Object System.Windows.Forms.OpenFileDialog; ^
    $f.Filter = 'Image files (*.jpg;*.jpeg;*.png;*.bmp)|*.jpg;*.jpeg;*.png;*.bmp'; ^
    $f.Title = 'Select Thumbnail Image'; ^
    $f.TopMost = $true; ^
-   $f.AutoUpgradeEnabled = $true; ^
    if($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { ^
      [System.IO.File]::WriteAllText('%TEMP_FILE%', $f.FileName, [System.Text.Encoding]::ASCII) ^
    }"
@@ -58,7 +60,8 @@ powershell -Command ^
 if not exist "!TEMP_FILE!" (
     color 0E
     echo Operation canceled.
-    pause
+    echo This window will close in 5 seconds...
+    timeout /t 5
     exit /b 0
 )
 
@@ -77,14 +80,16 @@ del "!TEMP_FILE!" >nul 2>&1
 if "!IMAGE_PATH!"=="" (
     color 0C
     echo Error: Failed to get image path.
-    pause
+    echo This window will close in 5 seconds...
+    timeout /t 5
     exit /b 1
 )
 
 if not exist "!IMAGE_PATH!" (
     color 0C
     echo Error: Selected image does not exist.
-    pause
+    echo This window will close in 5 seconds...
+    timeout /t 5
     exit /b 1
 )
 
@@ -103,6 +108,8 @@ echo Processing video... Please wait.
 if !errorlevel! neq 0 (
     color 0C
     echo Error: Processing failed.
+    echo This window will close in 5 seconds...
+    timeout /t 5
 ) else (
     color 0A
     echo Success! Output: "!OUTPUT!"
@@ -121,9 +128,9 @@ if !errorlevel! neq 0 (
     
     :: Touch the file to update timestamps
     copy /b "!OUTPUT!"+"" "!OUTPUT!" >nul 2>&1
+    
+    echo This window will close in 3 seconds...
+    timeout /t 3 > nul
 )
 
-echo.
-echo Press any key to exit...
-pause > nul
 endlocal 
