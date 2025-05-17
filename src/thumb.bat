@@ -9,23 +9,10 @@ set "FFMPEG=%ROOT_DIR%\libs\ffmpeg.exe"
 set "INPUT=%~1"
 set "OUTPUT=%~dpn1_thumbed%~x1"
 
-:: Start minimized but don't affect dialog windows
+:: Use a simpler technique to start minimized
 if not defined IS_MINIMIZED (
     set IS_MINIMIZED=1
-    
-    :: Create a VBS script to minimize current window
-    echo Set WshShell = WScript.CreateObject("WScript.Shell")>"%TEMP%\minimize.vbs"
-    echo WshShell.AppActivate WScript.Arguments(0)>>"%TEMP%\minimize.vbs"
-    echo WScript.Sleep 500>>"%TEMP%\minimize.vbs"
-    echo WshShell.SendKeys "% n">>"%TEMP%\minimize.vbs"
-    
-    :: Start regular version with flag but minimize window
-    start cmd /c "%~f0" "%~1"
-    
-    :: Run the minimize script
-    start /wait wscript "%TEMP%\minimize.vbs" "cmd.exe"
-    del "%TEMP%\minimize.vbs"
-    
+    start /min cmd /c "%~f0" "%~1"
     exit /b
 )
 
@@ -55,8 +42,17 @@ echo Select an image file for the thumbnail...
 :: Create temp file for image selection
 set "TEMP_FILE=%TEMP%\vidlet_image_%RANDOM%.txt"
 
-:: Create file browser dialog - using ShowWindow to ensure it's visible
-powershell -Command "Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.OpenFileDialog; $f.Filter = 'Image files (*.jpg;*.jpeg;*.png;*.bmp)|*.jpg;*.jpeg;*.png;*.bmp'; $f.Title = 'Select Thumbnail Image'; $f.Multiselect = $false; if($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { [System.IO.File]::WriteAllText('%TEMP_FILE%', $f.FileName, [System.Text.Encoding]::ASCII) }"
+:: Create file browser dialog
+powershell -Command ^
+  "Add-Type -AssemblyName System.Windows.Forms; ^
+   $f = New-Object System.Windows.Forms.OpenFileDialog; ^
+   $f.Filter = 'Image files (*.jpg;*.jpeg;*.png;*.bmp)|*.jpg;*.jpeg;*.png;*.bmp'; ^
+   $f.Title = 'Select Thumbnail Image'; ^
+   $f.TopMost = $true; ^
+   $f.AutoUpgradeEnabled = $true; ^
+   if($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { ^
+     [System.IO.File]::WriteAllText('%TEMP_FILE%', $f.FileName, [System.Text.Encoding]::ASCII) ^
+   }"
 
 :: Check if user canceled
 if not exist "!TEMP_FILE!" (
