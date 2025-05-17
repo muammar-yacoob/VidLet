@@ -18,7 +18,7 @@ Windows Registry Editor Version 5.00
 
 ; Shrink
 [HKEY_CLASSES_ROOT\SystemFileAssociations\.mp4\Shell\ShrinkVideo]
-@="Compress & Shorten Video (to 59.5s)"
+@="Shrink Video"
 "Icon"="C:\\Program Files\\VidLet\\src\\icons\\compress.ico" ; Assuming same icon for now
 
 [HKEY_CLASSES_ROOT\SystemFileAssociations\.mp4\Shell\ShrinkVideo\command]
