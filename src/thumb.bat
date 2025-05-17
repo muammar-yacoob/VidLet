@@ -94,7 +94,8 @@ echo Output will be saved as: "!OUTPUT!"
 echo.
 
 :: Apply the thumbnail to the video
-"!FFMPEG!" -i "!INPUT!" -i "!IMAGE_PATH!" -map 0 -map 1 -c copy -c:v:1 png -disposition:v:1 attached_pic -loglevel warning "!OUTPUT!"
+:: Modified to explicitly map only the main video and audio streams, excluding any existing thumbnails
+"!FFMPEG!" -i "!INPUT!" -i "!IMAGE_PATH!" -map 0:v:0? -map 0:a? -map 1 -c copy -c:v:1 png -disposition:v:1 attached_pic -loglevel warning "!OUTPUT!"
 
 :: Check for errors
 if !errorlevel! neq 0 (
