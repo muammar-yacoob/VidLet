@@ -23,15 +23,19 @@ Handy right-click tools for everyday video tasks!
 
 - <img src="src/icons/compress.ico" width="16" height="16" alt="Compress icon"> **Compress Videos**: Reduce MP4 video size with customizable settings
 - <img src="src/icons/mkv2mp4.ico" width="16" height="16" alt="Convert icon"> **Convert MKV to MP4**: Quick format conversion without quality loss
+- <img src="src/icons/shrink.ico" width="16" height="16" alt="Shrink icon"> **Shrink Videos**: Fast MP4 size reduction with minimal quality impact
+- <img src="src/icons/thumb.ico" width="16" height="16" alt="Thumbnail icon"> **Set Thumbnail**: Customize MP4 video thumbnail image
 
 ## 🚀 Quick Start
 1. Download this repository
 2. Run `install_vidlet.bat` as Administrator
 3. Right-click on video files to access new context menu options!
 
-## 💡 How to use
-- <img src="src/icons/compress.ico" width="16" height="16"> **Compress Video**: Right-click on any MP4 file → Select "Compress Video"
-- <img src="src/icons/mkv2mp4.ico" width="16" height="16"> **Convert to MP4**: Right-click on any MKV file → Select "Convert to MP4"
+## 💡 Usage
+- **Compress Video** <img src="src/icons/compress.ico" width="12" height="12">: MP4 compression with adjustable quality settings
+- **Convert to MP4** <img src="src/icons/mkv2mp4.ico" width="12" height="12">: Convert MKV files to MP4 format
+- **Shrink** <img src="src/icons/shrink.ico" width="12" height="12">: Quick MP4 size reduction with preset settings
+- **Set Thumbnail** <img src="src/icons/thumb.ico" width="12" height="12">: Choose a frame as your video's thumbnail
 
 ## 🌱 Support & Contributions
 Star the repo ⭐ & I power up like Mario 🍄<br>
