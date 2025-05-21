@@ -8,6 +8,7 @@ echo VidLet Thumbnail Tool started at %date% %time% > "!LOG_FILE!"
 :: Setup paths
 set "ROOT_DIR=%ProgramFiles%\VidLet"
 set "FFMPEG=%ROOT_DIR%\libs\ffmpeg.exe"
+set "INI_FILE=%~dpn0.ini"
 
 :: Get input file from command line
 set "INPUT=%~1"
@@ -38,70 +39,86 @@ if not exist "!INPUT!" (
     goto :end_with_pause
 )
 
+:: Get video duration
+echo Getting video duration... >> "!LOG_FILE!"
+set "duration_seconds=0"
+for /f "tokens=1-4 delims=:., " %%a in ('""!FFMPEG!" -i "!INPUT!" 2>&1 | find "Duration""') do (
+    if "%%b" NEQ "N/A" (
+        set "hh_str=%%b"
+        set "mm_str=%%c"
+        set "ss_str=%%d"
+        set "duration_display=%%b:%%c:%%d"
+        
+        set /A hh_int = !hh_str! + 0
+        set /A mm_int = !mm_str! + 0
+        set /A ss_int_val = !ss_str! + 0
+        set /a "duration_seconds = (hh_int * 3600) + (mm_int * 60) + ss_int_val"
+    )
+)
+
+if "!duration_seconds!"=="0" (
+    color 0C
+    echo Error: Could not determine video duration. | tee -a "!LOG_FILE!"
+    goto :end_with_pause
+)
+
+echo Video duration: !duration_display! (!duration_seconds!s) >> "!LOG_FILE!"
+
+:: Load INI settings
+set "frame_timestamp=-1"
+if exist "!INI_FILE!" (
+    for /f "tokens=1,2 delims==" %%a in ('type "!INI_FILE!" ^| findstr /v "^#" ^| findstr /v "^$"') do (
+        if "%%a"=="frame_timestamp" set "frame_timestamp=%%b"
+    )
+)
+
 echo Video Thumbnail Tool
 echo.
 echo Input: "!INPUT!"
+echo Duration: !duration_display!
 echo.
-echo Select an image file for the thumbnail...
 
-echo Showing file browser dialog >> "!LOG_FILE!"
-
-:: Create temp file for image selection
-set "TEMP_FILE=%TEMP%\vidlet_image_%RANDOM%.txt"
-
-:: Create file browser dialog
-echo powershell.exe -ExecutionPolicy Bypass -Command "Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.OpenFileDialog; $f.Filter = 'Image files (*.jpg;*.jpeg;*.png;*.bmp)|*.jpg;*.jpeg;*.png;*.bmp'; $f.Title = 'Select Thumbnail Image'; if($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { [System.IO.File]::WriteAllText('%TEMP_FILE%', $f.FileName) }" >> "!LOG_FILE!"
-
-powershell.exe -ExecutionPolicy Bypass -Command "Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.OpenFileDialog; $f.Filter = 'Image files (*.jpg;*.jpeg;*.png;*.bmp)|*.jpg;*.jpeg;*.png;*.bmp'; $f.Title = 'Select Thumbnail Image'; if($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { [System.IO.File]::WriteAllText('%TEMP_FILE%', $f.FileName) }"
-
-:: Check if user canceled
-if not exist "!TEMP_FILE!" (
-    echo User canceled image selection >> "!LOG_FILE!"
-    color 0E
-    echo Operation canceled. No image was selected.
-    goto :end_with_pause
+:: Handle frame selection
+if "!frame_timestamp!"=="-1" (
+    echo Enter timestamp for thumbnail (HH:MM:SS or seconds)...
+    set /p "timestamp="
+    
+    :: Convert timestamp to seconds if in HH:MM:SS format
+    set "frame_seconds=!timestamp!"
+    echo !timestamp! | findstr /r "^[0-9][0-9]*:[0-9][0-9]:[0-9][0-9]$" >nul
+    if not errorlevel 1 (
+        for /f "tokens=1-3 delims=:" %%a in ("!timestamp!") do (
+            set /a "frame_seconds = (%%a * 3600) + (%%b * 60) + %%c"
+        )
+    )
+) else (
+    set "frame_seconds=!frame_timestamp!"
 )
 
-:: Read the selected image path
-set "IMAGE_PATH="
-for /f "usebackq delims=" %%i in ("!TEMP_FILE!") do (
-    set "IMAGE_PATH=%%i"
-    goto :got_path
-)
-:got_path
-
-:: Delete temp file
-del "!TEMP_FILE!" >nul 2>&1
-
-echo Selected image: "!IMAGE_PATH!" >> "!LOG_FILE!"
-
-:: Verify image path
-if "!IMAGE_PATH!"=="" (
+:: Validate frame timestamp
+if !frame_seconds! lss 0 (
     color 0C
-    echo Error: Failed to get image path. | tee -a "!LOG_FILE!"
+    echo Error: Invalid timestamp. Must be greater than 0.
     goto :end_with_pause
 )
 
-if not exist "!IMAGE_PATH!" (
+if !frame_seconds! gtr !duration_seconds! (
     color 0C
-    echo Error: Selected image "!IMAGE_PATH!" does not exist. | tee -a "!LOG_FILE!"
+    echo Error: Timestamp exceeds video duration.
     goto :end_with_pause
 )
 
-echo Selected image: "!IMAGE_PATH!"
+echo Using frame at !frame_seconds! seconds
 echo.
 
 :: Delete existing output file
-if exist "!OUTPUT!" (
-    echo Deleting existing output file >> "!LOG_FILE!"
-    del "!OUTPUT!" 
-)
+if exist "!OUTPUT!" del "!OUTPUT!"
 
 echo Processing video... Please wait.
 echo Running FFMPEG command >> "!LOG_FILE!"
 
-:: Apply thumbnail to video
-"!FFMPEG!" -i "!INPUT!" -i "!IMAGE_PATH!" -map 0:v:0? -map 0:a? -map 1 -c copy -c:v:1 png -disposition:v:1 attached_pic -loglevel warning "!OUTPUT!" 2>>"!LOG_FILE!"
+:: Extract frame and apply as thumbnail
+"!FFMPEG!" -i "!INPUT!" -vf "select=eq(n\,!frame_seconds!*30)" -vframes 1 -f image2pipe -vcodec png - | "!FFMPEG!" -i "!INPUT!" -i - -map 0:v:0? -map 0:a? -map 1 -c copy -c:v:1 png -disposition:v:1 attached_pic -loglevel warning "!OUTPUT!" 2>>"!LOG_FILE!"
 
 :: Check result
 if !errorlevel! neq 0 (
