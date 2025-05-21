@@ -37,37 +37,79 @@ Handy right-click tools for everyday video tasks!
 3. Right-click on video files to access new context menu options!
 
 ## 💡 Usage
-- **Compress Video** <img src="src/icons/compress.ico" width="12" height="12">: MP4 compression with adjustable quality settings
+All tools run automatically with optimal settings. Just right-click and select the desired operation:
+- **Compress Video** <img src="src/icons/compress.ico" width="12" height="12">: MP4 compression with optimal quality settings
 - **Convert to MP4** <img src="src/icons/mkv2mp4.ico" width="12" height="12">: Convert MKV files to MP4 format
-- **Shrink** <img src="src/icons/shrink.ico" width="12" height="12">: Quick MP4 size reduction with preset settings
+- **Shrink** <img src="src/icons/shrink.ico" width="12" height="12">: Quick MP4 size reduction to fit social media limits
 - **Set Thumbnail** <img src="src/icons/thumb.ico" width="12" height="12">: Choose any frame as your video's thumbnail
 
 ## ⚙️ Configuration
-Create a `vidlet.ini` file in the same directory as the executable to customize VidLet's behavior:
+Each tool has its own INI file for customization. By default, all tools run non-interactively with optimal settings. To customize behavior, edit the corresponding INI file:
 
-### MKV Operations
+### MKV to MP4 (mkv2mp4.ini)
 ```ini
-[MKV2MP4]
-use_copy=1          # 1: Fast copy (recommended), 0: Re-encode if needed
-video_quality=23    # 18=high, 23=medium, 28=low (only used when re-encoding)
-preset=medium       # Encoding speed: ultrafast, fast, medium, slow
+# Use stream copy mode (1=yes, 0=no)
+# Copy mode is faster but may have compatibility issues
+#use_copy=1
+
+# Video quality (CRF value from 0-51)
+# Lower = better quality, 18-28 recommended
+#video_quality=23
+
+# Encoding preset
+# Options: ultrafast, fast, medium, slow
+# Slower = better compression but takes longer
+#preset=medium
 ```
 
-### MP4 Operations
+### Compression (compress.ini)
 ```ini
-[Compress]
-quality=medium      # Options: low, medium, high
-crf=23             # Lower values = better quality (18-28 recommended)
-preset=medium      # Encoding speed preset (slower = better compression)
+# Video bitrate in kb/s 
+# Higher = better quality but larger file
+# Recommended: 2000-4000 for HD, 1500-2500 for SD
+#bitrate=2500
 
-[Shrink]
-target_duration=59.5  # Target duration in seconds (default: 59.5s for shorts)
-quality=18           # Video quality (lower = better)
-preset=slow         # Encoding preset (slower = better quality)
-audio_bitrate=192   # Audio bitrate in kbps
+# Video quality (lower = better)
+# 18 = high quality, 23 = medium, 28 = low
+#crf=18
 
-[Thumbnail]
-frame_timestamp=-1   # -1: Prompt for frame, or set specific time in seconds
+# Encoding speed preset
+# Options: ultrafast, fast, medium, slow
+# Slower = better compression but takes longer
+#preset=medium
+```
+
+### Shrink (shrink.ini)
+```ini
+# Target duration in seconds (default: 59.5s for shorts)
+#target_duration=59.5
+
+# Video quality (lower = better)
+# 18 = high quality, 23 = medium, 28 = low
+#quality=18
+
+# Encoding speed preset
+# Options: ultrafast, fast, medium, slow
+# Slower = better compression but takes longer
+#preset=medium
+
+# Audio bitrate in kbps
+#audio_bitrate=192
+```
+
+### Thumbnail (thumb.ini)
+```ini
+# Set to -1 to prompt for frame timestamp
+# Set to any other value (in seconds) to use that frame directly
+#frame_timestamp=-1
+
+# Set to 1 to always use file browser for external image selection
+# Set to 0 to prompt for frame timestamp
+#use_file_browser=1
+
+# Default frame timestamp (in seconds) to use if use_file_browser=0
+# Format: HH:MM:SS or seconds (e.g., 00:01:30 or 90)
+#default_frame=00:00:00
 ```
 
 ## 🌱 Support & Contributions
