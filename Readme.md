@@ -30,6 +30,8 @@ Handy right-click tools for everyday video tasks!
 - <img src="src/icons/compress.ico" width="16" height="16" alt="Compress icon"> **Compress Videos**: Reduce MP4 video size with customizable settings
 - <img src="src/icons/shrink.ico" width="16" height="16" alt="Shrink icon"> **Shrink Videos**: Speed up videos to fit within 60 seconds (perfect for social media shorts)
 - <img src="src/icons/thumb.ico" width="16" height="16" alt="Thumbnail icon"> **Set Thumbnail**: Set video thumbnail from any frame in the video
+- <img src="src/icons/loop.ico" width="16" height="16" alt="Loop icon"> **Perfect Loop**: Create seamless looping videos by finding matching frames
+- <img src="src/icons/togif.ico" width="16" height="16" alt="GIF icon"> **Convert to GIF**: Convert MP4 videos to high-quality optimized GIFs
 
 ## 🚀 Quick Start
 1. Download this repository
@@ -42,6 +44,8 @@ All tools run automatically with optimal settings. Just right-click and select t
 - **Convert to MP4** <img src="src/icons/mkv2mp4.ico" width="12" height="12">: Convert MKV files to MP4 format
 - **Shrink** <img src="src/icons/shrink.ico" width="12" height="12">: Quick MP4 size reduction to fit social media limits
 - **Set Thumbnail** <img src="src/icons/thumb.ico" width="12" height="12">: Choose any frame as your video's thumbnail
+- **Perfect Loop** <img src="src/icons/loop.ico" width="12" height="12">: Create seamless looping videos automatically
+- **Convert to GIF** <img src="src/icons/togif.ico" width="12" height="12">: Create optimized GIFs with custom settings
 
 ## ⚙️ Configuration
 Each tool has its own INI file for customization. By default, all tools run non-interactively with optimal settings. To customize behavior, edit the corresponding INI file:
@@ -77,6 +81,40 @@ Each tool has its own INI file for customization. By default, all tools run non-
 # Options: ultrafast, fast, medium, slow
 # Slower = better compression but takes longer
 #preset=medium
+```
+
+### Perfect Loop (loop.ini)
+```ini
+# Duration to search for loop points (in seconds)
+#search_duration=5
+
+# Minimum loop length (in seconds)
+#min_loop_length=1
+
+# Maximum loop length (in seconds)
+#max_loop_length=3
+
+# Similarity threshold (0.0-1.0)
+# Higher values = more similar frames required
+#threshold=0.98
+
+# Crossfade duration (in seconds)
+#crossfade=0.5
+```
+
+### Convert to GIF (togif.ini)
+```ini
+# Output framerate
+#fps=15
+
+# Output width in pixels (height will scale proportionally)
+#width=480
+
+# Dithering algorithm (floyd_steinberg, bayer, sierra2_4a, etc.)
+#dither=sierra2_4a
+
+# Palette generation mode (full or diff)
+#stats_mode=full
 ```
 
 ### Shrink (shrink.ini)
