@@ -1,0 +1,272 @@
+{
+  "master": {
+    "tasks": [
+      {
+        "id": "1",
+        "title": "Initialize npm package with package.json",
+        "description": "Create package.json for @spark-apps/vidlet with correct name, version, TypeScript 5.x support, binaries for CLI, and all specified dependencies",
+        "details": "Run `npm init -y`, then set name: '@spark-apps/vidlet', version: '1.0.0', main: 'dist/index.js', types: 'dist/index.d.ts', bin: {'vidlet': 'dist/cli.js'}, files: ['dist'], scripts: {'build': 'tsup', 'dev': 'tsup --watch'}, engines: {'node': '>=18'}. Install deps: execa, sharp, commander, chalk, zod. Dev deps: @biomejs/biome@latest, tsup@latest, vitest@latest, @types/node. Add keywords and repository fields.",
+        "testStrategy": "Run `npm run build` and verify dist/ outputs generated. Check `npm pack --dry-run` produces correct package structure. Validate CLI binary with `npx vidlet --help`",
+        "priority": "high",
+        "dependencies": [],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-14T10:55:08.272Z"
+      },
+      {
+        "id": "2",
+        "title": "Configure TypeScript with tsconfig.json",
+        "description": "Set up tsconfig.json for modern TypeScript 5.x with tsup compatibility and strict type checking",
+        "details": "Create tsconfig.json: target: 'ES2022', module: 'ESNext', moduleResolution: 'bundler', strict: true, skipLibCheck: true, declaration: true, declarationMap: true, outDir: './dist', paths: {'@/*': ['./src/*']}, include: ['src/**/*'], exclude: ['node_modules', 'dist']. Ensure ESM compatibility for Node 18+.",
+        "testStrategy": "Run `npx tsc --noEmit` to verify no type errors. Test tsup build produces declaration files.",
+        "priority": "high",
+        "dependencies": [
+          "1"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-14T10:55:08.293Z"
+      },
+      {
+        "id": "3",
+        "title": "Configure Biome linting and formatting",
+        "description": "Set up biome.json for TypeScript linting/formatting following PRD requirements",
+        "details": "Create biome.json with linter: {enabled: true, rules: {recommended: true}}, formatter: {enabled: true, formatWithErrors: false}, javascript: {formatter: {quoteStyle: 'single', trailingComma: 'es5'}}, organizeImports: {enabled: true}. Add scripts: 'lint': 'biome lint src', 'format': 'biome format --write src'.",
+        "testStrategy": "Run `npm run lint` and `npm run format` on empty src/, verify no errors. Add sample TS file and ensure formatting works.",
+        "priority": "high",
+        "dependencies": [
+          "1"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-14T10:55:08.317Z"
+      },
+      {
+        "id": "4",
+        "title": "Create project directory structure",
+        "description": "Set up exact folder structure as specified in PRD architecture diagram",
+        "details": "Create directories: src/, src/core/, src/tools/, src/detection/, src/registry/. Create empty stub files matching PRD: src/index.ts, src/cli.ts, src/core/ffmpeg.ts, src/core/config.ts, src/core/paths.ts, src/tools/compress.ts, src/tools/togif.ts, src/tools/loop.ts, src/tools/mkv2mp4.ts, src/tools/shrink.ts, src/tools/thumb.ts, src/detection/loop-detector.ts, src/registry/install.ts, src/registry/uninstall.ts.",
+        "testStrategy": "Verify folder structure matches PRD diagram exactly. Run `git status` to confirm all files created.",
+        "priority": "high",
+        "dependencies": [
+          "1"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-14T10:55:08.341Z"
+      },
+      {
+        "id": "5",
+        "title": "Configure tsup build pipeline",
+        "description": "Set up tsup for building TypeScript to multiple formats with CLI binary support",
+        "details": "Create tsup.config.ts: import { defineConfig } from 'tsup'; export default defineConfig({ entry: ['src/cli.ts', 'src/index.ts'], format: ['cjs', 'esm'], dts: true, splitting: false, sourcemap: true, clean: true, outDir: 'dist', treeshake: true, banner: { js: '/* @spark-apps/vidlet */' } }). Add 'build': 'tsup' to package.json scripts.",
+        "testStrategy": "Run `npm run build`, verify dist/cli.js and dist/index.js created with shebang. Test `node dist/cli.js --help` works.",
+        "priority": "high",
+        "dependencies": [
+          "1",
+          "2",
+          "3"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-14T10:55:08.363Z"
+      },
+      {
+        "id": "6",
+        "title": "Implement Windows/WSL path conversion utilities",
+        "description": "Create paths.ts with wslpath integration and Windows/WSL path conversion functions",
+        "details": "In src/core/paths.ts: export async function toWSLPath(winPath: string): Promise<string> { return execaCommand('wslpath', ['-u', winPath]).stdout; } export function detectWSL(): boolean { return process.platform === 'linux' || process.env.WSL_DISTRO_NAME; } Export from index.ts. Handle edge cases like network paths and spaces.",
+        "testStrategy": "Unit tests: test toWSLPath('C:\\test.mp4') returns WSL path. Test detectWSL() in WSL vs Windows. Integration test with real video file.",
+        "priority": "high",
+        "dependencies": [
+          "4"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-14T10:55:08.385Z"
+      },
+      {
+        "id": "7",
+        "title": "Implement FFmpeg command builder and executor",
+        "description": "Create core ffmpeg.ts with command building, execution, and progress handling via execa",
+        "details": "In src/core/ffmpeg.ts: interface FFmpegOptions { input: string; output: string; args?: string[]; } export async function executeFFmpeg(options: FFmpegOptions, cwd?: string): Promise<void> { const cmd = ['ffmpeg', '-i', options.input, ...options.args || [], options.output]; await execa('ffmpeg', cmd, { cwd, stdio: 'inherit' }); } Add buildCommand() helper for common patterns.",
+        "testStrategy": "Unit test buildCommand() generates correct ffmpeg args. Integration test simple ffmpeg conversion. Mock execa for unit tests.",
+        "priority": "high",
+        "dependencies": [
+          "4",
+          "6"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-14T10:55:08.410Z"
+      },
+      {
+        "id": "8",
+        "title": "Implement JSON configuration management",
+        "description": "Create config.ts with Zod schema validation and default config at ~/.config/vidlet/config.json",
+        "details": "In src/core/config.ts: Define Zod schemas matching PRD config structure. export async function loadConfig(): Promise<Config> { const path = path.join(os.homedir(), '.config/vidlet/config.json'); return schema.parse(await fs.readJson(path).catch(() => defaults)); } Add saveConfig(), getToolConfig('compress'). Use exact default values from PRD.",
+        "testStrategy": "Test loadConfig() returns defaults when no file. Test validation rejects invalid JSON. Test save/load roundtrip preserves values.",
+        "priority": "high",
+        "dependencies": [
+          "4"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-14T10:55:08.434Z"
+      },
+      {
+        "id": "9",
+        "title": "Implement CLI entry point with commander",
+        "description": "Create cli.ts with all 9 CLI commands using commander.js",
+        "details": "In src/cli.ts: import { Command } from 'commander'; const program = new Command().name('vidlet').version('1.0.0'); program.command('install').action(install); program.command('uninstall').action(uninstall); program.command('compress <file>').action(compress); [add all 6 tools + config]. program.parseAsync(). Export CLI function for registry calls.",
+        "testStrategy": "Test `node dist/cli.js --help` shows all commands. Test `node dist/cli.js compress test.mp4` parses args correctly.",
+        "priority": "high",
+        "dependencies": [
+          "4",
+          "5"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-14T10:55:08.460Z"
+      },
+      {
+        "id": "10",
+        "title": "Implement video compress tool",
+        "description": "Port compress tool using libx264 with configurable bitrate/preset from config",
+        "details": "In src/tools/compress.ts: async function compress(file: string) { const cfg = await getToolConfig('compress'); const output = file.replace(/\\/g, '.mp4'); await executeFFmpeg({ input: file, output, args: ['-c:v', 'libx264', '-b:v', `${cfg.bitrate}k`, '-preset', cfg.preset] }); }",
+        "testStrategy": "Test compresses sample MP4, verify output smaller size, check ffmpeg logs for correct bitrate/preset.",
+        "priority": "medium",
+        "dependencies": [
+          "7",
+          "8"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-14T10:55:08.485Z"
+      },
+      {
+        "id": "11",
+        "title": "Implement MP4 to GIF conversion with palette",
+        "description": "Port togif tool with palette optimization, configurable FPS/width/dither",
+        "details": "In src/tools/togif.ts: async function togif(file: string) { const cfg = await getToolConfig('togif'); const palette = file.replace('.mp4', '-palette.png'); await executeFFmpeg({input: file, output: palette, args: ['-vf', `fps=${cfg.fps},scale=${cfg.width}:-1:flags=lanczos,palettegen`] }); await executeFFmpeg({input: file, output: file.replace('.mp4', '.gif'), args: ['-i', palette, '-lavfi', `fps=${cfg.fps},scale=${cfg.width}:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=${cfg.dither}`] }); }",
+        "testStrategy": "Test MP4->GIF conversion, verify smooth playback, check file size reasonable, validate palette generation step.",
+        "priority": "medium",
+        "dependencies": [
+          "7",
+          "8"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-14T10:55:08.509Z"
+      },
+      {
+        "id": "12",
+        "title": "Implement loop detection using sharp/pixelmatch",
+        "description": "Replace Python OpenCV with Node.js frame similarity detection for seamless loops",
+        "details": "In src/detection/loop-detector.ts: Use ffmpeg to extract frames to temp dir, sharp to process, pixelmatch for similarity. export async function findLoopFrames(video: string, config: LoopConfig): Promise<{start: number, end: number}> { ... } Implement frame extraction, similarity scoring with threshold 0.98, return best loop segment.",
+        "testStrategy": "Test on known looping video, verify detects correct loop points. Test threshold sensitivity. Memory usage test for large videos.",
+        "priority": "medium",
+        "dependencies": [
+          "7"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-14T10:55:08.532Z"
+      },
+      {
+        "id": "13",
+        "title": "Implement remaining video tools (mkv2mp4, shrink, thumb, loop)",
+        "description": "Complete implementation of 4 remaining tools using config and ffmpeg core",
+        "details": "mkv2mp4.ts: remux with -c copy or reencode CRF 23. shrink.ts: speed up to targetDuration 59.5s. thumb.ts: extract frame at timestamp. loop.ts: use loop-detector + crossfade. All use tool-specific config values from PRD.",
+        "testStrategy": "Individual integration tests for each tool with sample inputs. Verify output formats, durations, quality match expectations.",
+        "priority": "medium",
+        "dependencies": [
+          "7",
+          "8",
+          "10",
+          "11",
+          "12"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-14T10:55:08.555Z"
+      },
+      {
+        "id": "14",
+        "title": "Implement Windows registry integration",
+        "description": "Create install.ts/uninstall.ts generating .reg files calling WSL vidlet directly",
+        "details": "In src/registry/install.ts: Generate .reg file with context menu entries: wsl.exe -e vidlet compress \"$(wslpath '%1')\" for each tool. Use execa('reg', ['import', 'vidlet.reg']) with elevation prompt. uninstall.ts removes same keys. Handle admin elevation messaging.",
+        "testStrategy": "Test generates correct .reg syntax. Test import/export on test VM. Verify context menu appears in Explorer.",
+        "priority": "high",
+        "dependencies": [
+          "6",
+          "9"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-14T10:55:08.581Z"
+      },
+      {
+        "id": "15",
+        "title": "Create main index.ts exports and README.md",
+        "description": "Export all public APIs from index.ts and write comprehensive README",
+        "details": "In src/index.ts: re-export core/*, tools/*, detection/*, registry/*. README.md: installation, CLI usage, config examples, WSL setup (apt install ffmpeg), Windows context menu screenshots, config file location.",
+        "testStrategy": "Verify `import { compress } from '@spark-apps/vidlet'` works post-build. Validate README renders correctly on npm/GitHub.",
+        "priority": "medium",
+        "dependencies": [
+          "9",
+          "10",
+          "11",
+          "13",
+          "14"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-14T10:55:25.913Z"
+      },
+      {
+        "id": "16",
+        "title": "Add comprehensive Vitest unit/integration tests",
+        "description": "Write tests for path conversion, config, ffmpeg execution, and all tools",
+        "details": "Configure vitest.config.ts with coverage. Test suites: paths.test.ts, config.test.ts, each tool with mock execa/ffmpeg. Integration tests spawn real ffmpeg subprocesses with sample videos.",
+        "testStrategy": "Run `npm test`, achieve >90% coverage. Test edge cases: invalid paths, missing ffmpeg, bad config.",
+        "priority": "medium",
+        "dependencies": [
+          "6",
+          "7",
+          "8",
+          "10",
+          "11",
+          "12",
+          "13"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-14T10:55:25.935Z"
+      },
+      {
+        "id": "17",
+        "title": "Final linting, formatting, and documentation polish",
+        "description": "Run Biome across all code, fix issues, add --help docs to all commands",
+        "details": "Run `npm run lint -- --apply`, `npm run format`. Add .commander descriptions to all CLI commands. Update README with all success criteria examples. Add changelog.md.",
+        "testStrategy": "Biome lint passes 0 errors. All CLI commands show proper --help output. Verify TypeScript compiles cleanly.",
+        "priority": "low",
+        "dependencies": [
+          "15"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-14T10:55:25.959Z"
+      }
+    ],
+    "metadata": {
+      "version": "1.0.0",
+      "lastModified": "2026-01-14T10:55:25.965Z",
+      "taskCount": 17,
+      "completedCount": 17,
+      "tags": [
+        "master"
+      ]
+    }
+  }
+}

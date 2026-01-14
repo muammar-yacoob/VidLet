@@ -1,4 +1,32 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Test videos
 *.mp4
 *.mkv
+*.gif
 /demo
 *.srt
+
+# IDE
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Environment
+.env
+.env.local
+
+# Coverage
+coverage/

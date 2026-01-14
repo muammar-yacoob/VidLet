@@ -1,51 +1,48 @@
-name: Build VidLet Installer
+name: Release 🚀
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
 
 jobs:
   release:
-    if: "!contains(github.event.head_commit.message, 'skip-ci')"
+    name: Release
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      issues: write
-      pull-requests: write
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v3
         with:
           fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
           node-version: 'lts/*'
-          
-      - name: Install dependencies
-        run: npm install -g semantic-release @semantic-release/github @semantic-release/changelog
-        
-      - name: Download FFmpeg
-        run: |
-          mkdir -p libs
-          curl -L "https://github.com/GyanD/codexffmpeg/releases/download/6.0/ffmpeg-6.0-essentials_build.zip" -o "ffmpeg.zip"
-          unzip -jo "ffmpeg.zip" "ffmpeg-6.0-essentials_build/bin/ffmpeg.exe" -d "libs/"
-          rm "ffmpeg.zip"
-      
-      - name: Create Package
-        run: |
-          mkdir -p release/src/icons release/libs
-          cp install_vidlet.bat release/
-          cp uninstall_vidlet.bat release/
-          cp -r src/* release/src/
-          cp src/icons/* release/src/icons/
-          cp -r libs/* release/libs/
-          cp Readme.md release/
-          zip -r VidLet.zip release/*
 
-      - name: Semantic Release
+      - name: Create Extension Package
+        run: |
+          NAME=$(node -p "require('./manifest.json').name.replace(' ', '')")
+          zip -r $NAME.zip . -x "*.git*" "*.github*" "*.md" "LICENSE" "manifest.json"
+
+      - name: Update manifest version
+        run: |
+          VERSION=$(npx semantic-release --dry-run | grep 'The next release version is' | awk '{print $NF}')
+          if [ ! -z "$VERSION" ]; then
+            jq '.version = "'$VERSION'"' manifest.json > manifest.tmp
+            mv manifest.tmp manifest.json
+          fi
+
+      - name: Install semantic-release
+        run: npm install -g semantic-release @semantic-release/git @semantic-release/changelog
+
+      - name: Create Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          npx semantic-release
+        run: npx semantic-release
