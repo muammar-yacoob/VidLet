@@ -1,71 +1,95 @@
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { execa } from 'execa';
-import { fmt, header, separator, success, warn } from './lib/logger.js';
+import { fmt, header, success, warn } from './lib/logger.js';
 import { isWSL } from './lib/paths.js';
 
-interface ContextMenuEntry {
-  extension: string;
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+interface SubMenuEntry {
   key: string;
   label: string;
   command: string;
-  icon?: string;
 }
 
-const CONTEXT_MENU_ENTRIES: ContextMenuEntry[] = [
-  {
-    extension: '.mp4',
-    key: 'VidLetCompress',
-    label: 'Compress Video',
-    command: 'compress',
-  },
-  {
-    extension: '.mp4',
-    key: 'VidLetToGif',
-    label: 'Convert to GIF',
-    command: 'togif',
-  },
-  {
-    extension: '.mp4',
-    key: 'VidLetShrink',
-    label: 'Shrink Video',
-    command: 'shrink',
-  },
-  {
-    extension: '.mp4',
-    key: 'VidLetThumb',
-    label: 'Set Thumbnail',
-    command: 'thumb',
-  },
-  {
-    extension: '.mp4',
-    key: 'VidLetLoop',
-    label: 'Create Loop',
-    command: 'loop',
-  },
-  {
-    extension: '.mkv',
-    key: 'VidLetMkv2Mp4',
-    label: 'Convert to MP4',
-    command: 'mkv2mp4',
-  },
+const MP4_MENU_ENTRIES: SubMenuEntry[] = [
+  { key: 'Compress', label: 'Compress Video', command: 'compress' },
+  { key: 'ToGif', label: 'Convert to GIF', command: 'togif' },
+  { key: 'Shrink', label: 'Shrink Video', command: 'shrink' },
+  { key: 'Loop', label: 'Create Loop', command: 'loop' },
+];
+
+const MKV_MENU_ENTRIES: SubMenuEntry[] = [
+  { key: 'Mkv2Mp4', label: 'Convert to MP4', command: 'mkv2mp4' },
 ];
 
 /**
- * Generate Windows registry file content
+ * Get the Windows path to the icon file
  */
-function generateRegContent(): string {
+async function getIconPath(): Promise<string> {
+  // Icon is in the package's icons folder
+  const iconPath = path.resolve(__dirname, '../icons/tv.ico');
+
+  if (isWSL()) {
+    try {
+      const { stdout } = await execa('wslpath', ['-w', iconPath]);
+      return stdout.trim();
+    } catch {
+      return iconPath;
+    }
+  }
+  return iconPath;
+}
+
+/**
+ * Generate Windows registry file content with cascading menu
+ */
+async function generateRegContent(): Promise<string> {
+  const iconPath = await getIconPath();
   const lines: string[] = ['Windows Registry Editor Version 5.00', ''];
 
-  for (const entry of CONTEXT_MENU_ENTRIES) {
-    const regPath = `HKEY_CLASSES_ROOT\\SystemFileAssociations\\${entry.extension}\\Shell\\${entry.key}`;
+  // Generate menu for .mp4 files
+  const mp4Base = 'HKEY_CLASSES_ROOT\\SystemFileAssociations\\.mp4\\shell\\VidLet';
+  const mp4SubCommands = MP4_MENU_ENTRIES.map((e) => `VidLet.${e.key}`).join(';');
 
-    lines.push(`[${regPath}]`);
+  lines.push(`[${mp4Base}]`);
+  lines.push(`"MUIVerb"="VidLet"`);
+  lines.push(`"Icon"="${iconPath.replace(/\\/g, '\\\\')}"`);
+  lines.push(`"SubCommands"="${mp4SubCommands}"`);
+  lines.push('');
+
+  // Add subcommands for .mp4
+  for (const entry of MP4_MENU_ENTRIES) {
+    const cmdBase = `HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\CommandStore\\shell\\VidLet.${entry.key}`;
+    lines.push(`[${cmdBase}]`);
     lines.push(`@="${entry.label}"`);
     lines.push('');
+    lines.push(`[${cmdBase}\\command]`);
+    lines.push(
+      `@="wsl.exe -e bash -c \\"vidlet ${entry.command} \\\\\\"$(wslpath '%1')\\\\\\"\\""`
+    );
+    lines.push('');
+  }
 
-    lines.push(`[${regPath}\\command]`);
+  // Generate menu for .mkv files
+  const mkvBase = 'HKEY_CLASSES_ROOT\\SystemFileAssociations\\.mkv\\shell\\VidLet';
+  const mkvSubCommands = MKV_MENU_ENTRIES.map((e) => `VidLet.${e.key}`).join(';');
+
+  lines.push(`[${mkvBase}]`);
+  lines.push(`"MUIVerb"="VidLet"`);
+  lines.push(`"Icon"="${iconPath.replace(/\\/g, '\\\\')}"`);
+  lines.push(`"SubCommands"="${mkvSubCommands}"`);
+  lines.push('');
+
+  // Add subcommands for .mkv
+  for (const entry of MKV_MENU_ENTRIES) {
+    const cmdBase = `HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\CommandStore\\shell\\VidLet.${entry.key}`;
+    lines.push(`[${cmdBase}]`);
+    lines.push(`@="${entry.label}"`);
+    lines.push('');
+    lines.push(`[${cmdBase}\\command]`);
     lines.push(
       `@="wsl.exe -e bash -c \\"vidlet ${entry.command} \\\\\\"$(wslpath '%1')\\\\\\"\\""`
     );
@@ -86,7 +110,7 @@ export async function install(): Promise<void> {
 
   header('VidLet Windows Integration');
 
-  const regContent = generateRegContent();
+  const regContent = await generateRegContent();
   const regPath = path.join(os.tmpdir(), 'vidlet_install.reg');
   await fs.writeFile(regPath, regContent, 'utf-8');
 
@@ -121,14 +145,14 @@ export async function install(): Promise<void> {
 
   console.log('');
   success('Installation complete!');
-  console.log(fmt.dim('Right-click video files to see VidLet options.'));
+  console.log(fmt.dim('Right-click video files to see VidLet menu.'));
 }
 
 /**
  * Generate and display the registry file path
  */
 export async function generateRegFile(): Promise<string> {
-  const regContent = generateRegContent();
+  const regContent = await generateRegContent();
   const regPath = path.join(os.tmpdir(), 'vidlet_install.reg');
   await fs.writeFile(regPath, regContent, 'utf-8');
   return regPath;
@@ -137,6 +161,6 @@ export async function generateRegFile(): Promise<string> {
 /**
  * Get the registry content as string (for inspection)
  */
-export function getRegContent(): string {
+export async function getRegContent(): Promise<string> {
   return generateRegContent();
 }

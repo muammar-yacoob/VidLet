@@ -6,12 +6,15 @@ import { fmt, header, success, warn } from './lib/logger.js';
 import { isWSL } from './lib/paths.js';
 
 const REGISTRY_KEYS = [
-  'HKEY_CLASSES_ROOT\\SystemFileAssociations\\.mp4\\Shell\\VidLetCompress',
-  'HKEY_CLASSES_ROOT\\SystemFileAssociations\\.mp4\\Shell\\VidLetToGif',
-  'HKEY_CLASSES_ROOT\\SystemFileAssociations\\.mp4\\Shell\\VidLetShrink',
-  'HKEY_CLASSES_ROOT\\SystemFileAssociations\\.mp4\\Shell\\VidLetThumb',
-  'HKEY_CLASSES_ROOT\\SystemFileAssociations\\.mp4\\Shell\\VidLetLoop',
-  'HKEY_CLASSES_ROOT\\SystemFileAssociations\\.mkv\\Shell\\VidLetMkv2Mp4',
+  // Parent menus
+  'HKEY_CLASSES_ROOT\\SystemFileAssociations\\.mp4\\shell\\VidLet',
+  'HKEY_CLASSES_ROOT\\SystemFileAssociations\\.mkv\\shell\\VidLet',
+  // Command store entries
+  'HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\CommandStore\\shell\\VidLet.Compress',
+  'HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\CommandStore\\shell\\VidLet.ToGif',
+  'HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\CommandStore\\shell\\VidLet.Shrink',
+  'HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\CommandStore\\shell\\VidLet.Loop',
+  'HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\CommandStore\\shell\\VidLet.Mkv2Mp4',
 ];
 
 /**
@@ -53,12 +56,7 @@ export async function uninstall(): Promise<void> {
     }
 
     console.log('');
-    console.log(fmt.dim('Or run these commands to delete keys individually:'));
-    console.log('');
-
-    for (const key of REGISTRY_KEYS) {
-      console.log(fmt.dim(`  reg delete "${key}" /f`));
-    }
+    console.log(fmt.dim('Or double-click the .reg file in Windows Explorer.'));
   } else {
     console.log(fmt.dim('Removing registry entries...'));
 
