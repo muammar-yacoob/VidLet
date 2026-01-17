@@ -22,6 +22,13 @@ const MIN_LOOP_LENGTH = 1;
 const SEARCH_DURATION = 10;
 const SIMILARITY_THRESHOLD = 0.95;
 
+export interface LoopPair {
+  id: number;
+  start: number;
+  end: number;
+  score: number;
+}
+
 /**
  * Compare two PNG buffers and return similarity score (0-1)
  */
@@ -133,6 +140,118 @@ async function findLoopPoints(
     return result_points;
   } catch (err) {
     logToFile(`Loop: Error in findLoopPoints: ${(err as Error).message}`);
+    throw err;
+  } finally {
+    try {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    } catch {
+      // Ignore cleanup errors
+    }
+  }
+}
+
+/**
+ * Loop start point with multiple matching end points
+ */
+export interface LoopStartPoint {
+  id: number;
+  time: number;
+  matches: Array<{ end: number; score: number }>;
+}
+
+/**
+ * Find ALL similar frame pairs with minimum gap
+ * Returns start points, each with multiple matching end points
+ */
+export async function findAllLoopPoints(
+  inputPath: string,
+  duration: number,
+  minGap = 5,
+  threshold = SIMILARITY_THRESHOLD
+): Promise<LoopStartPoint[]> {
+  const searchDuration = Math.min(30, duration);
+  const fps = 4; // Lower FPS for speed (was 10)
+  const frameSize = 48; // Smaller frames for speed (was 64)
+
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'vidlet_loop_all_'));
+  logToFile(`Loop: Finding loop points in ${inputPath}, duration: ${searchDuration}s, minGap: ${minGap}s`);
+
+  try {
+    const ffmpegArgs = [
+      '-y',
+      '-i',
+      inputPath,
+      '-t',
+      searchDuration.toString(),
+      '-vf',
+      `fps=${fps},scale=${frameSize}:${frameSize}`,
+      '-f',
+      'image2',
+      path.join(tempDir, 'frame_%04d.png'),
+      '-hide_banner',
+      '-loglevel',
+      'error',
+    ];
+
+    const result = await execa('ffmpeg', ffmpegArgs, { reject: false, all: true });
+
+    if (result.exitCode !== 0) {
+      throw new Error(`Frame extraction failed: ${result.all || result.stderr}`);
+    }
+
+    const files = await fs.readdir(tempDir);
+    const framePaths = files
+      .filter((f) => f.startsWith('frame_') && f.endsWith('.png'))
+      .sort()
+      .map((f) => path.join(tempDir, f));
+
+    logToFile(`Loop: Extracted ${framePaths.length} frames`);
+
+    if (framePaths.length < fps * minGap) {
+      return [];
+    }
+
+    const frames: Buffer[] = await Promise.all(framePaths.map((fp) => fs.readFile(fp)));
+    const minFrameGap = Math.floor(minGap * fps);
+
+    // Build map of start frame -> matching end frames
+    const startMatches = new Map<number, Array<{ end: number; score: number }>>();
+
+    for (let i = 0; i < frames.length - minFrameGap; i++) {
+      const matches: Array<{ end: number; score: number }> = [];
+
+      for (let j = i + minFrameGap; j < frames.length; j++) {
+        const score = compareFrames(frames[i], frames[j]);
+        if (score >= threshold) {
+          matches.push({ end: j / fps, score });
+        }
+      }
+
+      if (matches.length > 0) {
+        // Sort matches by score descending, keep top 5
+        matches.sort((a, b) => b.score - a.score);
+        startMatches.set(i, matches.slice(0, 5));
+      }
+    }
+
+    // Convert to array, limit to 10 start points
+    const startPoints: LoopStartPoint[] = [];
+    const sortedStarts = Array.from(startMatches.keys()).sort((a, b) => a - b);
+
+    for (const startFrame of sortedStarts) {
+      if (startPoints.length >= 10) break;
+      const matches = startMatches.get(startFrame)!;
+      startPoints.push({
+        id: startPoints.length,
+        time: startFrame / fps,
+        matches,
+      });
+    }
+
+    logToFile(`Loop: Found ${startPoints.length} start points with matches`);
+    return startPoints;
+  } catch (err) {
+    logToFile(`Loop: Error in findAllLoopPoints: ${(err as Error).message}`);
     throw err;
   } finally {
     try {

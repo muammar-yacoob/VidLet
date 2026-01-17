@@ -15,6 +15,8 @@ export interface VideoInfo {
   height: number;
   fps: number;
   codec: string;
+  bitrate: number; // in kbps
+  hasAudio: boolean;
 }
 
 /**
@@ -58,12 +60,22 @@ export async function getVideoInfo(inputPath: string): Promise<VideoInfo> {
     fps = den ? num / den : num;
   }
 
+  // Get bitrate in kbps (from format or video stream)
+  const formatBitrate = Number.parseInt(data.format?.bit_rate || '0', 10);
+  const streamBitrate = Number.parseInt(videoStream.bit_rate || '0', 10);
+  const bitrate = Math.round((streamBitrate || formatBitrate) / 1000);
+
+  // Check for audio stream
+  const hasAudio = data.streams?.some((s: { codec_type: string }) => s.codec_type === 'audio') ?? false;
+
   return {
     duration: Number.parseFloat(data.format?.duration || '0'),
     width: videoStream.width || 0,
     height: videoStream.height || 0,
     fps: Math.round(fps * 100) / 100,
     codec: videoStream.codec_name || 'unknown',
+    bitrate,
+    hasAudio,
   };
 }
 
@@ -114,11 +126,15 @@ export async function executeFFmpeg(options: FFmpegOptions): Promise<void> {
     if (result.exitCode !== 0) {
       const errorMsg = result.stderr || `Exit code ${result.exitCode}`;
       logToFile(`FFmpeg error: ${errorMsg}`);
-      throw new Error(`FFmpeg failed: ${errorMsg}`);
+      const err = new Error(`FFmpeg failed: ${errorMsg}`);
+      (err as any).isFFmpegError = true;
+      throw err;
     }
 
     logToFile(`FFmpeg success: Output at ${output}`);
   } catch (error) {
+    // Don't double-wrap FFmpeg errors
+    if ((error as any).isFFmpegError) throw error;
     const execaError = error as ExecaError;
     logToFile(`FFmpeg exception: ${execaError.message}`);
     throw new Error(`FFmpeg failed: ${execaError.message}`);
@@ -160,11 +176,15 @@ export async function executeFFmpegMultiInput(
     if (result.exitCode !== 0) {
       const errorMsg = result.stderr || `Exit code ${result.exitCode}`;
       logToFile(`FFmpeg error: ${errorMsg}`);
-      throw new Error(`FFmpeg failed: ${errorMsg}`);
+      const err = new Error(`FFmpeg failed: ${errorMsg}`);
+      (err as any).isFFmpegError = true;
+      throw err;
     }
 
     logToFile(`FFmpeg success: Output at ${output}`);
   } catch (error) {
+    // Don't double-wrap FFmpeg errors
+    if ((error as any).isFFmpegError) throw error;
     const execaError = error as ExecaError;
     logToFile(`FFmpeg exception: ${execaError.message}`);
     throw new Error(`FFmpeg failed: ${execaError.message}`);

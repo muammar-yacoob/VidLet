@@ -9,7 +9,7 @@ import { shrink } from '../tools/shrink.js';
 import { thumb } from '../tools/thumb.js';
 import { togif } from '../tools/togif.js';
 import { trim, trimAccurate } from '../tools/trim.js';
-import { shorts } from '../tools/shorts.js';
+import { portrait } from '../tools/shorts.js';
 import * as vidletMain from '../tools/vidlet-main.js';
 
 /**
@@ -101,11 +101,11 @@ export const toolConfigs: ToolConfig[] = [
 		description: 'Trim video to specific time range',
 	},
 	{
-		id: 'shorts',
-		name: 'Make Shorts',
+		id: 'portrait',
+		name: 'Portrait',
 		icon: 'tv.ico',
 		extensions: ['.mp4', '.mkv', '.avi', '.mov', '.webm'],
-		description: 'Convert landscape video to 9:16 portrait for shorts',
+		description: 'Convert landscape video to 9:16 portrait',
 	},
 ];
 
@@ -391,7 +391,7 @@ export const tools: Tool[] = [
 	{
 		config: toolConfigs[7],
 		run: async (input, options) => {
-			return shorts({
+			return portrait({
 				input,
 				output: options.output as string | undefined,
 				mode: (options.mode as 'crop' | 'blur') || 'crop',

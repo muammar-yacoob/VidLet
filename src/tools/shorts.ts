@@ -2,7 +2,7 @@ import { checkFFmpeg, executeFFmpeg, getVideoInfo } from '../lib/ffmpeg.js';
 import { fmt, header, separator, success } from '../lib/logger.js';
 import { getOutputPath } from '../lib/paths.js';
 
-export interface ShortsOptions {
+export interface PortraitOptions {
 	input: string;
 	output?: string;
 	mode: 'crop' | 'blur';
@@ -11,9 +11,9 @@ export interface ShortsOptions {
 }
 
 /**
- * Convert landscape (16:9) video to portrait (9:16) for shorts
+ * Convert landscape (16:9) video to portrait (9:16)
  */
-export async function shorts(options: ShortsOptions): Promise<string> {
+export async function portrait(options: PortraitOptions): Promise<string> {
 	const { input, output: customOutput, mode = 'crop', cropX = 0.5, resolution = 1080 } = options;
 
 	if (!(await checkFFmpeg())) {
@@ -26,11 +26,11 @@ export async function shorts(options: ShortsOptions): Promise<string> {
 	const outWidth = resolution;
 	const outHeight = Math.round((resolution * 16) / 9);
 
-	const output = customOutput ?? getOutputPath(input, '_shorts');
+	const output = customOutput ?? getOutputPath(input, '_portrait');
 
 	const cropPos = cropX < 0.33 ? 'left' : cropX > 0.66 ? 'right' : 'center';
 
-	header('Create Shorts');
+	header('Create Portrait');
 	console.log(`Input:    ${fmt.white(input)}`);
 	console.log(`Size:     ${fmt.white(`${info.width}x${info.height}`)}`);
 	console.log(`Output:   ${fmt.yellow(`${outWidth}x${outHeight}`)} (9:16)`);

@@ -2,8 +2,10 @@
  * GUI Server - Serves HTML interface and handles API calls for video processing
  */
 import { exec, spawn } from 'node:child_process';
+import * as fs from 'node:fs';
 import { createServer } from 'node:http';
-import { dirname, join } from 'node:path';
+import * as os from 'node:os';
+import { dirname, join, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { logToFile } from './logger.js';
@@ -11,10 +13,13 @@ import { logToFile } from './logger.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 /**
- * Kill any running FFmpeg processes
+ * Kill any running FFmpeg processes (Windows compatible)
  */
 function killFFmpegProcesses(): void {
-	exec('pkill -f ffmpeg', (err) => {
+	// Use taskkill on Windows, pkill on Unix
+	const isWindows = os.platform() === 'win32';
+	const cmd = isWindows ? 'taskkill /F /IM ffmpeg.exe /T' : 'pkill -f ffmpeg';
+	exec(cmd, (err) => {
 		if (!err) {
 			logToFile('Killed FFmpeg processes on shutdown');
 		}
@@ -82,6 +87,7 @@ export interface VideoInfo {
 	height: number;
 	duration: number;
 	fps: number;
+	bitrate: number;
 }
 
 export interface GuiServerOptions {
@@ -110,6 +116,11 @@ export interface GuiServerOptions {
 		height?: number;
 		duration?: number;
 		fps?: number;
+		error?: string;
+	}>;
+	onDetectLoops?: (minGap: number) => Promise<{
+		success: boolean;
+		startPoints?: Array<{ id: number; time: number; matches: Array<{ end: number; score: number }> }>;
 		error?: string;
 	}>;
 }
@@ -151,6 +162,7 @@ export function startGuiServer(options: GuiServerOptions): Promise<boolean> {
 				height: options.videoInfo.height,
 				duration: options.videoInfo.duration,
 				fps: options.videoInfo.fps,
+				bitrate: options.videoInfo.bitrate,
 				defaults: options.defaults,
 			});
 		});
@@ -217,6 +229,42 @@ export function startGuiServer(options: GuiServerOptions): Promise<boolean> {
 			}
 		});
 
+		app.post('/api/detect-loops', async (req, res) => {
+			if (!options.onDetectLoops) {
+				res.json({ success: false, error: 'Loop detection not supported' });
+				return;
+			}
+			try {
+				const minGap = req.body.minGap || 5;
+				const result = await options.onDetectLoops(minGap);
+				res.json(result);
+			} catch (err) {
+				res.json({ success: false, error: (err as Error).message });
+			}
+		});
+
+		// Upload file (audio/image) and return temp path
+		app.post('/api/upload', (req, res) => {
+			try {
+				const { fileName, data, type } = req.body;
+				if (!fileName || !data) {
+					res.json({ success: false, error: 'Missing file data' });
+					return;
+				}
+
+				// Decode base64 and save to temp file
+				const ext = extname(fileName) || (type === 'audio' ? '.mp3' : '.png');
+				const tempPath = join(os.tmpdir(), `vidlet_${type}_${Date.now()}${ext}`);
+				const buffer = Buffer.from(data.split(',').pop() || data, 'base64');
+				fs.writeFileSync(tempPath, buffer);
+
+				logToFile(`Uploaded ${type} file: ${tempPath}`);
+				res.json({ success: true, path: tempPath });
+			} catch (err) {
+				res.json({ success: false, error: (err as Error).message });
+			}
+		});
+
 		app.post('/api/cancel', (_req, res) => {
 			processResult = false;
 			killFFmpegProcesses();
@@ -276,5 +324,14 @@ export function startGuiServer(options: GuiServerOptions): Promise<boolean> {
 			console.error('GUI server error:', err.message);
 			resolve(false);
 		});
+
+		// Cleanup FFmpeg on process signals
+		const cleanup = () => {
+			killFFmpegProcesses();
+			shutdown();
+		};
+		process.on('SIGINT', cleanup);
+		process.on('SIGTERM', cleanup);
+		process.on('exit', killFFmpegProcesses);
 	});
 }

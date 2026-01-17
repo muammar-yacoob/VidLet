@@ -5,8 +5,9 @@
   <title>VidLet</title>
   <link rel="stylesheet" href="/css/theme.css">
   <link rel="icon" href="/favicon.ico">
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
   <style>
-    :root{--bg:#09090b;--bg2:#18181b;--bg3:#27272a;--brd:#3f3f46;--txt:#fafafa;--txt2:#a1a1aa;--txt3:#71717a;--acc:#a855f7;--acc2:#c084fc}
+    :root{--bg:#09090b;--bg2:#18181b;--bg3:#27272a;--brd:#3f3f46;--txt:#fafafa;--txt2:#a1a1aa;--txt3:#71717a;--acc:#a855f7;--acc2:#c084fc;--warn:#f59e0b}
     *{margin:0;padding:0;box-sizing:border-box}
     body{background:var(--bg);color:var(--txt);font:12px/1.4 system-ui,-apple-system,sans-serif}
     .app{display:flex;flex-direction:column;height:100vh;overflow:hidden}
@@ -34,6 +35,11 @@
     /* Sidebar */
     .side{width:160px;border-right:1px solid var(--brd);display:flex;flex-direction:column;background:var(--bg)}
     .tools{flex:1;overflow-y:auto;padding:6px}
+    .export-section{border-top:1px solid var(--brd);padding:6px}
+    .export-label{font-size:9px;color:var(--txt3);text-transform:uppercase;letter-spacing:0.5px;padding:4px 10px 2px;opacity:0.7}
+    .export-tool{background:rgba(168,85,247,0.1);border:1px dashed rgba(168,85,247,0.3)}
+    .export-tool:hover{border-color:var(--acc);background:rgba(168,85,247,0.15)}
+    .export-tool.active{border-style:solid}
     .tool{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:6px;cursor:pointer;transition:all .12s;margin-bottom:2px}
     .tool:hover{background:var(--bg2)}
     .tool.active{background:var(--acc);color:#fff}
@@ -46,18 +52,58 @@
     .content{flex:1;display:flex;flex-direction:column;overflow:hidden}
 
     /* Preview */
-    .preview{flex:1;background:var(--bg2);display:flex;align-items:center;justify-content:center;overflow:hidden;min-height:0}
-    .preview video{max-width:100%;max-height:100%;object-fit:contain}
+    .preview-container{display:flex;flex-direction:column;height:280px;min-height:120px;flex-shrink:0;background:var(--bg2)}
+    #videoPreview{max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;display:block;transform-origin:center center;transition:transform 0.1s ease-out}
+    .preview-wrap.zoomed #videoPreview{cursor:grab}
+    .preview-wrap.zoomed.panning #videoPreview{cursor:grabbing}
+    .resize-divider{height:6px;background:var(--bg);border-top:1px solid var(--brd);border-bottom:1px solid var(--brd);cursor:ns-resize;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+    .resize-divider:hover,.resize-divider.dragging{background:var(--bg2)}
+    .resize-divider::after{content:'';width:32px;height:3px;background:var(--brd);border-radius:2px}
+    .resize-divider:hover::after,.resize-divider.dragging::after{background:var(--acc)}
+    /* Hide native video controls - using custom player */
+    video::-webkit-media-controls{display:none!important}
+    video::-webkit-media-controls-panel{display:none!important}
+    video::-webkit-media-controls-play-button{display:none!important}
+    video::-webkit-media-controls-overlay-play-button{display:none!important}
 
     /* Options panel */
+    .opts-area{flex:1;overflow-y:auto;min-height:0}
     .opts{background:var(--bg);border-top:1px solid var(--brd);padding:10px 12px;display:none}
     .opts.active{display:block}
     .opts-row{display:flex;align-items:center;gap:8px;margin-bottom:6px}
     .opts-row:last-child{margin-bottom:0}
-    .opts-row label{font-size:10px;color:var(--txt3);width:60px;flex-shrink:0}
-    .opts-row input,.opts-row select{flex:1;background:var(--bg2);border:1px solid var(--brd);border-radius:4px;padding:5px 8px;color:var(--txt);font-size:11px}
+    .opts-row label{font-size:11px;color:var(--txt2);width:60px;flex-shrink:0;white-space:nowrap}
+    .opts-row input[type="text"],.opts-row select{flex:1;background:var(--bg2);border:1px solid var(--brd);border-radius:4px;padding:5px 8px;color:var(--txt);font-size:11px}
     .opts-row input:focus,.opts-row select:focus{outline:none;border-color:var(--acc)}
-    .opts-row span{font-size:10px;color:var(--txt3);width:30px}
+    .opts-row input[type="range"]{flex:1;height:4px;background:var(--bg3);border-radius:2px;-webkit-appearance:none;cursor:pointer}
+    .opts-row input[type="range"]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;background:var(--acc);border-radius:50%;cursor:pointer}
+    .opts-row input[type="range"]::-webkit-slider-thumb:hover{background:var(--acc2)}
+    .slider-row{display:flex;align-items:center;gap:8px;flex:1}
+    .slider-val{min-width:50px;text-align:right;font-size:11px;color:var(--acc);font-variant-numeric:tabular-nums}
+    .shrink-slider-container{position:relative;flex:1}
+    .shrink-slider-container input[type="range"]{width:100%}
+    .shrink-marker{position:absolute;top:50%;width:2px;height:14px;background:var(--acc);transform:translateY(-50%);pointer-events:none;border-radius:1px;opacity:0.8}
+    .shrink-marker::after{content:'60s';position:absolute;top:-16px;left:50%;transform:translateX(-50%);font-size:9px;color:var(--acc2);white-space:nowrap}
+    .shrink-60-btn{padding:2px 6px;background:var(--bg2);border:1px solid var(--acc);border-radius:3px;color:var(--acc);font-size:10px;cursor:pointer;transition:all .15s}
+    .shrink-60-btn:hover{background:var(--acc);color:#fff}
+    .preset-btns{display:flex;gap:4px;flex:1}
+    .preset-btn{flex:1;padding:5px 8px;background:var(--bg2);border:1px solid var(--brd);border-radius:4px;color:var(--txt2);font-size:10px;cursor:pointer;transition:all .15s}
+    .preset-btn:hover{border-color:var(--acc);color:var(--txt)}
+    .preset-btn.active{background:var(--acc);border-color:var(--acc);color:#fff}
+    .opts-row span{font-size:10px;color:var(--txt3);white-space:nowrap}
+    .drop-zone{flex:1;padding:12px;border:2px dashed var(--brd);border-radius:6px;text-align:center;cursor:pointer;transition:all .15s;font-size:11px;color:var(--txt3)}
+    .thumb-preview-wrap{position:relative;flex:1;height:80px;border:2px dashed var(--brd);border-radius:6px;cursor:pointer;overflow:hidden;transition:all .15s;display:flex;align-items:center;justify-content:center;background:var(--bg2)}
+    .thumb-preview-wrap:hover{border-color:var(--acc)}
+    .thumb-preview-wrap.has-image{border-style:solid;border-color:var(--acc)}
+    .thumb-preview-wrap img{max-width:100%;max-height:100%;object-fit:contain;display:none}
+    .thumb-preview-wrap.has-image img{display:block}
+    .thumb-overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.6);color:var(--txt2);font-size:11px;transition:opacity .15s}
+    .thumb-preview-wrap.has-image .thumb-overlay{opacity:0}
+    .thumb-preview-wrap.has-image:hover .thumb-overlay{opacity:1}
+    .estimate-row{justify-content:center}
+    .estimate-text{font-size:10px;color:var(--acc2);white-space:nowrap}
+    .drop-zone:hover,.drop-zone.dragover{border-color:var(--acc);color:var(--txt);background:rgba(168,85,247,0.1)}
+    .drop-zone.has-file{border-style:solid;border-color:var(--acc);color:var(--acc)}
     .opts-row .check{display:flex;align-items:center;gap:6px;font-size:10px;color:var(--txt2);cursor:pointer}
     .opts-row .check input{width:auto;flex:none}
 
@@ -70,6 +116,15 @@
     .timeline-handle::after{content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:2px;height:10px;background:rgba(0,0,0,0.3);border-radius:1px}
     .timeline-start{left:0}
     .timeline-end{right:0}
+
+    /* Loop pair markers */
+    #loop-markers{position:absolute;inset:0;pointer-events:none}
+    .loop-marker{position:absolute;top:0;bottom:0;width:6px;cursor:pointer;pointer-events:auto;border-radius:2px;opacity:0.85;transition:opacity .15s,transform .1s}
+    .loop-marker:hover{opacity:1;transform:scaleY(1.1)}
+    .loop-marker.start{border-left:2px solid currentColor}
+    .loop-marker.end{border-right:2px solid currentColor}
+    .loop-marker.hidden{display:none}
+    .loop-marker.selected{opacity:1;box-shadow:0 0 6px currentColor}
 
     /* Footer */
     .ft{display:flex;gap:6px;padding:10px 12px;border-top:1px solid var(--brd);justify-content:flex-end}
@@ -96,28 +151,112 @@
     .tool.done span::after{content:' ✓';color:#22c55e}
 
     /* Mode/Position buttons */
-    .mode-btn,.pos-btn{flex:1;padding:6px 8px;border:1px solid var(--brd);border-radius:4px;background:var(--bg2);color:var(--txt2);font-size:10px;cursor:pointer;transition:all .15s}
+    .mode-btn,.pos-btn{flex:1;padding:6px 8px;border:1px solid var(--brd);border-radius:4px;background:var(--bg2);color:var(--txt2);font-size:11px;cursor:pointer;transition:all .15s}
     .mode-btn:hover,.pos-btn:hover{border-color:var(--acc);color:var(--txt)}
     .mode-btn.active,.pos-btn.active{background:var(--acc);border-color:var(--acc);color:#fff}
 
     /* Toggle switch */
     .toggle{display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none}
-    .toggle-track{width:32px;height:18px;background:var(--bg3);border-radius:9px;position:relative;transition:background .2s}
-    .toggle-track::after{content:'';position:absolute;top:2px;left:2px;width:14px;height:14px;background:var(--txt3);border-radius:50%;transition:all .2s}
-    .toggle.on .toggle-track{background:var(--acc)}
-    .toggle.on .toggle-track::after{left:16px;background:#fff}
-    .toggle-label{font-size:10px;color:var(--txt2)}
+    .toggle-track{width:32px;height:18px;background:var(--bg3);border-radius:9px;position:relative;transition:background .2s;border:1px solid var(--brd)}
+    .toggle-track::after{content:'';position:absolute;top:2px;left:2px;width:12px;height:12px;background:var(--txt3);border-radius:50%;transition:all .2s}
+    .toggle.on .toggle-track{background:var(--acc);border-color:var(--acc)}
+    .toggle.on .toggle-track::after{left:16px;background:var(--bg)}
+    .toggle-label{font-size:11px;color:var(--txt)}
 
-    /* Crop overlay for shorts */
-    .preview-wrap{position:relative;flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;min-height:0}
+    /* Custom video player */
+    .player-bar{position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,0.9));padding:8px 12px 10px;display:flex;flex-direction:column;gap:6px;z-index:10}
+    .player-row{display:flex;align-items:center;gap:8px}
+    .player-btn{background:none;border:none;color:var(--txt);cursor:pointer;padding:4px;display:flex;align-items:center;justify-content:center;border-radius:4px;transition:color .15s}
+    .player-btn:hover{color:var(--acc)}
+    .player-btn svg{width:18px;height:18px}
+    .player-time{font-size:11px;color:var(--txt2);font-variant-numeric:tabular-nums;min-width:90px}
+    .player-seek{flex:1;height:4px;background:var(--bg3);border-radius:2px;cursor:pointer;position:relative}
+    .player-seek-range{position:absolute;top:0;bottom:0;background:var(--acc);opacity:0.3;border-radius:2px;pointer-events:none;display:none}
+    .player-seek-range.active{display:block}
+    .player-seek-progress{position:absolute;left:0;top:0;bottom:0;background:var(--acc);border-radius:2px;pointer-events:none}
+    .player-seek-thumb{position:absolute;top:50%;width:12px;height:12px;background:var(--acc);border-radius:50%;transform:translate(-50%,-50%);opacity:0;transition:opacity .15s}
+    .player-seek:hover .player-seek-thumb{opacity:1}
+    .player-volume{display:flex;align-items:center;gap:4px}
+    .player-volume-slider{width:60px;height:4px;background:var(--bg3);border-radius:2px;cursor:pointer;position:relative}
+    .player-volume-level{position:absolute;left:0;top:0;bottom:0;background:var(--txt2);border-radius:2px;pointer-events:none}
+    .speed-control{display:flex;align-items:center;gap:2px;margin-left:auto}
+    .speed-adj{width:20px;height:20px;background:transparent;border:1px solid var(--brd);border-radius:3px;color:var(--txt3);font-size:12px;cursor:pointer;transition:all .15s;display:flex;align-items:center;justify-content:center}
+    .speed-adj:hover{color:var(--txt);border-color:var(--acc);background:var(--bg2)}
+    .speed-val{min-width:36px;text-align:center;font-size:11px;color:var(--acc);cursor:pointer;font-weight:500}
+    .speed-val:hover{text-decoration:underline}
+    .hotkey-hint{position:absolute;top:8px;right:8px;font-size:10px;color:var(--acc2);background:rgba(168,85,247,0.15);border:1px solid rgba(168,85,247,0.3);padding:4px 10px;border-radius:4px;opacity:0;transition:opacity .2s;pointer-events:none;backdrop-filter:blur(4px)}
+    .preview-wrap:hover .hotkey-hint{opacity:1}
+    .hotkey-hint.hidden{display:none}
+
+    /* Crop overlay for portrait mode */
+    .preview-wrap{position:relative;flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;min-height:0;background:#000}
     .crop-overlay{position:absolute;inset:0;pointer-events:none;display:none}
     .crop-overlay.active{display:block;pointer-events:auto}
-    .crop-mask{position:absolute;inset:0;background:rgba(0,0,0,0.6)}
-    .crop-window{position:absolute;top:0;bottom:0;background:transparent;border:2px solid var(--acc);box-shadow:0 0 0 9999px rgba(0,0,0,0.6);cursor:ew-resize}
+    .crop-side{position:absolute;top:0;bottom:0;background:rgba(0,0,0,0.6)}
+    .crop-left{left:0}
+    .crop-right{right:0}
+    .crop-overlay.blur-mode .crop-side{backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);background:rgba(0,0,0,0.3)}
+    .crop-window{position:absolute;top:0;bottom:0;background:transparent;border:2px solid var(--acc);cursor:ew-resize;z-index:1}
     .crop-window::before{content:'9:16';position:absolute;top:8px;left:50%;transform:translateX(-50%);font-size:10px;color:var(--acc);background:rgba(0,0,0,0.7);padding:2px 6px;border-radius:3px}
-    .crop-handle{position:absolute;top:50%;width:20px;height:40px;background:var(--acc);border-radius:4px;transform:translateY(-50%);cursor:ew-resize}
+    .crop-handle{position:absolute;top:50%;width:20px;height:40px;background:var(--acc);border-radius:4px;transform:translateY(-50%);cursor:ew-resize;z-index:2}
     .crop-handle-l{left:-10px}
     .crop-handle-r{right:-10px}
+
+    /* Portrait mode buttons */
+    .portrait-btns{display:flex;gap:8px}
+    .portrait-mode-btn{display:flex;align-items:center;gap:6px;padding:6px 12px;background:var(--bg2);border:1px solid var(--brd);border-radius:6px;color:var(--txt2);font-size:11px;cursor:pointer;transition:all .15s}
+    .portrait-mode-btn:hover{border-color:var(--acc);color:var(--txt)}
+    .portrait-mode-btn.active{background:var(--acc);border-color:var(--acc);color:#fff}
+    .portrait-icon{font-size:14px;opacity:0.8}
+
+    /* Settings modal */
+    .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.7);display:none;align-items:center;justify-content:center;z-index:100}
+    .modal-overlay.on{display:flex}
+    .modal{background:var(--bg);border:1px solid var(--brd);border-radius:8px;padding:16px;min-width:280px;max-width:90%}
+    .modal-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--brd)}
+    .modal-header h3{font-size:14px;font-weight:600;color:var(--txt)}
+    .modal-close{background:none;border:none;color:var(--txt3);cursor:pointer;padding:4px}
+    .modal-close:hover{color:var(--txt)}
+    .modal-row{display:flex;align-items:center;gap:10px;padding:6px 0}
+    .modal-row label{font-size:11px;color:var(--txt2);width:50px;flex-shrink:0}
+    .modal-section{margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--brd)}
+    .modal-section:last-child{margin-bottom:0;padding-bottom:0;border-bottom:none}
+    .modal-section-title{font-size:10px;color:var(--txt3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px}
+    .seg-btns{display:flex;flex:1}
+    .seg-btns button{flex:1;padding:5px 4px;background:var(--bg2);border:1px solid var(--brd);color:var(--txt2);font-size:10px;cursor:pointer;transition:all .15s}
+    .seg-btns button:first-child{border-radius:4px 0 0 4px}
+    .seg-btns button:last-child{border-radius:0 4px 4px 0}
+    .seg-btns button:not(:first-child){border-left:none}
+    .seg-btns button:hover{color:var(--txt);background:var(--bg3)}
+    .seg-btns button.active{background:var(--acc);border-color:var(--acc);color:#fff}
+    .hotkey-compact{display:flex;flex-wrap:wrap;gap:6px 12px;font-size:10px;color:var(--txt3)}
+    .hotkey-compact b{color:var(--acc);font-weight:500;margin-right:2px}
+
+    /* Slice timeline */
+    .slice-timeline{position:relative;height:40px;background:var(--bg2);border:1px solid var(--brd);border-radius:4px;margin-bottom:8px;overflow:hidden}
+    .slice-waveform{position:absolute;inset:0;opacity:0.3}
+    .slice-segments{position:absolute;inset:0}
+    .slice-cut{position:absolute;top:0;bottom:0;background:rgba(239,68,68,0.4);border-left:2px solid #ef4444;border-right:2px solid #ef4444;cursor:pointer}
+    .slice-cut:hover{background:rgba(239,68,68,0.6)}
+    .slice-cut .cut-delete{position:absolute;top:2px;right:2px;width:14px;height:14px;background:#ef4444;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;opacity:0;transition:opacity .15s}
+    .slice-cut:hover .cut-delete{opacity:1}
+    .slice-cut .cut-delete svg{width:10px;height:10px;color:#fff}
+    .slice-playhead{position:absolute;top:0;bottom:0;width:2px;background:var(--acc);pointer-events:none;z-index:5}
+    .slice-selection{position:absolute;top:0;bottom:0;background:rgba(168,85,247,0.3);border:1px dashed var(--acc);pointer-events:none}
+    .slice-handle{position:absolute;top:0;bottom:0;width:10px;background:var(--acc);cursor:ew-resize;z-index:3}
+    .slice-handle-start{left:0;border-radius:4px 0 0 4px}
+    .slice-handle-end{right:0;border-radius:0 4px 4px 0}
+
+    /* Icon button */
+    .icon-btn{background:none;border:none;color:var(--txt3);cursor:pointer;padding:4px;border-radius:4px;transition:all .15s;display:flex;align-items:center;justify-content:center}
+    .icon-btn:hover{color:var(--txt);background:var(--bg2)}
+    .icon-btn svg{width:16px;height:16px}
+
+    /* Undo button */
+    .undo-btn{position:fixed;bottom:60px;right:12px;background:var(--bg2);border:1px solid var(--brd);border-radius:6px;padding:6px 10px;color:var(--txt2);font-size:10px;cursor:pointer;display:none;align-items:center;gap:4px;z-index:40}
+    .undo-btn.on{display:flex}
+    .undo-btn:hover{border-color:var(--acc);color:var(--txt)}
+    .undo-btn svg{width:14px;height:14px}
   </style>
 </head>
 <body>
@@ -137,6 +276,7 @@
             Donate
           </a>
           <a href="#" id="homepageLink" class="hd-link" onclick="openHomepage();return false">vidlet.app</a>
+          <button class="icon-btn" onclick="openSettings()" title="Settings"><i data-lucide="settings"></i></button>
         </div>
       </div>
       <div class="hd-meta">
@@ -155,7 +295,7 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14,2 14,8 20,8"/></svg>
             <span>MKV → MP4</span>
           </div>
-          <!-- Then editing tools -->
+          <!-- Editing tools -->
           <div class="tool" id="t-trim" onclick="selectTool('trim')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></svg>
             <span>Trim</span>
@@ -172,69 +312,176 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>
             <span>Loop</span>
           </div>
-          <!-- Export tools -->
-          <div class="tool hidden" id="t-shorts" onclick="selectTool('shorts')">
+          <div class="tool hidden" id="t-portrait" onclick="selectTool('portrait')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="7" y="2" width="10" height="20" rx="2"/><line x1="12" y1="18" x2="12" y2="18.01"/></svg>
-            <span>Make Shorts</span>
+            <span>Portrait</span>
           </div>
-          <div class="tool" id="t-togif" onclick="selectTool('togif')">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
-            <span>To GIF</span>
+          <div class="tool" id="t-audio" onclick="selectTool('audio')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+            <span>Add Audio</span>
           </div>
           <div class="tool" id="t-thumb" onclick="selectTool('thumb')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
             <span>Thumbnail</span>
           </div>
         </div>
+        <div class="export-section">
+          <div class="export-label">Export</div>
+          <div class="tool export-tool" id="t-togif" onclick="selectTool('togif')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+            <span>Export as GIF</span>
+          </div>
+        </div>
       </div>
 
       <div class="content">
-        <div class="preview-wrap" id="previewWrap">
-          <video id="videoPreview" controls muted loop></video>
-          <div class="crop-overlay" id="cropOverlay">
-            <div class="crop-window" id="cropWindow">
-              <div class="crop-handle crop-handle-l"></div>
-              <div class="crop-handle crop-handle-r"></div>
+        <div class="preview-container" id="previewContainer">
+          <div class="preview-wrap" id="previewWrap">
+            <video id="videoPreview" muted></video>
+            <div class="player-bar" id="playerBar">
+              <div class="player-row">
+                <div class="player-seek" id="playerSeek">
+                  <div class="player-seek-range" id="playerRange"></div>
+                  <div class="player-seek-progress" id="playerProgress"></div>
+                  <div class="player-seek-thumb" id="playerThumb"></div>
+                </div>
+              </div>
+              <div class="player-row">
+                <button class="player-btn" id="playBtn" onclick="togglePlay()">
+                  <svg id="playIcon" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
+                  <svg id="pauseIcon" viewBox="0 0 24 24" fill="currentColor" style="display:none"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+                </button>
+                <span class="player-time" id="playerTime">0:00 / 0:00</span>
+                <div class="player-volume">
+                  <button class="player-btn" id="muteBtn" onclick="toggleMute()">
+                    <svg id="volIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11,5 6,9 2,9 2,15 6,15 11,19" fill="currentColor"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
+                    <svg id="mutedIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none"><polygon points="11,5 6,9 2,9 2,15 6,15 11,19" fill="currentColor"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
+                  </button>
+                  <div class="player-volume-slider" id="volumeSlider">
+                    <div class="player-volume-level" id="volumeLevel" style="width:100%"></div>
+                  </div>
+                </div>
+                <div class="speed-control">
+                  <button class="speed-adj" onclick="adjustSpeed(-0.5)" title="Slow down (J)">−</button>
+                  <span class="speed-val" id="speedVal" onclick="resetSpeed()" title="Reset (K)">1x</span>
+                  <button class="speed-adj" onclick="adjustSpeed(0.5)" title="Speed up (L)">+</button>
+                </div>
+              </div>
+            </div>
+            <div class="hotkey-hint">Space: Play | J/K/L: Speed | ←→: 5s | M: Mute</div>
+            <div class="crop-overlay" id="cropOverlay">
+              <div class="crop-side crop-left" id="cropLeft"></div>
+              <div class="crop-window" id="cropWindow">
+                <div class="crop-handle crop-handle-l"></div>
+                <div class="crop-handle crop-handle-r"></div>
+              </div>
+              <div class="crop-side crop-right" id="cropRight"></div>
             </div>
           </div>
+          <div class="resize-divider" id="resizeDivider"></div>
         </div>
 
         <!-- Options panels -->
+        <div class="opts-area">
         <div class="opts" id="opts-compress">
-          <div class="opts-row"><label>Bitrate</label><input type="number" id="compress-bitrate" value="2500" min="500" max="10000" step="100"><span>kb/s</span></div>
-          <div class="opts-row"><label>Speed</label><select id="compress-preset"><option value="ultrafast">Fastest</option><option value="veryfast">Faster</option><option value="fast">Fast</option><option value="medium" selected>Balanced</option><option value="slow">Quality</option><option value="veryslow">Best</option></select></div>
-        </div>
-        <div class="opts" id="opts-togif">
-          <div class="opts-row"><label>FPS</label><input type="number" id="togif-fps" value="15" min="5" max="30"></div>
-          <div class="opts-row"><label>Width</label><input type="number" id="togif-width" value="480" min="0" max="1920" step="10"><span>px</span></div>
-          <div class="opts-row"><label>Dither</label><select id="togif-dither"><option value="floyd_steinberg" selected>Smooth</option><option value="sierra2">Sharp</option><option value="bayer">Retro</option><option value="none">None</option></select></div>
-        </div>
-        <div class="opts" id="opts-mkv2mp4">
-          <div class="opts-row"><label>Mode</label><div class="toggle on" id="mkv2mp4-toggle" onclick="toggleMkv()"><div class="toggle-track"></div><span class="toggle-label">Fast copy</span></div></div>
-          <div class="opts-row mkv-quality" style="display:none"><label>Quality</label><select id="mkv2mp4-quality"><option value="18">High</option><option value="23" selected>Balanced</option><option value="28">Smaller</option></select></div>
-        </div>
-        <div class="opts" id="opts-shrink">
-          <div class="opts-row"><label>Target</label><input type="number" id="shrink-duration" value="59.5" min="1" max="300" step="0.5"><span>sec</span></div>
-        </div>
-        <div class="opts" id="opts-loop">
-          <div class="opts-row"><label>Detect</label><div class="toggle on" id="loop-toggle" onclick="toggleLoopAuto()"><div class="toggle-track"></div><span class="toggle-label">Auto-find loop</span></div></div>
-          <div class="opts-row loop-manual" style="display:none"><label>Start</label><input type="number" id="loop-start" value="0" min="0" step="0.1"><span>sec</span></div>
-          <div class="opts-row loop-manual" style="display:none"><label>End</label><input type="number" id="loop-end" value="5" min="0" step="0.1"><span>sec</span></div>
-        </div>
-        <div class="opts" id="opts-thumb">
-          <div class="opts-row"><label>Image</label><input type="text" id="thumb-image" placeholder="Drop or paste image path..."></div>
-        </div>
-        <div class="opts" id="opts-shorts">
-          <div class="opts-row"><label>Style</label>
-            <div style="display:flex;gap:6px;flex:1">
-              <button type="button" class="mode-btn active" id="shorts-crop" onclick="setShortsMode('crop')">Crop</button>
-              <button type="button" class="mode-btn" id="shorts-blur" onclick="setShortsMode('blur')">Blur BG</button>
+          <div class="opts-row"><label>Quality</label>
+            <div class="preset-btns">
+              <button type="button" class="preset-btn" onclick="setCompressQuality('low')">Small</button>
+              <button type="button" class="preset-btn active" onclick="setCompressQuality('medium')">Balanced</button>
+              <button type="button" class="preset-btn" onclick="setCompressQuality('high')">Quality</button>
             </div>
           </div>
-          <div class="opts-row shorts-hint"><label></label><span style="font-size:9px;color:var(--txt3)">Drag the overlay on video to select crop area</span></div>
+          <div class="opts-row estimate-row"><span id="compress-estimate" class="estimate-text"></span></div>
+          <input type="hidden" id="compress-bitrate" value="2500">
+          <input type="hidden" id="compress-preset" value="medium">
+        </div>
+        <div class="opts" id="opts-togif">
+          <div class="opts-row"><label>Quality</label>
+            <div class="preset-btns">
+              <button type="button" class="preset-btn" onclick="setGifQuality('low')">Small</button>
+              <button type="button" class="preset-btn active" onclick="setGifQuality('medium')">Balanced</button>
+              <button type="button" class="preset-btn" onclick="setGifQuality('high')">Smooth</button>
+            </div>
+          </div>
+          <div class="opts-row estimate-row"><span id="togif-estimate" class="estimate-text"></span></div>
+          <input type="hidden" id="togif-fps" value="15">
+          <input type="hidden" id="togif-width" value="480">
+          <input type="hidden" id="togif-dither" value="floyd_steinberg">
+        </div>
+        <div class="opts" id="opts-mkv2mp4">
+          <div class="opts-row"><label>Mode</label>
+            <div class="preset-btns">
+              <button type="button" class="preset-btn active" id="mkv-fast" onclick="setMkvMode('fast')">Quick</button>
+              <button type="button" class="preset-btn" id="mkv-compat" onclick="setMkvMode('compat')">Compatible</button>
+            </div>
+          </div>
+          <input type="hidden" id="mkv2mp4-quality" value="23">
+        </div>
+        <div class="opts" id="opts-shrink">
+          <div class="opts-row"><label>Target</label>
+            <div class="slider-row shrink-slider-wrap">
+              <div class="shrink-slider-container">
+                <input type="range" id="shrink-duration" min="10" max="300" step="0.1" value="60" oninput="updateShrinkLabel()" onkeydown="handleShrinkKey(event)">
+                <div class="shrink-marker" id="shrink-marker-60" title="60s limit"></div>
+              </div>
+              <button type="button" class="shrink-60-btn" id="shrink-60-btn" onclick="setShrinkTo60()" title="Set to 60s">60s</button>
+              <span class="slider-val" id="shrink-val">60s</span>
+            </div>
+          </div>
+          <div class="opts-row estimate-row"><span id="shrink-estimate" class="estimate-text"></span></div>
+        </div>
+        <div class="opts" id="opts-loop">
+          <div class="opts-row" style="margin-bottom:6px">
+            <div class="timeline" id="loop-timeline">
+              <div class="timeline-track">
+                <div class="timeline-range" id="loop-timeline-range"></div>
+                <div id="loop-markers"></div>
+                <div class="timeline-handle timeline-start" id="loop-handle-start"></div>
+                <div class="timeline-handle timeline-end" id="loop-handle-end"></div>
+              </div>
+            </div>
+          </div>
+          <div class="opts-row">
+            <label style="flex:none;font-size:11px">Min Gap</label>
+            <input type="range" id="loop-min-gap" min="2" max="15" value="5" style="flex:1;max-width:80px" oninput="$('loop-gap-label').textContent=this.value+'s'">
+            <span id="loop-gap-label" style="width:24px;font-size:11px;color:var(--txt2)">5s</span>
+            <button type="button" class="preset-btn" id="loop-detect-btn" onclick="detectLoopPairs()" style="flex:none;padding:5px 12px">Detect</button>
+            <span id="loop-output" style="flex:1;text-align:right;color:var(--txt2);font-size:11px"></span>
+          </div>
+          <input type="hidden" id="loop-start" value="0">
+          <input type="hidden" id="loop-end" value="5">
+        </div>
+        <div class="opts" id="opts-thumb">
+          <div class="opts-row">
+            <div class="thumb-preview-wrap" id="thumbPreviewWrap" onclick="$('thumbFileInput').click()">
+              <img id="thumbPreview" src="" alt="">
+              <div class="thumb-overlay"><span id="thumbFileName">Click to select thumbnail</span></div>
+              <input type="file" id="thumbFileInput" accept="image/*" style="display:none" onchange="handleThumbFile(this)">
+            </div>
+          </div>
+          <input type="hidden" id="thumb-image" value="">
+        </div>
+        <div class="opts" id="opts-audio">
+          <div class="opts-row">
+            <div class="drop-zone" id="audioDropZone" onclick="$('audioFileInput').click()">
+              <span id="audioFileName">Drop audio file or click to browse</span>
+              <input type="file" id="audioFileInput" accept="audio/*" style="display:none" onchange="handleAudioFile(this)">
+            </div>
+          </div>
+          <div class="opts-row"><label>Volume</label>
+            <div class="slider-row">
+              <input type="range" id="audio-volume" min="0" max="100" value="50" oninput="updateAudioLabel()">
+              <span class="slider-val" id="audio-vol-val">50%</span>
+            </div>
+          </div>
+          <div class="opts-row"><label>Mix</label><div class="toggle on" id="audio-toggle" onclick="toggleAudioMix()"><div class="toggle-track"></div><span class="toggle-label">Blend with original</span></div></div>
+          <input type="hidden" id="audio-path" value="">
+        </div>
+        <div class="opts" id="opts-portrait">
+          <div class="opts-row portrait-hint" style="justify-content:center"><span style="font-size:11px;color:var(--txt2)">Drag to select 9:16 crop area</span></div>
         </div>
         <div class="opts" id="opts-trim">
-          <div class="opts-row" style="margin-bottom:10px">
+          <div class="opts-row" style="margin-bottom:6px">
             <div class="timeline" id="timeline">
               <div class="timeline-track">
                 <div class="timeline-range" id="timeline-range"></div>
@@ -244,18 +491,11 @@
             </div>
           </div>
           <div class="opts-row">
-            <label>Start</label>
-            <input type="number" id="trim-start" value="0" min="0" step="0.1" onchange="updateTimeline()">
-            <span>sec</span>
-            <label style="width:auto;margin-left:8px">End</label>
-            <input type="number" id="trim-end" value="10" min="0" step="0.1" onchange="updateTimeline()">
-            <span>sec</span>
+            <span id="trim-output" style="width:auto;color:var(--txt2);font-size:11px"></span>
           </div>
-          <div class="opts-row">
-            <label>Precise</label>
-            <div class="toggle" id="trim-toggle" onclick="toggleTrimAccurate()"><div class="toggle-track"></div><span class="toggle-label">Re-encode</span></div>
-            <span id="trim-output" style="width:auto;margin-left:auto;color:var(--acc);font-size:11px"></span>
-          </div>
+          <input type="hidden" id="trim-start" value="0">
+          <input type="hidden" id="trim-end" value="10">
+        </div>
         </div>
       </div>
     </div>
@@ -270,8 +510,70 @@
       <h4>Done!</h4>
       <p id="output"></p>
       <div style="display:flex;gap:8px;margin-top:12px">
-        <button class="btn btn-g" onclick="continueEditing()">Continue</button>
+        <button class="btn btn-g" id="continueBtn" onclick="continueEditing()">Continue</button>
         <button class="btn btn-p" onclick="VidLet.close()">Done</button>
+      </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div class="modal-overlay" id="settingsModal" onclick="if(event.target===this)closeSettings()">
+      <div class="modal" style="width:280px">
+        <div class="modal-header">
+          <h3>Defaults</h3>
+          <button class="modal-close" onclick="closeSettings()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <div class="modal-section">
+          <div class="modal-section-title">Compress</div>
+          <div class="modal-row">
+            <label>Quality</label>
+            <div class="seg-btns" id="settingsCompressQuality">
+              <button type="button" data-val="fast" title="Faster encode, larger file">Fast</button>
+              <button type="button" data-val="medium" class="active" title="Balanced">Balanced</button>
+              <button type="button" data-val="slow" title="Slower encode, smaller file">Quality</button>
+            </div>
+          </div>
+        </div>
+        <div class="modal-section">
+          <div class="modal-section-title">GIF</div>
+          <div class="modal-row">
+            <label>FPS</label>
+            <div class="seg-btns" id="settingsGifFps">
+              <button type="button" data-val="10">10</button>
+              <button type="button" data-val="15" class="active">15</button>
+              <button type="button" data-val="24">24</button>
+            </div>
+          </div>
+          <div class="modal-row">
+            <label>Width</label>
+            <div class="seg-btns" id="settingsGifWidth">
+              <button type="button" data-val="320">320</button>
+              <button type="button" data-val="480" class="active">480</button>
+              <button type="button" data-val="720">720</button>
+            </div>
+          </div>
+        </div>
+        <div class="modal-section">
+          <div class="modal-section-title">MKV to MP4</div>
+          <div class="modal-row">
+            <label>Quality</label>
+            <div class="seg-btns" id="settingsMkvQuality">
+              <button type="button" data-val="18" title="High quality, larger file">High</button>
+              <button type="button" data-val="23" class="active" title="Balanced">Medium</button>
+              <button type="button" data-val="28" title="Lower quality, smaller file">Low</button>
+            </div>
+          </div>
+        </div>
+        <div class="modal-section" style="border-bottom:none;padding-bottom:4px">
+          <div class="modal-section-title" style="margin-bottom:4px">Hotkeys</div>
+          <div class="hotkey-compact">
+            <span><b>Space</b> Play</span>
+            <span><b>J/K/L</b> Speed</span>
+            <span><b>←→</b> Seek</span>
+            <span><b>M</b> Mute</span>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -282,6 +584,65 @@
     let info = {}, activeTool = null, homepage = 'https://vidlet.app';
     let currentFilePath = null; // Track the current working file (may change after MKV→MP4)
 
+    // Settings
+    let settings = { undoLimit: 5, showHotkeyHints: true };
+
+    function openSettings() {
+      // Initialize segmented button click handlers
+      document.querySelectorAll('.seg-btns').forEach(group => {
+        group.querySelectorAll('button').forEach(btn => {
+          btn.onclick = () => {
+            group.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+          };
+        });
+      });
+
+      // Load current values - map preset to quality level
+      const preset = $('compress-preset').value;
+      const presetMap = { ultrafast: 'fast', superfast: 'fast', veryfast: 'fast', faster: 'fast', fast: 'fast', medium: 'medium', slow: 'slow', slower: 'slow', veryslow: 'slow' };
+      setSegBtn('settingsCompressQuality', presetMap[preset] || 'medium');
+      setSegBtn('settingsGifFps', $('togif-fps').value);
+      setSegBtn('settingsGifWidth', $('togif-width').value);
+      setSegBtn('settingsMkvQuality', $('mkv2mp4-quality').value);
+
+      $('settingsModal').classList.add('on');
+    }
+
+    function setSegBtn(groupId, val) {
+      const group = $(groupId);
+      if (!group) return;
+      group.querySelectorAll('button').forEach(b => {
+        b.classList.toggle('active', b.dataset.val === String(val));
+      });
+    }
+
+    function getSegVal(groupId) {
+      const group = $(groupId);
+      if (!group) return null;
+      const active = group.querySelector('button.active');
+      return active ? active.dataset.val : null;
+    }
+
+    function closeSettings() {
+      // Map quality level back to preset
+      const qualityPresetMap = { fast: 'veryfast', medium: 'medium', slow: 'slow' };
+      const quality = getSegVal('settingsCompressQuality');
+      $('compress-preset').value = qualityPresetMap[quality] || 'medium';
+
+      // Save GIF settings
+      const fps = getSegVal('settingsGifFps');
+      const width = getSegVal('settingsGifWidth');
+      if (fps) $('togif-fps').value = fps;
+      if (width) $('togif-width').value = width;
+
+      // Save MKV quality (CRF)
+      const crf = getSegVal('settingsMkvQuality');
+      if (crf) $('mkv2mp4-quality').value = crf;
+
+      $('settingsModal').classList.remove('on');
+    }
+
     function openHomepage() {
       VidLet.openUrl(homepage);
     }
@@ -291,22 +652,28 @@
       info = res;
       currentFilePath = res.filePath; // Start with the original file
       updateFileDisplay();
-      $('videoPreview').src = '/api/video';
+      const video = $('videoPreview');
+      video.src = '/api/video';
 
       // Resize window to match video aspect ratio
       if (res.width && res.height) {
         VidLet.resizeToVideo(res.width, res.height);
       }
 
-      if (res.defaults) {
-        if (res.defaults.compress) { $('compress-bitrate').value = res.defaults.compress.bitrate || 2500; $('compress-preset').value = res.defaults.compress.preset || 'medium'; }
-        if (res.defaults.togif) { $('togif-fps').value = res.defaults.togif.fps || 15; $('togif-width').value = res.defaults.togif.width || 480; }
-        if (res.defaults.shrink) { $('shrink-duration').value = res.defaults.shrink.targetDuration || 59.5; }
-        if (res.defaults.homepage) {
-          homepage = res.defaults.homepage;
-          const domain = homepage.replace(/^https?:\/\//, '').replace(/\/$/, '');
-          $('homepageLink').textContent = domain;
-        }
+      // Set shrink slider max to video duration
+      $('shrink-duration').max = Math.floor(res.duration);
+      $('shrink-duration').value = Math.min(60, Math.floor(res.duration));
+      updateShrinkLabel();
+
+      // Hide 60s button/marker if video is <= 60s
+      const show60s = res.duration > 60;
+      $('shrink-60-btn').classList.toggle('hidden', !show60s);
+      $('shrink-marker-60').classList.toggle('hidden', !show60s);
+
+      if (res.defaults?.homepage) {
+        homepage = res.defaults.homepage;
+        const domain = homepage.replace(/^https?:\/\//, '').replace(/\/$/, '');
+        $('homepageLink').textContent = domain;
       }
 
       // Show MKV→MP4 only for MKV files
@@ -314,12 +681,16 @@
         $('t-mkv2mp4').classList.remove('hidden');
       }
 
-      // Show Make Shorts only for landscape (16:9) videos
+      // Show Portrait only for landscape (16:9) videos
       if (res.defaults?.isLandscape) {
-        $('t-shorts').classList.remove('hidden');
+        $('t-portrait').classList.remove('hidden');
       }
 
-      $('loop-end').max = res.duration; $('loop-start').max = res.duration; $('loop-end').value = Math.min(5, res.duration);
+      // Initialize loop timeline
+      $('loop-start').value = 0;
+      $('loop-end').value = Math.min(5, res.duration);
+      updateLoopTimeline();
+      initLoopTimelineHandles();
 
       // Initialize trim controls
       $('trim-start').max = res.duration;
@@ -328,6 +699,31 @@
       updateTimeline();
       initTimelineHandles();
       initCropOverlay();
+      initPlayerControls();
+      initResizeDivider();
+      initDropZones();
+      initVideoZoom();
+      setupLoopPlayback();
+
+      // Hide GIF export for long/large videos (GIFs work best under 15s)
+      const showGifExport = res.duration <= 15;
+      $('t-togif').classList.toggle('hidden', !showGifExport);
+
+      // Initialize compress presets based on original bitrate
+      updateCompressLabels();
+      const defaultPresets = getCompressPresets();
+      $('compress-bitrate').value = defaultPresets.medium.bitrate;
+      updateEstimates();
+
+      // Initialize Lucide icons
+      if (window.lucide) lucide.createIcons();
+
+      // Select first available tool
+      const firstTool = document.querySelector('.tool:not(.hidden):not(.disabled)');
+      if (firstTool) {
+        const toolId = firstTool.id.replace('t-', '');
+        selectTool(toolId);
+      }
     }
 
     function updateFileDisplay() {
@@ -341,62 +737,969 @@
       document.querySelectorAll('.tool').forEach(t => t.classList.remove('active'));
       document.querySelectorAll('.opts').forEach(o => o.classList.remove('active'));
       const el = $('t-' + id), opts = $('opts-' + id);
+
+      // Reset overlays
+      $('cropOverlay').classList.remove('active');
+
       if (el && !el.classList.contains('disabled') && !el.classList.contains('done')) {
         el.classList.add('active');
         if (opts) opts.classList.add('active');
         activeTool = id;
         $('processBtn').disabled = false;
-        // Show crop overlay for shorts in crop mode
-        $('cropOverlay').classList.toggle('active', id === 'shorts' && shortsMode === 'crop');
-        if (id === 'shorts') updateCropOverlay();
+
+        // Portrait mode overlay
+        if (id === 'portrait') {
+          $('cropOverlay').classList.add('active');
+          updateCropOverlay();
+        }
+
+        // Seek to trim start when selecting trim tool
+        if (id === 'trim') {
+          const video = $('videoPreview');
+          const start = parseFloat($('trim-start').value) || 0;
+          video.currentTime = start;
+        }
+
+        // Seek to loop start when selecting loop tool
+        if (id === 'loop') {
+          const video = $('videoPreview');
+          const start = parseFloat($('loop-start').value) || 0;
+          video.currentTime = start;
+        }
+
+        // Enable audio when audio tool is selected
+        if (id === 'audio') {
+          const video = $('videoPreview');
+          video.muted = false;
+          updateMuteIcon();
+        }
       } else {
         activeTool = null;
         $('processBtn').disabled = true;
-        $('cropOverlay').classList.remove('active');
+      }
+
+      // Update player range indicator
+      updatePlayerRange();
+    }
+
+    // Tool states
+    let mkvFastCopy = true;
+    let portraitMode = 'crop';
+
+    // Loop marker system - start points with multiple matching ends
+    let loopStartPoints = []; // Array of {id, time, matches: [{end, score}]}
+    let selectedStartId = null;
+    let selectedEndIndex = 0; // Index into selected start's matches array
+    let loopPlaybackEnabled = false;
+    const loopMarkerColor = '#a855f7';
+    let portraitCropX = 0.5;
+    let audioMix = true;
+    let audioVolume = 50;
+
+    // Quality presets configuration (GIF presets are static)
+    const gifPresets = {
+      low: { fps: 10, width: 320, dither: 'none' },
+      medium: { fps: 15, width: 480, dither: 'floyd_steinberg' },
+      high: { fps: 24, width: 640, dither: 'floyd_steinberg' }
+    };
+
+    // Calculate compress presets based on original bitrate
+    function getCompressPresets() {
+      const origBitrate = info.bitrate || 5000;
+      // Presets as percentage of original: 30%, 50%, 70%
+      return {
+        low: { bitrate: Math.round(origBitrate * 0.3), preset: 'veryfast', label: '~30%' },
+        medium: { bitrate: Math.round(origBitrate * 0.5), preset: 'medium', label: '~50%' },
+        high: { bitrate: Math.round(origBitrate * 0.7), preset: 'slow', label: '~70%' }
+      };
+    }
+
+    // Format file size
+    function formatSize(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+      if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+      return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+    }
+
+    // Update compress preset button labels based on original bitrate
+    function updateCompressLabels() {
+      const presets = getCompressPresets();
+      const btns = document.querySelectorAll('#opts-compress .preset-btn');
+      const labels = ['Small', 'Balanced', 'Quality'];
+      const keys = ['low', 'medium', 'high'];
+      btns.forEach((btn, i) => {
+        const p = presets[keys[i]];
+        btn.textContent = `${labels[i]} (${p.label})`;
+      });
+    }
+
+    // Update estimates for tools
+    function updateEstimates() {
+      const duration = info.duration || 60;
+      const origBitrate = info.bitrate || 5000;
+
+      // Compress estimate: bitrate * duration / 8 (bits to bytes)
+      const bitrate = parseInt($('compress-bitrate').value) || 2500;
+      const compressSize = (bitrate * 1000 * duration) / 8;
+      const origSize = (origBitrate * 1000 * duration) / 8;
+      const reduction = origBitrate > 0 ? Math.round((1 - bitrate / origBitrate) * 100) : 0;
+      $('compress-estimate').textContent = `Est: ~${formatSize(compressSize)} (${reduction}% smaller)`;
+
+      // GIF estimate: rough approximation based on fps, width, duration
+      const gifFps = parseInt($('togif-fps').value) || 15;
+      const gifWidth = parseInt($('togif-width').value) || 480;
+      const frames = gifFps * duration;
+      const bytesPerFrame = (gifWidth / 480) * 15000;
+      const gifSize = frames * bytesPerFrame;
+      $('togif-estimate').textContent = `Est. output: ~${formatSize(gifSize)} (varies)`;
+
+      // Shrink estimate: speed multiplier
+      const targetDuration = parseFloat($('shrink-duration').value) || 60;
+      const speedMultiplier = (duration / targetDuration).toFixed(1);
+      $('shrink-estimate').textContent = `Speed: ${speedMultiplier}x faster`;
+    }
+
+    function setCompressQuality(level) {
+      const presets = getCompressPresets();
+      const p = presets[level];
+      $('compress-bitrate').value = p.bitrate;
+      $('compress-preset').value = p.preset;
+      document.querySelectorAll('#opts-compress .preset-btn').forEach(b => b.classList.remove('active'));
+      event.target.classList.add('active');
+      updateEstimates();
+    }
+
+    function setGifQuality(level) {
+      const p = gifPresets[level];
+      $('togif-fps').value = p.fps;
+      $('togif-width').value = p.width;
+      $('togif-dither').value = p.dither;
+      document.querySelectorAll('#opts-togif .preset-btn').forEach(b => b.classList.remove('active'));
+      event.target.classList.add('active');
+      updateEstimates();
+    }
+
+    function setMkvMode(mode) {
+      mkvFastCopy = mode === 'fast';
+      $('mkv2mp4-quality').value = mkvFastCopy ? 23 : 20;
+      $('mkv-fast').classList.toggle('active', mkvFastCopy);
+      $('mkv-compat').classList.toggle('active', !mkvFastCopy);
+    }
+
+    // Shrink duration
+    function updateShrinkLabel() {
+      const val = parseFloat($('shrink-duration').value);
+      // Show decimal only if not a whole number
+      $('shrink-val').textContent = (val % 1 === 0 ? val : val.toFixed(1)) + 's';
+      updateEstimates();
+      updateShrinkMarker();
+    }
+
+    function updateShrinkMarker() {
+      const slider = $('shrink-duration');
+      const marker = $('shrink-marker-60');
+      const min = parseInt(slider.min) || 10;
+      const max = parseInt(slider.max) || 300;
+
+      // Position marker at 60s (if within range)
+      if (60 >= min && 60 <= max) {
+        const pct = ((60 - min) / (max - min)) * 100;
+        marker.style.left = `calc(${pct}% - 1px)`;
+        marker.style.display = 'block';
+      } else {
+        marker.style.display = 'none';
       }
     }
 
-    // Toggle states
-    let mkvFastCopy = true;
-    let loopAutoDetect = true;
-    let trimAccurate = false;
-    let shortsMode = 'crop';
-    let shortsCropX = 0.5; // 0-1, where 0.5 is center
+    function handleShrinkKey(e) {
+      const slider = $('shrink-duration');
+      const min = parseFloat(slider.min) || 10;
+      const max = parseFloat(slider.max) || 300;
+      const step = 0.1; // 0.1 second per keypress
+      let val = parseFloat(slider.value);
 
-    function toggleMkv() {
-      mkvFastCopy = !mkvFastCopy;
-      $('mkv2mp4-toggle').classList.toggle('on', mkvFastCopy);
-      $('mkv2mp4-toggle').querySelector('.toggle-label').textContent = mkvFastCopy ? 'Fast copy' : 'Re-encode';
-      document.querySelectorAll('.mkv-quality').forEach(el => el.style.display = mkvFastCopy ? 'none' : 'flex');
+      if (e.key === 'ArrowUp' || e.key === 'ArrowRight') {
+        e.preventDefault();
+        val = Math.min(max, val + step);
+        // Snap to 60 if close
+        if (Math.abs(val - 60) <= 0.5 && 60 >= min && 60 <= max) val = 60;
+      } else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') {
+        e.preventDefault();
+        val = Math.max(min, val - step);
+        // Snap to 60 if close
+        if (Math.abs(val - 60) <= 0.5 && 60 >= min && 60 <= max) val = 60;
+      } else {
+        return;
+      }
+
+      slider.value = val.toFixed(1);
+      updateShrinkLabel();
     }
 
-    function toggleLoopAuto() {
-      loopAutoDetect = !loopAutoDetect;
-      $('loop-toggle').classList.toggle('on', loopAutoDetect);
-      $('loop-toggle').querySelector('.toggle-label').textContent = loopAutoDetect ? 'Auto-find loop' : 'Manual';
-      document.querySelectorAll('.loop-manual').forEach(el => el.style.display = loopAutoDetect ? 'none' : 'flex');
+    function setShrinkTo60() {
+      const slider = $('shrink-duration');
+      const min = parseFloat(slider.min) || 10;
+      const max = parseFloat(slider.max) || 300;
+      if (60 >= min && 60 <= max) {
+        slider.value = 60;
+        updateShrinkLabel();
+      }
     }
 
-    function toggleTrimAccurate() {
-      trimAccurate = !trimAccurate;
-      $('trim-toggle').classList.toggle('on', trimAccurate);
+    // Generic timeline handler factory (DRY - used by trim and loop)
+    function createTimelineHandlers(config) {
+      const { timelineId, rangeId, startHandleId, endHandleId, startInputId, endInputId, outputId, onUpdate, minDuration = 0.5, getSnapPoints } = config;
+
+      // Snap to nearest point within threshold (in seconds)
+      function snapToPoint(time, snapPoints, threshold = 0.5) {
+        if (!snapPoints || snapPoints.length === 0) return time;
+        let nearest = time;
+        let minDist = threshold;
+        for (const pt of snapPoints) {
+          const dist = Math.abs(time - pt);
+          if (dist < minDist) {
+            minDist = dist;
+            nearest = pt;
+          }
+        }
+        return nearest;
+      }
+
+      function updateDisplay() {
+        const duration = info.duration || 10;
+        const start = parseFloat($(startInputId).value) || 0;
+        const end = parseFloat($(endInputId).value) || duration;
+        const startPct = (start / duration) * 100;
+        const endPct = (end / duration) * 100;
+
+        $(rangeId).style.left = startPct + '%';
+        $(rangeId).style.width = (endPct - startPct) + '%';
+        $(startHandleId).style.left = 'calc(' + startPct + '% - 4px)';
+        $(endHandleId).style.left = 'calc(' + endPct + '% - 4px)';
+
+        const outputDuration = Math.max(0, end - start);
+        $(outputId).textContent = formatTime(start) + ' → ' + formatTime(end) + ' (' + outputDuration.toFixed(1) + 's)';
+
+        // Update player range indicator
+        if (typeof updatePlayerRange === 'function') updatePlayerRange();
+      }
+
+      function initHandles() {
+        const timeline = $(timelineId);
+        const handleStart = $(startHandleId);
+        const handleEnd = $(endHandleId);
+        let dragging = null;
+
+        function onMouseMove(e) {
+          if (!dragging) return;
+          const rect = timeline.getBoundingClientRect();
+          const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+          let time = pct * info.duration;
+          const video = $('videoPreview');
+
+          // Get snap points if available
+          const snapPoints = getSnapPoints ? getSnapPoints(dragging) : null;
+          if (snapPoints) {
+            time = snapToPoint(time, snapPoints);
+          }
+
+          if (dragging === 'start') {
+            const endVal = parseFloat($(endInputId).value);
+            // Start can't go past (end - minDuration) and can't go below 0
+            const maxStart = Math.max(0, endVal - minDuration);
+            const newStart = Math.max(0, Math.min(time, maxStart));
+            $(startInputId).value = newStart.toFixed(2);
+            video.currentTime = newStart;
+          } else {
+            const startVal = parseFloat($(startInputId).value);
+            // End can't go before (start + minDuration) and can't exceed duration
+            const minEnd = startVal + minDuration;
+            const newEnd = Math.min(info.duration, Math.max(time, minEnd));
+            $(endInputId).value = newEnd.toFixed(2);
+            video.currentTime = Math.max(0, newEnd - 0.5);
+          }
+          if (onUpdate) onUpdate();
+          updateDisplay();
+        }
+
+        function onMouseUp() {
+          if (dragging) {
+            (dragging === 'start' ? handleStart : handleEnd).classList.remove('dragging');
+            dragging = null;
+          }
+          document.removeEventListener('mousemove', onMouseMove);
+          document.removeEventListener('mouseup', onMouseUp);
+        }
+
+        ['start', 'end'].forEach(type => {
+          const handle = type === 'start' ? handleStart : handleEnd;
+          handle.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            dragging = type;
+            handle.classList.add('dragging');
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+          });
+        });
+      }
+
+      return { updateDisplay, initHandles };
     }
 
-    function setShortsMode(mode) {
-      shortsMode = mode;
-      $('shorts-crop').classList.toggle('active', mode === 'crop');
-      $('shorts-blur').classList.toggle('active', mode === 'blur');
-      // Show/hide crop overlay
-      $('cropOverlay').classList.toggle('active', mode === 'crop' && activeTool === 'shorts');
-      document.querySelector('.shorts-hint').style.display = mode === 'crop' ? 'flex' : 'none';
-      if (mode === 'crop') updateCropOverlay();
+    // Loop timeline (uses shared factory with 1s minimum for loops)
+    const loopTimeline = createTimelineHandlers({
+      timelineId: 'loop-timeline', rangeId: 'loop-timeline-range',
+      startHandleId: 'loop-handle-start', endHandleId: 'loop-handle-end',
+      startInputId: 'loop-start', endInputId: 'loop-end', outputId: 'loop-output',
+      onUpdate: () => { selectedStartId = null; selectedEndIndex = 0; renderLoopMarkers(); },
+      minDuration: 1,
+      getSnapPoints: (handleType) => {
+        if (loopStartPoints.length === 0) return null;
+        if (handleType === 'start') {
+          return loopStartPoints.map(p => p.time);
+        } else if (selectedStartId !== null) {
+          const start = loopStartPoints.find(p => p.id === selectedStartId);
+          return start ? start.matches.map(m => m.end) : null;
+        }
+        return null;
+      }
+    });
+    const updateLoopTimeline = loopTimeline.updateDisplay;
+    const initLoopTimelineHandles = loopTimeline.initHandles;
+
+    // Loop detection and marker system
+    async function detectLoopPairs() {
+      const btn = $('loop-detect-btn');
+      const output = $('loop-output');
+      btn.disabled = true;
+      btn.textContent = 'Scanning...';
+      output.textContent = 'Analyzing frames...';
+
+      try {
+        const minGap = parseInt($('loop-min-gap').value) || 5;
+        const res = await postJson('/api/detect-loops', { minGap });
+
+        if (res.success && res.startPoints && res.startPoints.length > 0) {
+          loopStartPoints = res.startPoints;
+          selectedStartId = null;
+          selectedEndIndex = 0;
+          renderLoopMarkers();
+          output.textContent = `Found ${res.startPoints.length} loop point(s). Click to select.`;
+          // Auto-select first start
+          selectStartMarker(0);
+        } else if (res.success) {
+          loopStartPoints = [];
+          renderLoopMarkers();
+          output.textContent = 'No matching frames found. Try adjusting min gap.';
+        } else {
+          output.textContent = res.error || 'Detection failed';
+        }
+      } catch (err) {
+        output.textContent = 'Detection failed: ' + err.message;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Detect';
+      }
     }
 
-    // Crop overlay for shorts
+    function renderLoopMarkers() {
+      const container = $('loop-markers');
+      container.innerHTML = '';
+      const duration = info.duration || 1;
+
+      // Render start markers (always visible)
+      loopStartPoints.forEach((start) => {
+        const marker = document.createElement('div');
+        marker.className = 'loop-marker start';
+        marker.dataset.startId = start.id;
+        marker.style.left = (start.time / duration * 100) + '%';
+        marker.style.backgroundColor = loopMarkerColor;
+        marker.title = `Start: ${start.time.toFixed(1)}s (${start.matches.length} match${start.matches.length > 1 ? 'es' : ''})`;
+        marker.classList.toggle('selected', start.id === selectedStartId);
+        marker.onclick = () => selectStartMarker(start.id);
+        container.appendChild(marker);
+      });
+
+      // Render end markers only for selected start
+      if (selectedStartId !== null) {
+        const start = loopStartPoints.find(p => p.id === selectedStartId);
+        if (start) {
+          start.matches.forEach((match, idx) => {
+            const marker = document.createElement('div');
+            marker.className = 'loop-marker end';
+            marker.dataset.startId = selectedStartId;
+            marker.dataset.endIdx = idx;
+            marker.style.left = (match.end / duration * 100) + '%';
+            marker.style.backgroundColor = loopMarkerColor;
+            marker.title = `End: ${match.end.toFixed(1)}s (${(match.score * 100).toFixed(0)}% match)`;
+            marker.classList.toggle('selected', idx === selectedEndIndex);
+            marker.onclick = () => selectEndMarker(idx);
+            container.appendChild(marker);
+          });
+        }
+      }
+    }
+
+    function selectStartMarker(startId) {
+      const start = loopStartPoints.find(p => p.id === startId);
+      if (!start) return;
+
+      selectedStartId = startId;
+      selectedEndIndex = 0;
+      loopPlaybackEnabled = true;
+
+      // Set loop values
+      const match = start.matches[0];
+      $('loop-start').value = start.time.toFixed(2);
+      $('loop-end').value = match.end.toFixed(2);
+      updateLoopTimeline();
+      renderLoopMarkers();
+
+      // Seek and start loop preview
+      const video = $('videoPreview');
+      video.currentTime = start.time;
+
+      updateLoopOutput();
+    }
+
+    function selectEndMarker(endIdx) {
+      if (selectedStartId === null) return;
+      const start = loopStartPoints.find(p => p.id === selectedStartId);
+      if (!start || endIdx < 0 || endIdx >= start.matches.length) return;
+
+      selectedEndIndex = endIdx;
+      const match = start.matches[endIdx];
+      $('loop-end').value = match.end.toFixed(2);
+      updateLoopTimeline();
+      renderLoopMarkers();
+      updateLoopOutput();
+    }
+
+    function cycleEndMarker(delta) {
+      if (selectedStartId === null) return;
+      const start = loopStartPoints.find(p => p.id === selectedStartId);
+      if (!start || start.matches.length <= 1) return;
+
+      const newIdx = (selectedEndIndex + delta + start.matches.length) % start.matches.length;
+      selectEndMarker(newIdx);
+    }
+
+    function updateLoopOutput() {
+      if (selectedStartId === null) return;
+      const start = loopStartPoints.find(p => p.id === selectedStartId);
+      if (!start) return;
+      const match = start.matches[selectedEndIndex];
+      const matchCount = start.matches.length;
+      const nav = matchCount > 1 ? ` <span style="opacity:0.6">[${selectedEndIndex + 1}/${matchCount}] ←→</span>` : '';
+      $('loop-output').innerHTML = `${start.time.toFixed(1)}s → ${match.end.toFixed(1)}s <span style="opacity:0.7">(${(match.score * 100).toFixed(0)}%)</span>${nav}`;
+    }
+
+    // Seamless loop playback
+    function setupLoopPlayback() {
+      const video = $('videoPreview');
+      video.addEventListener('timeupdate', () => {
+        if (activeTool !== 'loop' || !loopPlaybackEnabled) return;
+        const loopEnd = parseFloat($('loop-end').value);
+        const loopStart = parseFloat($('loop-start').value);
+        if (video.currentTime >= loopEnd - 0.05) {
+          video.currentTime = loopStart;
+        }
+      });
+    }
+
+    // Audio
+    function updateAudioLabel() {
+      audioVolume = parseInt($('audio-volume').value);
+      $('audio-vol-val').textContent = audioVolume + '%';
+    }
+
+    function toggleAudioMix() {
+      audioMix = !audioMix;
+      $('audio-toggle').classList.toggle('on', audioMix);
+      $('audio-toggle').querySelector('.toggle-label').textContent = audioMix ? 'Blend with original' : 'Replace original';
+    }
+
+    // File drop zone factory (DRY - used by audio and thumbnail)
+    // Upload file to server and return path
+    async function uploadFile(file, type) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = async () => {
+          try {
+            const res = await postJson('/api/upload', {
+              fileName: file.name,
+              data: reader.result,
+              type: type
+            });
+            if (res.success) {
+              resolve(res.path);
+            } else {
+              reject(new Error(res.error || 'Upload failed'));
+            }
+          } catch (err) {
+            reject(err);
+          }
+        };
+        reader.onerror = () => reject(new Error('Failed to read file'));
+        reader.readAsDataURL(file);
+      });
+    }
+
+    function initDropZone(config) {
+      const { zoneId, inputId, pathId, nameId, type } = config;
+      const zone = $(zoneId);
+
+      zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('dragover'); });
+      zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+      zone.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        zone.classList.remove('dragover');
+        if (e.dataTransfer.files.length) {
+          const file = e.dataTransfer.files[0];
+          $(nameId).textContent = 'Uploading...';
+          try {
+            const path = await uploadFile(file, type);
+            $(pathId).value = path;
+            $(nameId).textContent = file.name;
+            zone.classList.add('has-file');
+          } catch (err) {
+            $(nameId).textContent = 'Upload failed: ' + err.message;
+          }
+        }
+      });
+    }
+
+    async function handleAudioFile(input) {
+      if (input.files && input.files[0]) {
+        const file = input.files[0];
+        $('audioFileName').textContent = 'Uploading...';
+        try {
+          const path = await uploadFile(file, 'audio');
+          $('audio-path').value = path;
+          $('audioFileName').textContent = file.name;
+          $('audioDropZone').classList.add('has-file');
+        } catch (err) {
+          $('audioFileName').textContent = 'Upload failed: ' + err.message;
+        }
+      }
+    }
+
+    async function handleThumbFile(input) {
+      if (input.files && input.files[0]) {
+        const file = input.files[0];
+        $('thumbFileName').textContent = 'Uploading...';
+        try {
+          // Show local preview immediately
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            $('thumbPreview').src = e.target.result;
+            $('thumbPreviewWrap').classList.add('has-image');
+          };
+          reader.readAsDataURL(file);
+
+          // Upload to server
+          const path = await uploadFile(file, 'image');
+          $('thumb-image').value = path;
+          $('thumbFileName').textContent = 'Click to change';
+        } catch (err) {
+          $('thumbFileName').textContent = 'Upload failed: ' + err.message;
+          $('thumbPreviewWrap').classList.remove('has-image');
+        }
+      }
+    }
+
+    function initDropZones() {
+      initDropZone({ zoneId: 'audioDropZone', inputId: 'audioFileInput', pathId: 'audio-path', nameId: 'audioFileName', type: 'audio' });
+      // Thumbnail uses custom drop handler with preview
+      initThumbDropZone();
+    }
+
+    function initThumbDropZone() {
+      const zone = $('thumbPreviewWrap');
+      zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.style.borderColor = 'var(--acc)'; });
+      zone.addEventListener('dragleave', () => zone.style.borderColor = '');
+      zone.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        zone.style.borderColor = '';
+        if (e.dataTransfer.files.length) {
+          // Trigger the file input handler
+          const input = $('thumbFileInput');
+          input.files = e.dataTransfer.files;
+          handleThumbFile(input);
+        }
+      });
+    }
+
+    // Video management
+    function reloadVideo() {
+      const video = $('videoPreview');
+      video.src = '/api/video?t=' + Date.now();
+    }
+
+    // Custom video player controls
+    const MIN_SPEED = 0.5;
+    const MAX_SPEED = 8;
+    const SPEED_STEP = 0.5;
+    let currentSpeed = 1;
+    let isSeeking = false;
+
+    function formatTime(sec) {
+      if (!sec || isNaN(sec)) return '0:00';
+      const m = Math.floor(sec / 60);
+      const s = Math.floor(sec % 60);
+      return m + ':' + s.toString().padStart(2, '0');
+    }
+
+    function togglePlay() {
+      const video = $('videoPreview');
+      video.paused ? video.play() : video.pause();
+    }
+
+    function toggleMute() {
+      const video = $('videoPreview');
+      video.muted = !video.muted;
+      updateVolumeUI();
+    }
+
+    function updatePlayIcon() {
+      const video = $('videoPreview');
+      $('playIcon').style.display = video.paused ? 'block' : 'none';
+      $('pauseIcon').style.display = video.paused ? 'none' : 'block';
+    }
+
+    function updateVolumeUI() {
+      const video = $('videoPreview');
+      const muted = video.muted || video.volume === 0;
+      $('volIcon').style.display = muted ? 'none' : 'block';
+      $('mutedIcon').style.display = muted ? 'block' : 'none';
+      $('volumeLevel').style.width = (muted ? 0 : video.volume * 100) + '%';
+    }
+
+    // Get the active playback range (for trim/loop tools, or full video otherwise)
+    function getPlaybackRange() {
+      const duration = info.duration || 1;
+      if (activeTool === 'trim') {
+        return {
+          start: parseFloat($('trim-start').value) || 0,
+          end: parseFloat($('trim-end').value) || duration,
+          normalized: true
+        };
+      } else if (activeTool === 'loop') {
+        return {
+          start: parseFloat($('loop-start').value) || 0,
+          end: parseFloat($('loop-end').value) || duration,
+          normalized: true
+        };
+      }
+      return { start: 0, end: duration, normalized: false };
+    }
+
+    function updateTimeDisplay() {
+      const video = $('videoPreview');
+      if (!video.duration) return;
+
+      const range = getPlaybackRange();
+      const rangeDuration = range.end - range.start;
+
+      if (range.normalized) {
+        // Normalize timeline to show only the selected range
+        const relativeTime = Math.max(0, video.currentTime - range.start);
+        const pct = Math.min(100, (relativeTime / rangeDuration) * 100);
+        $('playerProgress').style.width = pct + '%';
+        $('playerThumb').style.left = pct + '%';
+        $('playerTime').textContent = formatTime(relativeTime) + ' / ' + formatTime(rangeDuration);
+      } else {
+        // Full video timeline
+        const pct = (video.currentTime / video.duration) * 100;
+        $('playerProgress').style.width = pct + '%';
+        $('playerThumb').style.left = pct + '%';
+        $('playerTime').textContent = formatTime(video.currentTime) + ' / ' + formatTime(video.duration);
+      }
+    }
+
+    function updatePlayerRange() {
+      // Range indicator no longer needed - timeline is now normalized
+      $('playerRange').classList.remove('active');
+    }
+
+    function initResizeDivider() {
+      const divider = $('resizeDivider');
+      const container = $('previewContainer');
+      let isDragging = false;
+      let startY = 0;
+      let startHeight = 0;
+
+      divider.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        isDragging = true;
+        startY = e.clientY;
+        startHeight = container.offsetHeight;
+        divider.classList.add('dragging');
+        document.body.style.cursor = 'ns-resize';
+        document.body.style.userSelect = 'none';
+      });
+
+      document.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        const delta = e.clientY - startY;
+        const newHeight = Math.max(120, Math.min(600, startHeight + delta));
+        container.style.height = newHeight + 'px';
+        updateCropOverlay();
+      });
+
+      document.addEventListener('mouseup', () => {
+        if (isDragging) {
+          isDragging = false;
+          divider.classList.remove('dragging');
+          document.body.style.cursor = '';
+          document.body.style.userSelect = '';
+        }
+      });
+    }
+
+    // Video zoom and pan
+    let videoZoom = 1;
+    let videoPanX = 0;
+    let videoPanY = 0;
+
+    function initVideoZoom() {
+      const wrap = $('previewWrap');
+      const video = $('videoPreview');
+      let isPanning = false;
+      let panStartX = 0, panStartY = 0;
+      let startPanX = 0, startPanY = 0;
+
+      function updateVideoTransform() {
+        video.style.transform = `scale(${videoZoom}) translate(${videoPanX}px, ${videoPanY}px)`;
+        wrap.classList.toggle('zoomed', videoZoom > 1);
+      }
+
+      function resetZoom() {
+        videoZoom = 1;
+        videoPanX = 0;
+        videoPanY = 0;
+        updateVideoTransform();
+      }
+
+      // Scroll to zoom
+      wrap.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        const delta = e.deltaY > 0 ? -0.1 : 0.1;
+        const newZoom = Math.max(1, Math.min(5, videoZoom + delta));
+
+        if (newZoom === 1) {
+          resetZoom();
+        } else {
+          videoZoom = newZoom;
+          // Clamp pan when zooming out
+          const maxPan = (videoZoom - 1) * 50;
+          videoPanX = Math.max(-maxPan, Math.min(maxPan, videoPanX));
+          videoPanY = Math.max(-maxPan, Math.min(maxPan, videoPanY));
+          updateVideoTransform();
+        }
+      }, { passive: false });
+
+      // Pan when zoomed
+      video.addEventListener('mousedown', (e) => {
+        if (videoZoom <= 1) return;
+        e.preventDefault();
+        isPanning = true;
+        panStartX = e.clientX;
+        panStartY = e.clientY;
+        startPanX = videoPanX;
+        startPanY = videoPanY;
+        wrap.classList.add('panning');
+      });
+
+      document.addEventListener('mousemove', (e) => {
+        if (!isPanning) return;
+        const dx = (e.clientX - panStartX) / videoZoom;
+        const dy = (e.clientY - panStartY) / videoZoom;
+        const maxPan = (videoZoom - 1) * 50;
+        videoPanX = Math.max(-maxPan, Math.min(maxPan, startPanX + dx));
+        videoPanY = Math.max(-maxPan, Math.min(maxPan, startPanY + dy));
+        updateVideoTransform();
+      });
+
+      document.addEventListener('mouseup', () => {
+        if (isPanning) {
+          isPanning = false;
+          wrap.classList.remove('panning');
+        }
+      });
+
+      // Double-click to reset zoom
+      video.addEventListener('dblclick', resetZoom);
+    }
+
+    function initPlayerControls() {
+      const video = $('videoPreview');
+      const seek = $('playerSeek');
+      const volSlider = $('volumeSlider');
+
+      video.addEventListener('play', updatePlayIcon);
+      video.addEventListener('pause', updatePlayIcon);
+      video.addEventListener('timeupdate', () => {
+        updateTimeDisplay();
+        // Constrain playback to selected range when trim or loop tool is active
+        if (activeTool === 'trim' || activeTool === 'loop') {
+          const inputPrefix = activeTool === 'trim' ? 'trim' : 'loop';
+          const start = parseFloat($(`${inputPrefix}-start`).value) || 0;
+          const end = parseFloat($(`${inputPrefix}-end`).value) || video.duration;
+          if (video.currentTime >= end) {
+            video.currentTime = start;
+          } else if (video.currentTime < start) {
+            video.currentTime = start;
+          }
+        }
+      });
+      video.addEventListener('loadedmetadata', () => {
+        updateTimeDisplay();
+        updateVolumeUI();
+        video.pause();
+      });
+      video.addEventListener('volumechange', updateVolumeUI);
+
+      // Seek bar interaction
+      seek.addEventListener('mousedown', (e) => {
+        isSeeking = true;
+        seekTo(e);
+      });
+      document.addEventListener('mousemove', (e) => {
+        if (isSeeking) seekTo(e);
+      });
+      document.addEventListener('mouseup', () => {
+        isSeeking = false;
+      });
+
+      function seekTo(e) {
+        const rect = seek.getBoundingClientRect();
+        const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        const range = getPlaybackRange();
+        // Seek within the active range (normalized for trim/loop)
+        video.currentTime = range.start + pct * (range.end - range.start);
+      }
+
+      // Volume slider interaction
+      volSlider.addEventListener('click', (e) => {
+        const rect = volSlider.getBoundingClientRect();
+        const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        video.volume = pct;
+        video.muted = false;
+      });
+    }
+
+    function setSpeed(speed) {
+      const video = $('videoPreview');
+      currentSpeed = Math.max(MIN_SPEED, Math.min(MAX_SPEED, speed));
+      video.playbackRate = currentSpeed;
+      updateSpeedDisplay();
+    }
+
+    function adjustSpeed(delta) {
+      setSpeed(currentSpeed + delta);
+    }
+
+    function resetSpeed() {
+      setSpeed(1);
+    }
+
+    function updateSpeedDisplay() {
+      const display = currentSpeed === Math.floor(currentSpeed) ? currentSpeed + 'x' : currentSpeed.toFixed(1) + 'x';
+      $('speedVal').textContent = display;
+      $('speedVal').style.color = currentSpeed === 1 ? 'var(--acc)' : 'var(--warn)';
+    }
+
+    // Keyboard hotkeys
+    document.addEventListener('keydown', (e) => {
+      // Skip if typing in input
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+      // Skip loading screen with space
+      if (e.code === 'Space' && $('loading').classList.contains('on')) {
+        e.preventDefault();
+        skipLoading();
+        return;
+      }
+
+      const video = $('videoPreview');
+      if (!video) return;
+
+      const range = getPlaybackRange();
+
+      switch(e.code) {
+        case 'Space':
+          e.preventDefault();
+          togglePlay();
+          break;
+        case 'ArrowLeft':
+          e.preventDefault();
+          if (activeTool === 'loop' && selectedStartId !== null) {
+            cycleEndMarker(-1); // Cycle to previous end marker
+          } else {
+            video.currentTime = Math.max(range.start, video.currentTime - 5);
+          }
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          if (activeTool === 'loop' && selectedStartId !== null) {
+            cycleEndMarker(1); // Cycle to next end marker
+          } else {
+            video.currentTime = Math.min(range.end, video.currentTime + 5);
+          }
+          break;
+        case 'ArrowUp':
+          e.preventDefault();
+          video.volume = Math.min(1, video.volume + 0.1);
+          break;
+        case 'ArrowDown':
+          e.preventDefault();
+          video.volume = Math.max(0, video.volume - 0.1);
+          break;
+        case 'KeyM':
+          toggleMute();
+          break;
+        case 'KeyJ': // J - Shuttle left / slow down (Premiere)
+          e.preventDefault();
+          adjustSpeed(-SPEED_STEP);
+          break;
+        case 'KeyK': // K - Stop (Premiere) - resets speed
+          e.preventDefault();
+          video.pause();
+          resetSpeed();
+          updatePlayIcon();
+          break;
+        case 'KeyL': // L - Shuttle right / speed up (Premiere)
+          e.preventDefault();
+          adjustSpeed(SPEED_STEP);
+          if (video.paused) { video.play(); updatePlayIcon(); }
+          break;
+        case 'Home':
+          video.currentTime = range.start;
+          break;
+        case 'End':
+          video.currentTime = range.end;
+          break;
+        case 'Digit0': case 'Digit1': case 'Digit2': case 'Digit3': case 'Digit4':
+        case 'Digit5': case 'Digit6': case 'Digit7': case 'Digit8': case 'Digit9':
+          const pct = parseInt(e.code.replace('Digit', '')) / 10;
+          video.currentTime = range.start + (range.end - range.start) * pct;
+          break;
+      }
+    });
+
+    function setPortraitMode(mode) {
+      portraitMode = mode;
+    }
+
+    // Crop overlay for portrait mode
     function updateCropOverlay() {
       const video = $('videoPreview');
       const overlay = $('cropOverlay');
       const cropWindow = $('cropWindow');
+      const cropLeft = $('cropLeft');
+      const cropRight = $('cropRight');
       if (!video.videoWidth || !info.width) return;
 
       // Get video display size
@@ -419,10 +1722,14 @@
       // Size crop window
       const cropW = videoRect.width * cropWidthRatio;
       const maxX = videoRect.width - cropW;
-      const cropX = shortsCropX * maxX;
+      const cropX = portraitCropX * maxX;
 
       cropWindow.style.width = cropW + 'px';
       cropWindow.style.left = cropX + 'px';
+
+      // Position side panels (for blur effect)
+      cropLeft.style.width = cropX + 'px';
+      cropRight.style.width = (videoRect.width - cropX - cropW) + 'px';
     }
 
     function initCropOverlay() {
@@ -448,7 +1755,10 @@
         let newLeft = startLeft + (e.clientX - startX);
         newLeft = Math.max(0, Math.min(maxX, newLeft));
         cropWindow.style.left = newLeft + 'px';
-        shortsCropX = maxX > 0 ? newLeft / maxX : 0.5;
+        portraitCropX = maxX > 0 ? newLeft / maxX : 0.5;
+        // Update side panels
+        $('cropLeft').style.width = newLeft + 'px';
+        $('cropRight').style.width = (overlay.offsetWidth - newLeft - cropW) + 'px';
       }
 
       function onDragEnd() {
@@ -462,70 +1772,14 @@
       window.addEventListener('resize', updateCropOverlay);
     }
 
-    // Timeline control for trim
-    function updateTimeline() {
-      const duration = info.duration || 10;
-      const start = parseFloat($('trim-start').value) || 0;
-      const end = parseFloat($('trim-end').value) || duration;
-      const startPct = (start / duration) * 100;
-      const endPct = (end / duration) * 100;
-
-      $('timeline-range').style.left = startPct + '%';
-      $('timeline-range').style.width = (endPct - startPct) + '%';
-      $('handle-start').style.left = 'calc(' + startPct + '% - 4px)';
-      $('handle-end').style.left = 'calc(' + endPct + '% - 4px)';
-
-      const outputDuration = Math.max(0, end - start);
-      $('trim-output').textContent = outputDuration.toFixed(1) + 's';
-    }
-
-    function initTimelineHandles() {
-      const timeline = $('timeline');
-      const handleStart = $('handle-start');
-      const handleEnd = $('handle-end');
-      let dragging = null;
-
-      function onMouseMove(e) {
-        if (!dragging) return;
-        const rect = timeline.getBoundingClientRect();
-        const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-        const time = pct * info.duration;
-
-        if (dragging === 'start') {
-          const endVal = parseFloat($('trim-end').value);
-          $('trim-start').value = Math.min(time, endVal - 0.1).toFixed(1);
-        } else {
-          const startVal = parseFloat($('trim-start').value);
-          $('trim-end').value = Math.max(time, startVal + 0.1).toFixed(1);
-        }
-        updateTimeline();
-      }
-
-      function onMouseUp() {
-        if (dragging) {
-          (dragging === 'start' ? handleStart : handleEnd).classList.remove('dragging');
-          dragging = null;
-        }
-        document.removeEventListener('mousemove', onMouseMove);
-        document.removeEventListener('mouseup', onMouseUp);
-      }
-
-      handleStart.addEventListener('mousedown', (e) => {
-        e.preventDefault();
-        dragging = 'start';
-        handleStart.classList.add('dragging');
-        document.addEventListener('mousemove', onMouseMove);
-        document.addEventListener('mouseup', onMouseUp);
-      });
-
-      handleEnd.addEventListener('mousedown', (e) => {
-        e.preventDefault();
-        dragging = 'end';
-        handleEnd.classList.add('dragging');
-        document.addEventListener('mousemove', onMouseMove);
-        document.addEventListener('mouseup', onMouseUp);
-      });
-    }
+    // Trim timeline (uses shared factory)
+    const trimTimeline = createTimelineHandlers({
+      timelineId: 'timeline', rangeId: 'timeline-range',
+      startHandleId: 'handle-start', endHandleId: 'handle-end',
+      startInputId: 'trim-start', endInputId: 'trim-end', outputId: 'trim-output'
+    });
+    const updateTimeline = trimTimeline.updateDisplay;
+    const initTimelineHandles = trimTimeline.initHandles;
 
     function getOpts() {
       const o = { tool: activeTool, inputPath: currentFilePath };
@@ -533,21 +1787,27 @@
       if (activeTool === 'togif') { o.fps = +$('togif-fps').value; o.width = +$('togif-width').value; o.dither = $('togif-dither').value; }
       if (activeTool === 'mkv2mp4') { o.copyStreams = mkvFastCopy; o.crf = +$('mkv2mp4-quality').value; }
       if (activeTool === 'shrink') { o.targetDuration = +$('shrink-duration').value; }
-      if (activeTool === 'loop') { o.autoDetect = loopAutoDetect; o.start = +$('loop-start').value; o.end = +$('loop-end').value; }
+      if (activeTool === 'loop') { o.autoDetect = false; o.start = +$('loop-start').value; o.end = +$('loop-end').value; }
       if (activeTool === 'thumb') { o.imagePath = $('thumb-image').value; }
-      if (activeTool === 'trim') { o.trimStart = +$('trim-start').value; o.trimEnd = +$('trim-end').value; o.accurate = trimAccurate; }
-      if (activeTool === 'shorts') { o.mode = shortsMode; o.cropX = shortsCropX; }
+      if (activeTool === 'trim') { o.trimStart = +$('trim-start').value; o.trimEnd = +$('trim-end').value; o.accurate = false; }
+      if (activeTool === 'portrait') { o.mode = portraitMode; o.cropX = portraitCropX; }
+      if (activeTool === 'audio') { o.audioPath = $('audio-path').value; o.audioVolume = audioVolume / 100; o.audioMix = audioMix; }
       return o;
     }
 
     async function process() {
       if (!activeTool) return;
-      const names = { compress:'Compressing', togif:'Creating GIF', mkv2mp4:'Converting to MP4', shrink:'Shrinking', loop:'Creating loop', thumb:'Setting thumbnail', trim:'Trimming', shorts:'Creating shorts' };
+      const video = $('videoPreview');
+      video.pause();
+      updatePlayIcon();
+      const names = { compress:'Compressing', togif:'Creating GIF', mkv2mp4:'Converting to MP4', shrink:'Shrinking', loop:'Creating loop', thumb:'Setting thumbnail', trim:'Trimming', portrait:'Creating portrait', audio:'Adding audio' };
       const toolId = activeTool;
+      const opts = getOpts();
       $('main').classList.add('hide'); $('btns').classList.add('hide');
       $('loading').classList.add('on'); $('loading').querySelector('span').textContent = names[activeTool] + '...';
       try {
-        const res = await postJson('/api/process', getOpts());
+        const res = await postJson('/api/process', opts);
+        const description = getProcessDescription(toolId, opts);
 
         if (res.success && res.output) {
           // Update the current working file to the output
@@ -558,28 +1818,64 @@
           $('t-' + toolId).classList.add('done');
           $('t-' + toolId).classList.remove('active');
 
-          // If MKV→MP4 completed, other tools now work on the MP4
-          if (toolId === 'mkv2mp4') {
-            // Update video preview to the new MP4 file
-            $('videoPreview').src = '/api/video?t=' + Date.now(); // Cache bust
-          }
-
+          // Update video preview to the new file (cache bust)
+          reloadVideo();
           updateFileDisplay();
         }
 
         $('loading').classList.remove('on');
-        showResult(res.success, res.success ? res.output : res.error);
+        showResult(res.success, res.success ? res.output : res.error, res.success ? description : null);
       } catch (e) {
         $('loading').classList.remove('on');
-        showResult(false, e.message);
+        showResult(false, e.message, null);
       }
     }
 
-    function showResult(success, message) {
+    function getProcessDescription(toolId, opts) {
+      switch (toolId) {
+        case 'trim': {
+          const duration = (opts.trimEnd - opts.trimStart).toFixed(1);
+          return `Trimmed to ${duration}s`;
+        }
+        case 'compress': {
+          const reduction = Math.round((1 - opts.bitrate / (info.bitrate || 5000)) * 100);
+          return `Compressed (~${reduction}% smaller)`;
+        }
+        case 'shrink': {
+          return `Shrunk to ${opts.targetDuration}s`;
+        }
+        case 'loop': {
+          const duration = (opts.end - opts.start).toFixed(1);
+          return `Looped (${duration}s segment)`;
+        }
+        case 'togif': return 'Converted to GIF';
+        case 'mkv2mp4': return 'Converted to MP4';
+        case 'thumb': return 'Thumbnail added';
+        case 'portrait': return `Portrait created (${opts.mode} mode)`;
+        case 'audio': return 'Audio added';
+        default: return 'Processed';
+      }
+    }
+
+    let lastProcessDescription = '';
+
+    function showResult(success, message, description) {
       $('done').classList.add('on', success ? 'ok' : 'err');
       $('done').classList.remove(success ? 'err' : 'ok');
       $('done').querySelector('h4').textContent = success ? 'Complete!' : 'Failed';
-      $('output').textContent = message;
+
+      // Hide continue button for GIF exports (can't continue editing a GIF)
+      const isGifExport = activeTool === 'togif';
+      $('continueBtn').classList.toggle('hidden', isGifExport && success);
+
+      if (success && description) {
+        lastProcessDescription = description;
+        $('output').innerHTML = `<strong>${description}</strong><br><span style="opacity:0.7;font-size:0.9em">${message}</span>`;
+        $('continueBtn').textContent = `Continue with ${description.toLowerCase()} file`;
+      } else {
+        $('output').textContent = message;
+        $('continueBtn').textContent = 'Continue';
+      }
     }
 
     function continueEditing() {
@@ -591,6 +1887,24 @@
       $('processBtn').disabled = true;
       document.querySelectorAll('.tool').forEach(t => t.classList.remove('active'));
       document.querySelectorAll('.opts').forEach(o => o.classList.remove('active'));
+
+      // Resize window for new video dimensions (aspect ratio may have changed)
+      const video = $('videoPreview');
+      video.addEventListener('loadedmetadata', function onLoad() {
+        video.removeEventListener('loadedmetadata', onLoad);
+        info.width = video.videoWidth;
+        info.height = video.videoHeight;
+        VidLet.resizeToVideo(video.videoWidth, video.videoHeight);
+        updateFileDisplay();
+        updateCropOverlay();
+      }, { once: true });
+    }
+
+    function skipLoading() {
+      // Hide loading screen and return to main UI (process continues in background)
+      $('loading').classList.remove('on');
+      $('main').classList.remove('hide');
+      $('btns').classList.remove('hide');
     }
 
     init();

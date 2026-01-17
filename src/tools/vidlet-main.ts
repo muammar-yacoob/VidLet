@@ -9,13 +9,14 @@ import { getVideoInfo } from '../lib/ffmpeg.js';
 import { startGuiServer, type VideoInfo } from '../lib/gui-server.js';
 import { logToFile } from '../lib/logger.js';
 import { compress } from './compress.js';
-import { loop } from './loop.js';
+import { loop, findAllLoopPoints } from './loop.js';
 import { mkv2mp4 } from './mkv2mp4.js';
 import { shrink } from './shrink.js';
 import { thumb } from './thumb.js';
 import { togif } from './togif.js';
 import { trim, trimAccurate } from './trim.js';
-import { shorts } from './shorts.js';
+import { portrait } from './shorts.js';
+import { addAudio } from './audio.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -68,10 +69,14 @@ interface ToolOptions {
 	trimStart?: number;
 	trimEnd?: number;
 	accurate?: boolean;
-	// Shorts options
+	// Portrait options
 	mode?: 'crop' | 'blur';
 	cropX?: number;
 	resolution?: number;
+	// Audio options
+	audioPath?: string;
+	audioVolume?: number;
+	audioMix?: boolean;
 }
 
 /** Process result */
@@ -200,15 +205,30 @@ async function runTool(input: string, opts: ToolOptions): Promise<ProcessResult>
 				break;
 			}
 
-			case 'shorts': {
-				logs.push({ type: 'info', message: 'Creating shorts version...' });
-				output = await shorts({
+			case 'portrait': {
+				logs.push({ type: 'info', message: 'Creating portrait version...' });
+				output = await portrait({
 					input: actualInput,
 					mode: opts.mode || 'crop',
 					cropX: opts.cropX ?? 0.5,
 					resolution: opts.resolution || 1080,
 				});
-				logs.push({ type: 'success', message: 'Shorts created!' });
+				logs.push({ type: 'success', message: 'Portrait created!' });
+				break;
+			}
+
+			case 'audio': {
+				if (!opts.audioPath) {
+					throw new Error('No audio file provided');
+				}
+				logs.push({ type: 'info', message: 'Adding audio...' });
+				output = await addAudio({
+					input: actualInput,
+					audio: opts.audioPath,
+					volume: opts.audioVolume ?? 0.5,
+					mix: opts.audioMix ?? true,
+				});
+				logs.push({ type: 'success', message: 'Audio added!' });
 				break;
 			}
 
@@ -238,6 +258,7 @@ async function getVideoInfoForGui(filePath: string): Promise<VideoInfo> {
 		height: info.height,
 		duration: info.duration,
 		fps: info.fps ?? 30,
+		bitrate: info.bitrate ?? 0,
 	};
 }
 
@@ -273,6 +294,17 @@ export async function runGUI(input: string): Promise<boolean> {
 		defaults,
 		onProcess: async (opts) => {
 			return runTool(input, opts as ToolOptions);
+		},
+		onDetectLoops: async (minGap: number) => {
+			try {
+				logToFile(`VidLet: Detecting loop points with minGap=${minGap}s`);
+				const startPoints = await findAllLoopPoints(input, videoInfo.duration, minGap);
+				logToFile(`VidLet: Found ${startPoints.length} start points`);
+				return { success: true, startPoints };
+			} catch (err) {
+				logToFile(`VidLet: Loop detection failed: ${(err as Error).message}`);
+				return { success: false, error: (err as Error).message };
+			}
 		},
 	});
 }
