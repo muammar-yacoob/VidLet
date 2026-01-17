@@ -72,7 +72,7 @@ function openAppWindow(url: string): void {
 		windowsHide: true,
 	}).unref();
 
-	setTimeout(signalReady, 3500);
+	// Don't signal here - let the app signal when it's ready via /api/ready
 }
 
 export interface VideoInfo {
