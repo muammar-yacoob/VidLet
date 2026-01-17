@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html data-vidlet data-width="400" data-height="340">
+<head>
+  <meta charset="UTF-8">
+  <title>VidLet - Thumbnail</title>
+  <link rel="stylesheet" href="/css/theme.css">
+  <link rel="icon" href="/favicon.ico">
+</head>
+<body>
+  <div class="app">
+    <div class="hd">
+      <b>VidLet</b>
+      <span>Set Thumbnail</span>
+    </div>
+
+    <div class="meta" id="meta">
+      <div>File: <b id="fileName">-</b></div>
+      <div>Size: <b id="size">-</b></div>
+      <div>Duration: <b id="duration">-</b></div>
+    </div>
+
+    <div class="form" id="form">
+      <div class="row" data-tip="Path to thumbnail image (PNG, JPG)">
+        <label>Image</label>
+        <input type="text" id="imagePath" placeholder="Drag image here or enter path...">
+      </div>
+
+      <div class="warn-box" id="warn">Drop an image file here</div>
+    </div>
+
+    <div class="ld" id="loading">
+      <div class="sp"></div>
+      <span>Embedding thumbnail...</span>
+    </div>
+
+    <div class="log" id="log"></div>
+
+    <div class="dn" id="done">
+      <h4>Done!</h4>
+      <p id="output"></p>
+      <div class="btns" style="margin-top:12px;width:100%">
+        <button class="btn btn-p" onclick="VidLet.close()">Close</button>
+      </div>
+    </div>
+
+    <div class="btns" id="btns">
+      <button class="btn btn-g" onclick="VidLet.cancel()">Cancel</button>
+      <button class="btn btn-p" onclick="process()">Set Thumbnail</button>
+    </div>
+  </div>
+
+  <script src="/js/vidlet.js"></script>
+  <script>
+    const { $, log, postJson, setLoading, showDone, formatDuration } = VidLet;
+    let info = {};
+
+    async function init() {
+      const res = await VidLet.fetchJson('/api/info');
+      info = res;
+      $('fileName').textContent = res.fileName;
+      $('size').textContent = `${res.width}x${res.height}`;
+      $('duration').textContent = formatDuration(res.duration);
+
+      if (res.defaults && res.defaults.imagePath) {
+        $('imagePath').value = res.defaults.imagePath;
+        $('warn').classList.remove('on');
+      } else {
+        $('warn').classList.add('on');
+      }
+
+      // Handle drag and drop
+      const body = document.body;
+      body.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        body.style.background = 'var(--bg2)';
+      });
+      body.addEventListener('dragleave', () => {
+        body.style.background = '';
+      });
+      body.addEventListener('drop', (e) => {
+        e.preventDefault();
+        body.style.background = '';
+        if (e.dataTransfer.files.length > 0) {
+          const file = e.dataTransfer.files[0];
+          if (file.type.startsWith('image/')) {
+            // For file paths we need the actual path - this works with --allow-file-access
+            $('imagePath').value = file.path || file.name;
+            $('warn').classList.remove('on');
+          }
+        }
+      });
+
+      $('imagePath').oninput = () => {
+        $('warn').classList.toggle('on', !$('imagePath').value);
+      };
+    }
+
+    async function process() {
+      const imagePath = $('imagePath').value.trim();
+      if (!imagePath) {
+        $('warn').textContent = 'Please provide an image path';
+        $('warn').classList.add('on');
+        return;
+      }
+
+      setLoading(true, 'Embedding thumbnail...');
+
+      const opts = {
+        imagePath: imagePath
+      };
+
+      try {
+        const res = await postJson('/api/process', opts);
+
+        if (res.logs) {
+          res.logs.forEach(l => log('log', l.type === 'error' ? 'e' : l.type === 'success' ? 's' : 'i', l.message));
+        }
+
+        if (res.success) {
+          showDone(true, 'Thumbnail Set!', res.output);
+        } else {
+          showDone(false, 'Failed', res.error);
+        }
+      } catch (err) {
+        showDone(false, 'Error', err.message);
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>

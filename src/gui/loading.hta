@@ -1,0 +1,62 @@
+<html>
+<head>
+<title>VidLet</title>
+<hta:application
+  id="VidLetLoading"
+  applicationname="VidLet"
+  border="none"
+  borderstyle="none"
+  caption="no"
+  contextmenu="no"
+  icon="tv.ico"
+  innerborder="no"
+  maximizebutton="no"
+  minimizebutton="no"
+  navigable="no"
+  scroll="no"
+  selection="no"
+  showintaskbar="yes"
+  singleinstance="yes"
+  sysmenu="no"
+  version="1.0"
+  windowstate="normal"
+/>
+<style>
+body{margin:0;padding:0;background:#09090b;display:flex;align-items:center;justify-content:center;height:100vh;font-family:-apple-system,system-ui,sans-serif}
+.wrap{text-align:center;color:#e4e4e7}
+.sp{width:24px;height:24px;border:2px solid #1a1a1d;border-top-color:#3b82f6;border-radius:50%;animation:s .5s linear infinite;margin:0 auto 12px}
+@keyframes s{to{transform:rotate(360deg)}}
+.txt{font-size:13px;color:#a1a1a6}
+</style>
+<script language="VBScript">
+Sub Window_OnLoad
+  Dim w, h, l, t
+  w = 180 : h = 100
+  l = (screen.availWidth - w) / 2
+  t = (screen.availHeight - h) / 2
+  window.resizeTo w, h
+  window.moveTo l, t
+
+  ' Check for ready signal every 200ms
+  window.setInterval "CheckReady", 200
+End Sub
+
+Sub CheckReady
+  Dim fso, readyFile
+  Set fso = CreateObject("Scripting.FileSystemObject")
+  readyFile = fso.GetSpecialFolder(2) & "\vidlet-ready.tmp"
+
+  If fso.FileExists(readyFile) Then
+    fso.DeleteFile readyFile
+    window.close
+  End If
+End Sub
+</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="sp"></div>
+  <div class="txt">Loading VidLet...</div>
+</div>
+</body>
+</html>

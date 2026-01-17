@@ -2,268 +2,273 @@
   "master": {
     "tasks": [
       {
-        "id": "1",
-        "title": "Initialize npm package with package.json",
-        "description": "Create package.json for @spark-apps/vidlet with correct name, version, TypeScript 5.x support, binaries for CLI, and all specified dependencies",
-        "details": "Run `npm init -y`, then set name: '@spark-apps/vidlet', version: '1.0.0', main: 'dist/index.js', types: 'dist/index.d.ts', bin: {'vidlet': 'dist/cli.js'}, files: ['dist'], scripts: {'build': 'tsup', 'dev': 'tsup --watch'}, engines: {'node': '>=18'}. Install deps: execa, sharp, commander, chalk, zod. Dev deps: @biomejs/biome@latest, tsup@latest, vitest@latest, @types/node. Add keywords and repository fields.",
-        "testStrategy": "Run `npm run build` and verify dist/ outputs generated. Check `npm pack --dry-run` produces correct package structure. Validate CLI binary with `npx vidlet --help`",
+        "id": "18",
+        "title": "Create target directory structure and move icons",
+        "description": "Set up the exact project structure matching PicLet architecture and move existing icons to src/icons/",
+        "details": "Create directories: src/lib, src/tools, src/gui/css, src/gui/js, src/icons. Move all .ico files from root to src/icons/. Ensure banner.ts, config.ts, ffmpeg.ts, logger.ts, paths.ts remain in lib/. Update any path references in existing files.",
+        "testStrategy": "Verify directory structure matches PRD spec using tree command or file explorer. Confirm all 7 icons present in src/icons/. Run biome lint to ensure no path errors.",
         "priority": "high",
         "dependencies": [],
         "status": "done",
         "subtasks": [],
-        "updatedAt": "2026-01-14T10:55:08.272Z"
+        "updatedAt": "2026-01-16T21:38:04.169Z"
       },
       {
-        "id": "2",
-        "title": "Configure TypeScript with tsconfig.json",
-        "description": "Set up tsconfig.json for modern TypeScript 5.x with tsup compatibility and strict type checking",
-        "details": "Create tsconfig.json: target: 'ES2022', module: 'ESNext', moduleResolution: 'bundler', strict: true, skipLibCheck: true, declaration: true, declarationMap: true, outDir: './dist', paths: {'@/*': ['./src/*']}, include: ['src/**/*'], exclude: ['node_modules', 'dist']. Ensure ESM compatibility for Node 18+.",
-        "testStrategy": "Run `npx tsc --noEmit` to verify no type errors. Test tsup build produces declaration files.",
+        "id": "19",
+        "title": "Add required npm dependencies",
+        "description": "Install express and prompts packages as specified in PRD",
+        "details": "Run `bun add express prompts commander`. Update package.json if needed. Verify versions are latest stable (Express ^4.19, prompts ^2.4 as of 2025). No devDependencies needed for these.",
+        "testStrategy": "Check package.json for correct dependencies. Run `bun install` and verify no errors. Import test: `bun run node -e \"require('express'); require('prompts');\"`",
         "priority": "high",
         "dependencies": [
-          "1"
+          "18"
         ],
         "status": "done",
         "subtasks": [],
-        "updatedAt": "2026-01-14T10:55:08.293Z"
+        "updatedAt": "2026-01-16T21:38:42.151Z"
       },
       {
-        "id": "3",
-        "title": "Configure Biome linting and formatting",
-        "description": "Set up biome.json for TypeScript linting/formatting following PRD requirements",
-        "details": "Create biome.json with linter: {enabled: true, rules: {recommended: true}}, formatter: {enabled: true, formatWithErrors: false}, javascript: {formatter: {quoteStyle: 'single', trailingComma: 'es5'}}, organizeImports: {enabled: true}. Add scripts: 'lint': 'biome lint src', 'format': 'biome format --write src'.",
-        "testStrategy": "Run `npm run lint` and `npm run format` on empty src/, verify no errors. Add sample TS file and ensure formatting works.",
+        "id": "20",
+        "title": "Implement lib/prompts.ts system",
+        "description": "Create comprehensive prompts wrapper using 'prompts' npm package with CLI override and batch mode support",
+        "details": "```ts\nimport prompts from 'prompts';\nexport async function askPrompts(promptsConfig: any[], overrides: Record<string, any> = {}, batchMode = false) {\n  if (batchMode) return Object.fromEntries(promptsConfig.map(p => [p.name, p.initial]));\n  const responses = {};\n  for (const prompt of promptsConfig) {\n    if (overrides[prompt.message]) responses[prompt.name] = overrides[prompt.message];\n    else responses[prompt.name] = await prompts(prompt);\n  }\n  return responses;\n}\n// Support text, number, confirm, select types with validation```",
+        "testStrategy": "Unit test with batchMode=true (returns defaults), overrides object, and interactive mode mock. Test all 4 prompt types: text/number/confirm/select.",
         "priority": "high",
         "dependencies": [
-          "1"
+          "19"
         ],
         "status": "done",
         "subtasks": [],
-        "updatedAt": "2026-01-14T10:55:08.317Z"
+        "updatedAt": "2026-01-16T21:40:18.545Z"
       },
       {
-        "id": "4",
-        "title": "Create project directory structure",
-        "description": "Set up exact folder structure as specified in PRD architecture diagram",
-        "details": "Create directories: src/, src/core/, src/tools/, src/detection/, src/registry/. Create empty stub files matching PRD: src/index.ts, src/cli.ts, src/core/ffmpeg.ts, src/core/config.ts, src/core/paths.ts, src/tools/compress.ts, src/tools/togif.ts, src/tools/loop.ts, src/tools/mkv2mp4.ts, src/tools/shrink.ts, src/tools/thumb.ts, src/detection/loop-detector.ts, src/registry/install.ts, src/registry/uninstall.ts.",
-        "testStrategy": "Verify folder structure matches PRD diagram exactly. Run `git status` to confirm all files created.",
-        "priority": "high",
-        "dependencies": [
-          "1"
-        ],
-        "status": "done",
-        "subtasks": [],
-        "updatedAt": "2026-01-14T10:55:08.341Z"
-      },
-      {
-        "id": "5",
-        "title": "Configure tsup build pipeline",
-        "description": "Set up tsup for building TypeScript to multiple formats with CLI binary support",
-        "details": "Create tsup.config.ts: import { defineConfig } from 'tsup'; export default defineConfig({ entry: ['src/cli.ts', 'src/index.ts'], format: ['cjs', 'esm'], dts: true, splitting: false, sourcemap: true, clean: true, outDir: 'dist', treeshake: true, banner: { js: '/* @spark-apps/vidlet */' } }). Add 'build': 'tsup' to package.json scripts.",
-        "testStrategy": "Run `npm run build`, verify dist/cli.js and dist/index.js created with shebang. Test `node dist/cli.js --help` works.",
-        "priority": "high",
-        "dependencies": [
-          "1",
-          "2",
-          "3"
-        ],
-        "status": "done",
-        "subtasks": [],
-        "updatedAt": "2026-01-14T10:55:08.363Z"
-      },
-      {
-        "id": "6",
-        "title": "Implement Windows/WSL path conversion utilities",
-        "description": "Create paths.ts with wslpath integration and Windows/WSL path conversion functions",
-        "details": "In src/core/paths.ts: export async function toWSLPath(winPath: string): Promise<string> { return execaCommand('wslpath', ['-u', winPath]).stdout; } export function detectWSL(): boolean { return process.platform === 'linux' || process.env.WSL_DISTRO_NAME; } Export from index.ts. Handle edge cases like network paths and spaces.",
-        "testStrategy": "Unit tests: test toWSLPath('C:\\test.mp4') returns WSL path. Test detectWSL() in WSL vs Windows. Integration test with real video file.",
-        "priority": "high",
-        "dependencies": [
-          "4"
-        ],
-        "status": "done",
-        "subtasks": [],
-        "updatedAt": "2026-01-14T10:55:08.385Z"
-      },
-      {
-        "id": "7",
-        "title": "Implement FFmpeg command builder and executor",
-        "description": "Create core ffmpeg.ts with command building, execution, and progress handling via execa",
-        "details": "In src/core/ffmpeg.ts: interface FFmpegOptions { input: string; output: string; args?: string[]; } export async function executeFFmpeg(options: FFmpegOptions, cwd?: string): Promise<void> { const cmd = ['ffmpeg', '-i', options.input, ...options.args || [], options.output]; await execa('ffmpeg', cmd, { cwd, stdio: 'inherit' }); } Add buildCommand() helper for common patterns.",
-        "testStrategy": "Unit test buildCommand() generates correct ffmpeg args. Integration test simple ffmpeg conversion. Mock execa for unit tests.",
-        "priority": "high",
-        "dependencies": [
-          "4",
-          "6"
-        ],
-        "status": "done",
-        "subtasks": [],
-        "updatedAt": "2026-01-14T10:55:08.410Z"
-      },
-      {
-        "id": "8",
-        "title": "Implement JSON configuration management",
-        "description": "Create config.ts with Zod schema validation and default config at ~/.config/vidlet/config.json",
-        "details": "In src/core/config.ts: Define Zod schemas matching PRD config structure. export async function loadConfig(): Promise<Config> { const path = path.join(os.homedir(), '.config/vidlet/config.json'); return schema.parse(await fs.readJson(path).catch(() => defaults)); } Add saveConfig(), getToolConfig('compress'). Use exact default values from PRD.",
-        "testStrategy": "Test loadConfig() returns defaults when no file. Test validation rejects invalid JSON. Test save/load roundtrip preserves values.",
-        "priority": "high",
-        "dependencies": [
-          "4"
-        ],
-        "status": "done",
-        "subtasks": [],
-        "updatedAt": "2026-01-14T10:55:08.434Z"
-      },
-      {
-        "id": "9",
-        "title": "Implement CLI entry point with commander",
-        "description": "Create cli.ts with all 9 CLI commands using commander.js",
-        "details": "In src/cli.ts: import { Command } from 'commander'; const program = new Command().name('vidlet').version('1.0.0'); program.command('install').action(install); program.command('uninstall').action(uninstall); program.command('compress <file>').action(compress); [add all 6 tools + config]. program.parseAsync(). Export CLI function for registry calls.",
-        "testStrategy": "Test `node dist/cli.js --help` shows all commands. Test `node dist/cli.js compress test.mp4` parses args correctly.",
-        "priority": "high",
-        "dependencies": [
-          "4",
-          "5"
-        ],
-        "status": "done",
-        "subtasks": [],
-        "updatedAt": "2026-01-14T10:55:08.460Z"
-      },
-      {
-        "id": "10",
-        "title": "Implement video compress tool",
-        "description": "Port compress tool using libx264 with configurable bitrate/preset from config",
-        "details": "In src/tools/compress.ts: async function compress(file: string) { const cfg = await getToolConfig('compress'); const output = file.replace(/\\/g, '.mp4'); await executeFFmpeg({ input: file, output, args: ['-c:v', 'libx264', '-b:v', `${cfg.bitrate}k`, '-preset', cfg.preset] }); }",
-        "testStrategy": "Test compresses sample MP4, verify output smaller size, check ffmpeg logs for correct bitrate/preset.",
+        "id": "21",
+        "title": "Extract and implement lib/registry.ts",
+        "description": "Move all registry logic from install.ts/uninstall.ts to new registry.ts with WSL detection",
+        "details": "Extract functions: addRegistryKey(keyPath, value), deleteRegistryKey(keyPath), generateRegFile(content). Add WSL detection: `process.env.WSL_DISTRO_NAME`. Convert Windows paths to WSL: replace 'C:' with '/mnt/c/'. Export all functions.",
+        "testStrategy": "Test on Windows: create/delete test registry key. Test WSL path conversion. Verify .reg file generation parses correctly. Dry-run mode for CI.",
         "priority": "medium",
         "dependencies": [
-          "7",
-          "8"
+          "18"
         ],
         "status": "done",
         "subtasks": [],
-        "updatedAt": "2026-01-14T10:55:08.485Z"
+        "updatedAt": "2026-01-16T21:40:18.576Z"
       },
       {
-        "id": "11",
-        "title": "Implement MP4 to GIF conversion with palette",
-        "description": "Port togif tool with palette optimization, configurable FPS/width/dither",
-        "details": "In src/tools/togif.ts: async function togif(file: string) { const cfg = await getToolConfig('togif'); const palette = file.replace('.mp4', '-palette.png'); await executeFFmpeg({input: file, output: palette, args: ['-vf', `fps=${cfg.fps},scale=${cfg.width}:-1:flags=lanczos,palettegen`] }); await executeFFmpeg({input: file, output: file.replace('.mp4', '.gif'), args: ['-i', palette, '-lavfi', `fps=${cfg.fps},scale=${cfg.width}:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=${cfg.dither}`] }); }",
-        "testStrategy": "Test MP4->GIF conversion, verify smooth playback, check file size reasonable, validate palette generation step.",
-        "priority": "medium",
-        "dependencies": [
-          "7",
-          "8"
-        ],
-        "status": "done",
-        "subtasks": [],
-        "updatedAt": "2026-01-14T10:55:08.509Z"
-      },
-      {
-        "id": "12",
-        "title": "Implement loop detection using sharp/pixelmatch",
-        "description": "Replace Python OpenCV with Node.js frame similarity detection for seamless loops",
-        "details": "In src/detection/loop-detector.ts: Use ffmpeg to extract frames to temp dir, sharp to process, pixelmatch for similarity. export async function findLoopFrames(video: string, config: LoopConfig): Promise<{start: number, end: number}> { ... } Implement frame extraction, similarity scoring with threshold 0.98, return best loop segment.",
-        "testStrategy": "Test on known looping video, verify detects correct loop points. Test threshold sensitivity. Memory usage test for large videos.",
-        "priority": "medium",
-        "dependencies": [
-          "7"
-        ],
-        "status": "done",
-        "subtasks": [],
-        "updatedAt": "2026-01-14T10:55:08.532Z"
-      },
-      {
-        "id": "13",
-        "title": "Implement remaining video tools (mkv2mp4, shrink, thumb, loop)",
-        "description": "Complete implementation of 4 remaining tools using config and ffmpeg core",
-        "details": "mkv2mp4.ts: remux with -c copy or reencode CRF 23. shrink.ts: speed up to targetDuration 59.5s. thumb.ts: extract frame at timestamp. loop.ts: use loop-detector + crossfade. All use tool-specific config values from PRD.",
-        "testStrategy": "Individual integration tests for each tool with sample inputs. Verify output formats, durations, quality match expectations.",
-        "priority": "medium",
-        "dependencies": [
-          "7",
-          "8",
-          "10",
-          "11",
-          "12"
-        ],
-        "status": "done",
-        "subtasks": [],
-        "updatedAt": "2026-01-14T10:55:08.555Z"
-      },
-      {
-        "id": "14",
-        "title": "Implement Windows registry integration",
-        "description": "Create install.ts/uninstall.ts generating .reg files calling WSL vidlet directly",
-        "details": "In src/registry/install.ts: Generate .reg file with context menu entries: wsl.exe -e vidlet compress \"$(wslpath '%1')\" for each tool. Use execa('reg', ['import', 'vidlet.reg']) with elevation prompt. uninstall.ts removes same keys. Handle admin elevation messaging.",
-        "testStrategy": "Test generates correct .reg syntax. Test import/export on test VM. Verify context menu appears in Explorer.",
+        "id": "22",
+        "title": "Implement lib/gui-server.ts Express server",
+        "description": "Create full Express.js server with dynamic port, REST API, and static file serving",
+        "details": "```ts\nimport express from 'express';\nimport { getPort } from 'get-port';\nconst app = express();\napp.use(express.json());\napp.use(express.static('gui'));\napp.get('/api/info', getVideoInfo);\napp.post('/api/preview', generatePreview);\napp.post('/api/process', processVideo);\napp.post(['/api/load', '/api/cancel', '/api/close'], handleRequests);\nconst port = await getPort();\napp.listen(port, () => openEdgeAppMode(port));\nexport async function startServer() { /* impl */ }``` Install get-port if needed.",
+        "testStrategy": "curl test all 6 endpoints. Verify static files served at /vidlet.html. Test dynamic port allocation (3000-4000 range). Browser test Edge app mode launch.",
         "priority": "high",
         "dependencies": [
-          "6",
-          "9"
+          "19",
+          "20"
         ],
         "status": "done",
         "subtasks": [],
-        "updatedAt": "2026-01-14T10:55:08.581Z"
+        "updatedAt": "2026-01-16T21:44:16.647Z"
       },
       {
-        "id": "15",
-        "title": "Create main index.ts exports and README.md",
-        "description": "Export all public APIs from index.ts and write comprehensive README",
-        "details": "In src/index.ts: re-export core/*, tools/*, detection/*, registry/*. README.md: installation, CLI usage, config examples, WSL setup (apt install ffmpeg), Windows context menu screenshots, config file location.",
-        "testStrategy": "Verify `import { compress } from '@spark-apps/vidlet'` works post-build. Validate README renders correctly on npm/GitHub.",
+        "id": "23",
+        "title": "Create base GUI assets (theme.css, vidlet.js)",
+        "description": "Build shared dark theme CSS and GUI utility JavaScript matching PicLet design",
+        "details": "theme.css: dark background (#1a1a1a), accent colors, responsive grid. vidlet.js: API fetch wrappers for /api/* endpoints, progress polling, file drag-drop, form serialization to JSON.",
+        "testStrategy": "Browser devtools: verify CSS variables, responsive breakpoints (320px-1920px), dark mode contrast ratios >4.5:1. Test JS API calls return mock data.",
         "priority": "medium",
         "dependencies": [
-          "9",
-          "10",
-          "11",
-          "13",
-          "14"
+          "22"
         ],
         "status": "done",
         "subtasks": [],
-        "updatedAt": "2026-01-14T10:55:25.913Z"
+        "updatedAt": "2026-01-16T21:44:16.673Z"
       },
       {
-        "id": "16",
-        "title": "Add comprehensive Vitest unit/integration tests",
-        "description": "Write tests for path conversion, config, ffmpeg execution, and all tools",
-        "details": "Configure vitest.config.ts with coverage. Test suites: paths.test.ts, config.test.ts, each tool with mock execa/ffmpeg. Integration tests spawn real ffmpeg subprocesses with sample videos.",
-        "testStrategy": "Run `npm test`, achieve >90% coverage. Test edge cases: invalid paths, missing ffmpeg, bad config.",
+        "id": "24",
+        "title": "Create unified vidlet.html GUI page",
+        "description": "Build main GUI landing page with tool selector using all icons and ToolConfig data",
+        "details": "HTML structure: tool grid with icons/names, click navigates to individual tool pages. Load ToolConfig from /api/info. Include loading.hta overlay integration.",
+        "testStrategy": "Manual browser test: verify all 6 tools clickable, icons display, responsive layout. Check navigation between unified and individual pages.",
         "priority": "medium",
         "dependencies": [
-          "6",
-          "7",
-          "8",
-          "10",
-          "11",
-          "12",
-          "13"
+          "23"
         ],
         "status": "done",
         "subtasks": [],
-        "updatedAt": "2026-01-14T10:55:25.935Z"
+        "updatedAt": "2026-01-16T21:44:16.697Z"
       },
       {
-        "id": "17",
-        "title": "Final linting, formatting, and documentation polish",
-        "description": "Run Biome across all code, fix issues, add --help docs to all commands",
-        "details": "Run `npm run lint -- --apply`, `npm run format`. Add .commander descriptions to all CLI commands. Update README with all success criteria examples. Add changelog.md.",
-        "testStrategy": "Biome lint passes 0 errors. All CLI commands show proper --help output. Verify TypeScript compiles cleanly.",
-        "priority": "low",
+        "id": "25",
+        "title": "Create individual tool GUI pages (compress.html etc)",
+        "description": "Generate 6 tool-specific HTML pages with forms matching each tool's options",
+        "details": "Template each page: video upload/preview, tool-specific controls (sliders/checkboxes), progress bar, log display, download button. Use vidlet.js utilities.",
+        "testStrategy": "Test each page loads, forms serialize correctly, preview works (where applicable), responsive on mobile/desktop.",
+        "priority": "medium",
         "dependencies": [
-          "15"
+          "24"
         ],
         "status": "done",
         "subtasks": [],
-        "updatedAt": "2026-01-14T10:55:25.959Z"
+        "updatedAt": "2026-01-16T21:44:16.722Z"
+      },
+      {
+        "id": "26",
+        "title": "Update tools index.ts and ToolConfig interfaces",
+        "description": "Create tools/index.ts exports and standardize ToolConfig across all 6 tools",
+        "details": "```ts\nexport interface ToolConfig { id: string; name: string; icon: string; extensions: string[]; }\nexport const tools: ToolConfig[] = [compressConfig, togifConfig /* etc */];\nexport { compress, togif /* all tools */ } from './*.ts';```",
+        "testStrategy": "Verify all 6 tools export correctly. Check each ToolConfig has valid id/name/icon/extensions matching PRD.",
+        "priority": "high",
+        "dependencies": [
+          "18"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-16T21:40:18.615Z"
+      },
+      {
+        "id": "27",
+        "title": "Refactor individual tools for GUI/batch/prompts support",
+        "description": "Update all 6 tools (compress, togif, etc) with run(filePath, options?), runGUI(filePath), ToolConfig, prompts integration",
+        "details": "Each tool: export ToolConfig, add runGUI() calling prompts.askPrompts(), support batchMode flag, consistent error handling with logger.",
+        "testStrategy": "Test each tool in CLI mode, batch (-y), GUI simulation. Verify prompts overridden correctly. FFmpeg calls produce expected outputs.",
+        "priority": "high",
+        "dependencies": [
+          "20",
+          "26"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-16T21:47:23.536Z"
+      },
+      {
+        "id": "28",
+        "title": "Create tools/vidlet-main.ts unified GUI handler",
+        "description": "Implement main GUI tool dispatcher that loads tools dynamically",
+        "details": "```ts\nimport { tools } from './index.js';\nexport async function runVidletGUI() {\n  // Launch gui-server, open unified page\n  await startServer();\n}``` Integrate with cli.ts -g flag.",
+        "testStrategy": "Test launches GUI server and opens Edge correctly. Verify tool selection works end-to-end.",
+        "priority": "medium",
+        "dependencies": [
+          "22",
+          "27"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": "29",
+        "title": "Create launcher.vbs Windows launcher",
+        "description": "Implement VBScript launcher with hidden cmd, WSL path conversion, loading HTA",
+        "details": "```vbs\nSet WshShell = CreateObject(\"WScript.Shell\")\n' Convert win path to WSL, show loading.hta\nWshShell.Run \"wsl vidlet \" & args, 0, false``` Hide cmd window (windowstyle=0).",
+        "testStrategy": "Test on Windows: launcher runs without visible cmd, shows loading overlay, executes vidlet CLI correctly.",
+        "priority": "medium",
+        "dependencies": [
+          "22"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-16T21:44:16.745Z"
+      },
+      {
+        "id": "30",
+        "title": "Update cli.ts with new flags and commands",
+        "description": "Add -g/--gui, -y/--yes flags, unified 'vidlet' command, registry integration",
+        "details": "Use commander.js: program.command('vidlet').action(runVidletGUI); .option('-g, --gui'); .option('-y, --yes'); Update install/uninstall to use registry.ts. Clean help formatting.",
+        "testStrategy": "Test all commands: vidlet -g, tool -y, install, help output. Verify flag parsing correct.",
+        "priority": "high",
+        "dependencies": [
+          "20",
+          "21",
+          "27",
+          "28"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-16T21:47:23.615Z"
+      },
+      {
+        "id": "31",
+        "title": "Update tsup.config.ts for asset copying",
+        "description": "Configure build to copy icons, gui folder, launcher.vbs, add shebang",
+        "details": "```ts\n// tsup.config.ts\nformat: ['cjs'],\noutDir: 'dist',\nassets: ['icons/**', 'gui/**', 'launcher.vbs'],\nshebang: '#!/usr/bin/env node'```",
+        "testStrategy": "Run `bun build`, verify dist/ contains all assets in correct locations, cli.js has shebang.",
+        "priority": "medium",
+        "dependencies": [
+          "18",
+          "23",
+          "29"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-16T21:47:23.679Z"
+      },
+      {
+        "id": "32",
+        "title": "Update install.ts/uninstall.ts to use registry.ts",
+        "description": "Replace direct registry calls with new registry.ts functions",
+        "details": "import { addRegistryKey, deleteRegistryKey } from './lib/registry.js'; Update all calls. Add WSL detection handling.",
+        "testStrategy": "Test install/uninstall: verify registry keys created/deleted correctly. Context menu appears/disappears.",
+        "priority": "medium",
+        "dependencies": [
+          "21",
+          "30"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": "33",
+        "title": "Enhance logger.ts and implement consistent error handling",
+        "description": "Improve logger for CLI/GUI modes, standardize error handling across all tools",
+        "details": "Add log levels (info, warn, error), color support (chalk), GUI mode (no colors). Global error handler catching FFmpeg failures, validation errors.",
+        "testStrategy": "Test all error scenarios: invalid files, FFmpeg fail, network errors. Verify logs format correctly in both modes.",
+        "priority": "medium",
+        "dependencies": [
+          "20",
+          "27"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-16T21:47:23.729Z"
+      },
+      {
+        "id": "34",
+        "title": "Run biome lint and fix all issues",
+        "description": "Execute full biome lint across codebase and resolve violations",
+        "details": "Run `bunx biome lint ./src --apply`, fix remaining issues manually. Configure .biome.json matching PicLet if needed.",
+        "testStrategy": "`bunx biome lint ./src --reporter=json` returns empty array. Verify formatting consistent.",
+        "priority": "high",
+        "dependencies": [
+          "33"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-16T21:47:23.783Z"
+      },
+      {
+        "id": "35",
+        "title": "Full integration test all 3 modes across 6 tools",
+        "description": "Test CLI, batch (-y), GUI (-g) modes for all tools + launcher + registry",
+        "details": "Test matrix: 6 tools × 3 modes = 18 scenarios. Verify inputs→FFmpeg→outputs. Test launcher.vbs → GUI flow. Registry context menu.",
+        "testStrategy": "Automated where possible (batch mode), manual for GUI. Verify output files match expected quality/size.",
+        "priority": "high",
+        "dependencies": [
+          "29",
+          "30",
+          "31",
+          "32",
+          "34"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-16T21:51:05.037Z"
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-01-14T10:55:25.965Z",
-      "taskCount": 17,
-      "completedCount": 17,
+      "lastModified": "2026-01-16T21:51:05.039Z",
+      "taskCount": 18,
+      "completedCount": 16,
       "tags": [
         "master"
       ]

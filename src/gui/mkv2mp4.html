@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html data-vidlet data-width="400" data-height="360">
+<head>
+  <meta charset="UTF-8">
+  <title>VidLet - MKV to MP4</title>
+  <link rel="stylesheet" href="/css/theme.css">
+  <link rel="icon" href="/favicon.ico">
+</head>
+<body>
+  <div class="app">
+    <div class="hd">
+      <b>VidLet</b>
+      <span>Convert MKV to MP4</span>
+    </div>
+
+    <div class="meta" id="meta">
+      <div>File: <b id="fileName">-</b></div>
+      <div>Size: <b id="size">-</b></div>
+      <div>Duration: <b id="duration">-</b></div>
+    </div>
+
+    <div class="form" id="form">
+      <div class="opts">
+        <label class="opt" data-tip="Copy streams without re-encoding (fast)">
+          <input type="checkbox" id="copyStreams" checked>
+          <span class="box"><svg viewBox="0 0 12 12"><path d="M2 6l3 3 5-6"/></svg></span>
+          Stream Copy (fast)
+        </label>
+      </div>
+
+      <div class="row" id="crfRow" data-tip="Quality level (lower = better, 18-28 typical)">
+        <label>CRF</label>
+        <input type="range" id="crfRange" min="0" max="51" step="1" value="23" disabled>
+        <input type="number" id="crf" min="0" max="51" value="23" disabled>
+      </div>
+    </div>
+
+    <div class="ld" id="loading">
+      <div class="sp"></div>
+      <span>Converting...</span>
+    </div>
+
+    <div class="log" id="log"></div>
+
+    <div class="dn" id="done">
+      <h4>Done!</h4>
+      <p id="output"></p>
+      <div class="btns" style="margin-top:12px;width:100%">
+        <button class="btn btn-p" onclick="VidLet.close()">Close</button>
+      </div>
+    </div>
+
+    <div class="btns" id="btns">
+      <button class="btn btn-g" onclick="VidLet.cancel()">Cancel</button>
+      <button class="btn btn-p" onclick="process()">Convert</button>
+    </div>
+  </div>
+
+  <script src="/js/vidlet.js"></script>
+  <script>
+    const { $, log, postJson, setLoading, showDone, formatDuration } = VidLet;
+    let info = {};
+
+    async function init() {
+      const res = await VidLet.fetchJson('/api/info');
+      info = res;
+      $('fileName').textContent = res.fileName;
+      $('size').textContent = `${res.width}x${res.height}`;
+      $('duration').textContent = formatDuration(res.duration);
+
+      if (res.defaults) {
+        if (res.defaults.copyStreams !== undefined) $('copyStreams').checked = res.defaults.copyStreams;
+        if (res.defaults.crf) {
+          $('crf').value = res.defaults.crf;
+          $('crfRange').value = res.defaults.crf;
+        }
+      }
+
+      $('copyStreams').onchange = updateCrfState;
+      $('crfRange').oninput = () => $('crf').value = $('crfRange').value;
+      $('crf').oninput = () => $('crfRange').value = $('crf').value;
+
+      updateCrfState();
+    }
+
+    function updateCrfState() {
+      const disabled = $('copyStreams').checked;
+      $('crf').disabled = disabled;
+      $('crfRange').disabled = disabled;
+    }
+
+    async function process() {
+      setLoading(true, 'Converting to MP4...');
+
+      const opts = {
+        copyStreams: $('copyStreams').checked,
+        crf: parseInt($('crf').value)
+      };
+
+      try {
+        const res = await postJson('/api/process', opts);
+
+        if (res.logs) {
+          res.logs.forEach(l => log('log', l.type === 'error' ? 'e' : l.type === 'success' ? 's' : 'i', l.message));
+        }
+
+        if (res.success) {
+          showDone(true, 'Conversion Complete!', res.output);
+        } else {
+          showDone(false, 'Conversion Failed', res.error);
+        }
+      } catch (err) {
+        showDone(false, 'Error', err.message);
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>

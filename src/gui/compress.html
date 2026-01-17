@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html data-vidlet data-width="400" data-height="380">
+<head>
+  <meta charset="UTF-8">
+  <title>VidLet - Compress</title>
+  <link rel="stylesheet" href="/css/theme.css">
+  <link rel="icon" href="/favicon.ico">
+</head>
+<body>
+  <div class="app">
+    <div class="hd">
+      <b>VidLet</b>
+      <span>Compress Video</span>
+    </div>
+
+    <div class="meta" id="meta">
+      <div>File: <b id="fileName">-</b></div>
+      <div>Size: <b id="size">-</b></div>
+      <div>Duration: <b id="duration">-</b></div>
+    </div>
+
+    <div class="form" id="form">
+      <div class="row" data-tip="Target bitrate in kbps">
+        <label>Bitrate</label>
+        <input type="range" id="bitrateRange" min="500" max="10000" step="100" value="2500">
+        <input type="number" id="bitrate" min="100" max="50000" value="2500">
+        <span>k</span>
+      </div>
+
+      <div class="row" data-tip="Encoding speed vs quality tradeoff">
+        <label>Preset</label>
+        <select id="preset">
+          <option value="ultrafast">Ultrafast</option>
+          <option value="superfast">Superfast</option>
+          <option value="veryfast">Veryfast</option>
+          <option value="faster">Faster</option>
+          <option value="fast">Fast</option>
+          <option value="medium" selected>Medium</option>
+          <option value="slow">Slow</option>
+          <option value="slower">Slower</option>
+          <option value="veryslow">Veryslow</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="ld" id="loading">
+      <div class="sp"></div>
+      <span>Compressing video...</span>
+    </div>
+
+    <div class="log" id="log"></div>
+
+    <div class="dn" id="done">
+      <h4>Done!</h4>
+      <p id="output"></p>
+      <div class="btns" style="margin-top:12px;width:100%">
+        <button class="btn btn-p" onclick="VidLet.close()">Close</button>
+      </div>
+    </div>
+
+    <div class="btns" id="btns">
+      <button class="btn btn-g" onclick="VidLet.cancel()">Cancel</button>
+      <button class="btn btn-p" onclick="process()">Compress</button>
+    </div>
+  </div>
+
+  <script src="/js/vidlet.js"></script>
+  <script>
+    const { $, log, postJson, setLoading, showDone, formatDuration } = VidLet;
+    let info = {};
+
+    async function init() {
+      const res = await VidLet.fetchJson('/api/info');
+      info = res;
+      $('fileName').textContent = res.fileName;
+      $('size').textContent = `${res.width}x${res.height}`;
+      $('duration').textContent = formatDuration(res.duration);
+
+      if (res.defaults) {
+        if (res.defaults.bitrate) {
+          $('bitrate').value = res.defaults.bitrate;
+          $('bitrateRange').value = res.defaults.bitrate;
+        }
+        if (res.defaults.preset) $('preset').value = res.defaults.preset;
+      }
+
+      // Sync range and number inputs
+      $('bitrateRange').oninput = () => $('bitrate').value = $('bitrateRange').value;
+      $('bitrate').oninput = () => $('bitrateRange').value = $('bitrate').value;
+    }
+
+    async function process() {
+      setLoading(true, 'Compressing video...');
+
+      const opts = {
+        bitrate: parseInt($('bitrate').value),
+        preset: $('preset').value
+      };
+
+      try {
+        const res = await postJson('/api/process', opts);
+
+        if (res.logs) {
+          res.logs.forEach(l => log('log', l.type === 'error' ? 'e' : l.type === 'success' ? 's' : 'i', l.message));
+        }
+
+        if (res.success) {
+          showDone(true, 'Compression Complete!', res.output);
+        } else {
+          showDone(false, 'Compression Failed', res.error);
+        }
+      } catch (err) {
+        showDone(false, 'Error', err.message);
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>

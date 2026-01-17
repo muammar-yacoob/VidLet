@@ -76,6 +76,33 @@ function manualToWSLPath(windowsPath: string): string {
 }
 
 /**
+ * Synchronous WSL to Windows path conversion
+ * @example wslToWindows('/mnt/c/Users/test.mp4') => 'C:\\Users\\test.mp4'
+ */
+export function wslToWindows(wslPath: string): string {
+  const match = wslPath.match(/^\/mnt\/([a-z])(\/.*)?$/i);
+  if (match) {
+    const [, drive, rest = ''] = match;
+    return `${drive.toUpperCase()}:${rest.replace(/\//g, '\\')}`;
+  }
+  return wslPath;
+}
+
+/**
+ * Synchronous Windows to WSL path conversion
+ * @example windowsToWsl('C:\\Users\\test.mp4') => '/mnt/c/Users/test.mp4'
+ */
+export function windowsToWsl(winPath: string): string {
+  const match = winPath.match(/^([A-Za-z]):\\(.*)$/);
+  if (match) {
+    const drive = match[1].toLowerCase();
+    const rest = match[2].replace(/\\/g, '/');
+    return `/mnt/${drive}/${rest}`;
+  }
+  return winPath;
+}
+
+/**
  * Manual WSL to Windows path conversion (fallback)
  */
 function manualToWindowsPath(wslPath: string): string {

@@ -1,167 +1,154 @@
-# VidLet npm Package Conversion PRD
+# VidLet Refactoring PRD - Mimic PicLet Architecture
 
 ## Overview
-Convert VidLet from a Windows batch script toolkit to a modern TypeScript npm package (`@spark-apps/vidlet`) that runs on WSL while integrating with Windows shell context menus.
+Refactor VidLet to mirror PicLet's clean architecture, adding GUI support via Express.js server with browser-based HTML/CSS/JS interfaces, and restructuring CLI logic for cleanliness and consistency.
 
 ## Goals
-1. Package as `@spark-apps/vidlet` on npm
-2. Run all video processing in WSL using native ffmpeg
-3. Windows registry calls WSL directly (no batch file wrappers)
-4. TypeScript codebase with Biome for linting/formatting
-5. Clean architecture with separation of concerns
+1. Mirror PicLet's project structure and file organization
+2. Add browser-based GUI system using Express.js + vanilla HTML/CSS/JS
+3. Clean up and consolidate CLI logic
+4. Add interactive terminal prompts system
+5. Add VBScript launcher for Windows integration
+6. Ensure all tools work in CLI, batch (-y), and GUI (-g) modes
+7. Pass all linting (biome) and build (bun) tests
 
-## Architecture
+## Project Structure Target
 
-### Package Structure
 ```
-vidlet/
-├── src/
-│   ├── index.ts              # Main exports
-│   ├── cli.ts                # CLI entry point (vidlet command)
-│   ├── core/
-│   │   ├── ffmpeg.ts         # FFmpeg command builder and executor
-│   │   ├── config.ts         # Configuration management (JSON-based)
-│   │   └── paths.ts          # Windows/WSL path conversion utilities
-│   ├── tools/
-│   │   ├── compress.ts       # Video compression (libx264)
-│   │   ├── togif.ts          # MP4 to GIF with palette optimization
-│   │   ├── loop.ts           # Seamless loop detection and creation
-│   │   ├── mkv2mp4.ts        # MKV to MP4 conversion
-│   │   ├── shrink.ts         # Video speed-up to target duration
-│   │   └── thumb.ts          # Video thumbnail extraction
-│   ├── detection/
-│   │   └── loop-detector.ts  # Frame similarity detection (replaces Python)
-│   └── registry/
-│       ├── install.ts        # Windows registry installation
-│       └── uninstall.ts      # Windows registry removal
-├── package.json
-├── tsconfig.json
-├── biome.json
-└── README.md
+src/
+├── cli.ts                    # Main CLI entry (Commander.js)
+├── launcher.vbs              # VBScript for hidden cmd.exe execution
+├── lib/
+│   ├── banner.ts             # ASCII art banner (existing, keep)
+│   ├── config.ts             # Configuration management (existing, keep)
+│   ├── ffmpeg.ts             # FFmpeg wrapper (existing, keep)
+│   ├── gui-server.ts         # NEW: Express.js HTTP server for GUI
+│   ├── logger.ts             # Console logging (existing, enhance)
+│   ├── paths.ts              # Path utilities (existing, keep)
+│   ├── prompts.ts            # NEW: Terminal prompts system
+│   └── registry.ts           # NEW: Windows registry (from install.ts)
+├── tools/
+│   ├── index.ts              # Tool exports
+│   ├── compress.ts           # Existing, add GUI support
+│   ├── togif.ts              # Existing, add GUI support
+│   ├── mkv2mp4.ts            # Existing, add GUI support
+│   ├── shrink.ts             # Existing, add GUI support
+│   ├── thumb.ts              # Existing, add GUI support
+│   ├── loop.ts               # Existing, add GUI support
+│   └── vidlet-main.ts        # NEW: Unified GUI (all tools)
+├── gui/
+│   ├── css/
+│   │   └── theme.css         # Shared dark theme
+│   ├── js/
+│   │   └── vidlet.js         # Shared GUI utilities
+│   ├── vidlet.html           # Unified tool interface
+│   ├── compress.html         # Individual tool pages
+│   ├── togif.html
+│   ├── mkv2mp4.html
+│   ├── shrink.html
+│   ├── thumb.html
+│   ├── loop.html
+│   └── loading.hta           # Loading overlay window
+└── icons/                    # Move from root
+    ├── tv.ico
+    ├── compress.ico
+    ├── mkv2mp4.ico
+    ├── shrink.ico
+    ├── thumb.ico
+    ├── togif.ico
+    └── loop.ico
 ```
-
-### CLI Commands
-- `vidlet install` - Install Windows shell context menu entries
-- `vidlet uninstall` - Remove Windows shell context menu entries
-- `vidlet compress <file>` - Compress video
-- `vidlet togif <file>` - Convert to GIF
-- `vidlet loop <file>` - Create seamless loop
-- `vidlet mkv2mp4 <file>` - Convert MKV to MP4
-- `vidlet shrink <file>` - Shrink video to target duration
-- `vidlet thumb <file>` - Set video thumbnail
-- `vidlet config` - Manage configuration
-
-### Registry Integration
-Registry commands will call WSL directly:
-```
-wsl.exe -e vidlet compress "$(wslpath '%1')"
-```
-
-The path conversion happens via wslpath which converts Windows paths to WSL paths.
-
-### Configuration
-Migrate from INI to JSON config at `~/.config/vidlet/config.json`:
-```json
-{
-  "compress": {
-    "bitrate": 2500,
-    "preset": "medium"
-  },
-  "togif": {
-    "fps": 15,
-    "width": 480,
-    "dither": "sierra2_4a"
-  },
-  "loop": {
-    "searchDuration": 5,
-    "minLength": 1,
-    "maxLength": 3,
-    "threshold": 0.98,
-    "crossfade": 0.5
-  },
-  "shrink": {
-    "targetDuration": 59.5
-  },
-  "mkv2mp4": {
-    "copyStreams": true,
-    "crf": 23
-  },
-  "thumb": {
-    "timestamp": "00:00:01"
-  }
-}
-```
-
-### FFmpeg Strategy
-- Use WSL's native ffmpeg (installed via `apt install ffmpeg`)
-- No bundled ffmpeg binary needed
-- Spawn child processes using execa or node:child_process
-
-### Loop Detection Migration
-Replace Python OpenCV script with Node.js using:
-- `sharp` for image processing (fast, no native deps)
-- `pixelmatch` for frame comparison
-- Extract frames via ffmpeg, compare in memory
 
 ## Technical Requirements
 
-### Dependencies
-- TypeScript 5.x
-- execa - Process execution
-- sharp - Image processing for loop detection
-- commander - CLI framework
-- chalk - Terminal colors (optional)
-- zod - Config validation
+### 1. GUI Server (lib/gui-server.ts)
+- Express.js HTTP server
+- Dynamic port allocation (find available port)
+- REST API endpoints:
+  - GET /api/info - Get video info and defaults
+  - POST /api/preview - Generate preview (where applicable)
+  - POST /api/process - Execute final processing
+  - POST /api/load - Load new video during session
+  - POST /api/cancel - Cancel and close
+  - POST /api/close - Close after completion
+- Static file serving for HTML/CSS/JS
+- Open Microsoft Edge in app mode via PowerShell
 
-### Dev Dependencies
-- @biomejs/biome - Linting and formatting
-- tsup - Build tool
-- vitest - Testing
+### 2. Prompts System (lib/prompts.ts)
+- Wrapper around 'prompts' npm package
+- Support: text, number, confirm, select
+- CLI override system (match prompt message to set values)
+- Batch mode (-y flag skips all prompts using defaults)
+- Integration with tool configs
 
-### Node.js Requirements
-- Node.js 18+ (for native fetch and other modern APIs)
-- WSL with ffmpeg installed
+### 3. Registry Management (lib/registry.ts)
+- Extract registry logic from install.ts/uninstall.ts
+- Functions: addRegistryKey, deleteRegistryKey
+- WSL detection and path conversion
+- Generate .reg file content
 
-## Tasks
+### 4. Tool Updates
+Each tool (compress, togif, mkv2mp4, shrink, thumb, loop) needs:
+- Export ToolConfig interface: { id, name, icon, extensions }
+- run(filePath, options?) - CLI/batch mode
+- runGUI(filePath) - GUI mode (if -g flag)
+- Integrate with prompts system for interactive input
+- Support batch mode (-y) with defaults
 
-### Phase 1: Project Setup
-1. Initialize npm package with package.json
-2. Configure TypeScript (tsconfig.json)
-3. Configure Biome (biome.json)
-4. Set up build pipeline with tsup
-5. Create CLI entry point structure
+### 5. CLI Updates (cli.ts)
+- Add -g/--gui flag to all tool commands
+- Add -y/--yes flag for batch mode (use defaults)
+- Update install/uninstall to use registry.ts
+- Add unified 'vidlet' command for combined GUI
+- Clean up help formatting
+- Consistent error handling
 
-### Phase 2: Core Infrastructure
-1. Implement path conversion utilities (Windows <-> WSL)
-2. Create FFmpeg command builder and executor
-3. Implement JSON configuration management
-4. Create base tool class/interface
+### 6. GUI Pages
+Each HTML page needs:
+- Dark theme matching PicLet
+- Form controls for tool options
+- Video preview (where applicable)
+- Progress/log display
+- Done state with file info
+- Responsive to window size
 
-### Phase 3: Video Tools
-1. Port compress tool to TypeScript
-2. Port togif tool with palette generation
-3. Port mkv2mp4 tool
-4. Port shrink tool
-5. Port thumb tool
-6. Port loop tool with frame detection
+### 7. VBScript Launcher (launcher.vbs)
+- Convert Windows path to WSL path
+- Show loading HTA during startup
+- Run wsl command with vidlet CLI
+- Hide cmd.exe window
 
-### Phase 4: Registry Integration
-1. Implement registry file generator
-2. Create install command (generates .reg and imports via reg.exe)
-3. Create uninstall command
-4. Handle elevation requirements messaging
+### 8. Build Configuration (tsup.config.ts)
+Update to copy assets:
+- src/icons/ → dist/icons/
+- src/gui/ → dist/gui/
+- src/launcher.vbs → dist/launcher.vbs
+- Add shebang to dist/cli.js
 
-### Phase 5: Testing and Polish
-1. Add Biome linting rules and fix issues
-2. Write unit tests for path conversion
-3. Write integration tests for tools
-4. Add --help documentation for all commands
-5. Final cleanup and documentation
+## Dependencies to Add
+- express (HTTP server)
+- prompts (terminal prompts)
 
 ## Success Criteria
-- `npm install -g @spark-apps/vidlet` works
-- `vidlet install` adds Windows context menu items
-- Right-clicking video files shows VidLet options
-- All 6 video tools work correctly via WSL
-- Biome lint passes with no errors
-- Clean TypeScript compilation
+1. All tools work in 3 modes: CLI, batch (-y), GUI (-g)
+2. biome lint passes without errors
+3. bun build completes successfully
+4. Windows context menu integration works
+5. GUI opens in Edge and processes videos correctly
+6. Clean, well-organized codebase matching PicLet structure
+
+## Implementation Order
+1. Create directory structure (move icons, create gui folder)
+2. Add dependencies (express, prompts)
+3. Create lib/prompts.ts
+4. Create lib/registry.ts (extract from install.ts)
+5. Create lib/gui-server.ts
+6. Update each tool to export ToolConfig and support GUI
+7. Create GUI pages (theme.css, vidlet.js, HTML files)
+8. Create launcher.vbs
+9. Update cli.ts with new flags and commands
+10. Update tsup.config.ts for asset copying
+11. Update install.ts/uninstall.ts to use registry.ts
+12. Test all tools in all modes
+13. Run biome lint and fix issues
+14. Run bun build and verify
