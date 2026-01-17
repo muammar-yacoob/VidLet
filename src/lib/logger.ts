@@ -1,6 +1,10 @@
 /**
  * Colored console output utilities using ANSI codes
+ * Also writes to a persistent log file for debugging
  */
+import { appendFileSync, mkdirSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 
 // ANSI color codes
 const RED = '\x1b[31m';
@@ -17,40 +21,88 @@ const RESET = '\x1b[0m';
 const CHECK = '\u2713';
 const CROSS = '\u2717';
 
+// Log file path
+const LOG_DIR = join(homedir(), '.vidlet');
+const LOG_FILE = join(LOG_DIR, 'vidlet.log');
+
+// Ensure log directory exists
+try {
+	mkdirSync(LOG_DIR, { recursive: true });
+} catch {
+	// Ignore if already exists
+}
+
+/** Strip ANSI codes from string */
+function stripAnsi(str: string): string {
+	return str.replace(/\x1b\[[0-9;]*m/g, '');
+}
+
+/** Write to log file with timestamp */
+function writeToLog(message: string): void {
+	try {
+		const timestamp = new Date().toISOString();
+		const cleanMessage = stripAnsi(message);
+		appendFileSync(LOG_FILE, `[${timestamp}] ${cleanMessage}\n`);
+	} catch {
+		// Silently ignore log write errors
+	}
+}
+
+/** Get log file path */
+export function getLogPath(): string {
+	return LOG_FILE;
+}
+
 /** Print success message with checkmark */
 export function success(message: string): void {
-  console.log(`${GREEN}${CHECK}${RESET} ${message}`);
+	const msg = `${GREEN}${CHECK}${RESET} ${message}`;
+	console.log(msg);
+	writeToLog(`[SUCCESS] ${message}`);
 }
 
 /** Print error message with X */
 export function error(message: string): void {
-  console.log(`${RED}${CROSS}${RESET} ${message}`);
+	const msg = `${RED}${CROSS}${RESET} ${message}`;
+	console.log(msg);
+	writeToLog(`[ERROR] ${message}`);
 }
 
 /** Print warning message */
 export function warn(message: string): void {
-  console.log(`${YELLOW}${message}${RESET}`);
+	const msg = `${YELLOW}${message}${RESET}`;
+	console.log(msg);
+	writeToLog(`[WARN] ${message}`);
 }
 
 /** Print info message */
 export function info(message: string): void {
-  console.log(`${CYAN}${message}${RESET}`);
+	const msg = `${CYAN}${message}${RESET}`;
+	console.log(msg);
+	writeToLog(`[INFO] ${message}`);
 }
 
 /** Print header with separator */
 export function header(title: string): void {
-  console.log(`${CYAN}${title}${RESET}`);
-  console.log(`${DIM}${'─'.repeat(40)}${RESET}`);
+	console.log(`${CYAN}${title}${RESET}`);
+	console.log(`${DIM}${'─'.repeat(40)}${RESET}`);
+	writeToLog(`\n=== ${title} ===`);
 }
 
 /** Print separator line */
 export function separator(): void {
-  console.log(`${DIM}${'─'.repeat(40)}${RESET}`);
+	console.log(`${DIM}${'─'.repeat(40)}${RESET}`);
 }
 
 /** Print dim text */
 export function dim(message: string): void {
-  console.log(`${DIM}${message}${RESET}`);
+	const msg = `${DIM}${message}${RESET}`;
+	console.log(msg);
+	writeToLog(message);
+}
+
+/** Log raw message to file only (for debugging) */
+export function logToFile(message: string): void {
+	writeToLog(message);
 }
 
 // Inline formatters for building strings

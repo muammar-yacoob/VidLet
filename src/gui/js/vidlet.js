@@ -87,6 +87,61 @@
     document.addEventListener('contextmenu', e => e.preventDefault());
   }
 
+  // Resize window to fit video aspect ratio
+  function resizeToVideo(videoWidth, videoHeight, opts = {}) {
+    // UI chrome dimensions
+    const sidebarWidth = opts.sidebarWidth || 160;
+    const headerHeight = opts.headerHeight || 100;
+    const optionsHeight = opts.optionsHeight || 90;
+    const footerHeight = opts.footerHeight || 50;
+    const chromeV = headerHeight + optionsHeight + footerHeight;
+
+    // Constraints
+    const minPreviewW = opts.minPreviewWidth || 280;
+    const maxPreviewW = opts.maxPreviewWidth || 800;
+    const minPreviewH = opts.minPreviewHeight || 180;
+    const maxPreviewH = opts.maxPreviewHeight || 600;
+    const padding = opts.padding || 40; // Window chrome padding
+
+    // Calculate aspect ratio
+    const aspect = videoWidth / videoHeight;
+
+    // Start with a reasonable preview width based on video size
+    let previewW = Math.min(videoWidth, maxPreviewW);
+    previewW = Math.max(previewW, minPreviewW);
+
+    // Calculate height from width maintaining aspect ratio
+    let previewH = previewW / aspect;
+
+    // Clamp height and recalculate width if needed
+    if (previewH > maxPreviewH) {
+      previewH = maxPreviewH;
+      previewW = previewH * aspect;
+    }
+    if (previewH < minPreviewH) {
+      previewH = minPreviewH;
+      previewW = previewH * aspect;
+    }
+
+    // Final window dimensions
+    const winW = Math.round(previewW + sidebarWidth + padding);
+    const winH = Math.round(previewH + chromeV + padding);
+
+    // Ensure it fits on screen
+    const maxWinW = screen.availWidth - 100;
+    const maxWinH = screen.availHeight - 100;
+    const finalW = Math.min(winW, maxWinW);
+    const finalH = Math.min(winH, maxWinH);
+
+    // Center and resize
+    const x = Math.round((screen.availWidth - finalW) / 2) + (screen.availLeft || 0);
+    const y = Math.round((screen.availHeight - finalH) / 2) + (screen.availTop || 0);
+    window.resizeTo(finalW, finalH);
+    window.moveTo(x, y);
+
+    return { width: finalW, height: finalH };
+  }
+
   // Show/hide elements
   function show(element) {
     const el = typeof element === 'string' ? $(element) : element;
@@ -139,6 +194,44 @@
       const p = dn.querySelector('p');
       if (h4) h4.textContent = message;
       if (p) p.textContent = details || '';
+
+      // Add copy button for errors
+      const existingCopyBtn = dn.querySelector('.copy-btn');
+      if (existingCopyBtn) existingCopyBtn.remove();
+
+      if (!success && details) {
+        const copyBtn = document.createElement('button');
+        copyBtn.className = 'copy-btn';
+        copyBtn.textContent = 'Copy Error';
+        copyBtn.onclick = async () => {
+          try {
+            await navigator.clipboard.writeText(details);
+            copyBtn.textContent = 'Copied!';
+            copyBtn.classList.add('copied');
+            setTimeout(() => {
+              copyBtn.textContent = 'Copy Error';
+              copyBtn.classList.remove('copied');
+            }, 2000);
+          } catch {
+            // Fallback for older browsers
+            const ta = document.createElement('textarea');
+            ta.value = details;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+            copyBtn.textContent = 'Copied!';
+            copyBtn.classList.add('copied');
+            setTimeout(() => {
+              copyBtn.textContent = 'Copy Error';
+              copyBtn.classList.remove('copied');
+            }, 2000);
+          }
+        };
+        p.after(copyBtn);
+      }
     }
   }
 
@@ -152,6 +245,7 @@
     cancel,
     openUrl,
     init,
+    resizeToVideo,
     show,
     hide,
     setLoading,

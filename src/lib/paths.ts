@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { execa } from 'execa';
 
 /**
@@ -5,6 +6,13 @@ import { execa } from 'execa';
  */
 export function isWSL(): boolean {
   return process.platform === 'linux' && (!!process.env.WSL_DISTRO_NAME || !!process.env.WSLENV);
+}
+
+/**
+ * Check if WSL interop is enabled (can run Windows executables)
+ */
+export function isWSLInteropEnabled(): boolean {
+  return existsSync('/proc/sys/fs/binfmt_misc/WSLInterop');
 }
 
 /**

@@ -1,5 +1,6 @@
 import * as fs from 'node:fs/promises';
 import { type ExecaError, execa } from 'execa';
+import { logToFile } from './logger.js';
 
 export interface FFmpegOptions {
   input: string;
@@ -49,10 +50,11 @@ export async function getVideoInfo(inputPath: string): Promise<VideoInfo> {
     throw new Error('No video stream found');
   }
 
-  // Parse frame rate (can be "30/1" or "29.97")
+  // Parse frame rate - use avg_frame_rate (actual fps) instead of r_frame_rate (timebase)
   let fps = 30;
-  if (videoStream.r_frame_rate) {
-    const [num, den] = videoStream.r_frame_rate.split('/').map(Number);
+  const fpsString = videoStream.avg_frame_rate || videoStream.r_frame_rate;
+  if (fpsString) {
+    const [num, den] = fpsString.split('/').map(Number);
     fps = den ? num / den : num;
   }
 
@@ -87,19 +89,38 @@ export async function executeFFmpeg(options: FFmpegOptions): Promise<void> {
   }
 
   const ffmpegArgs = [
+    '-nostdin', // Prevent waiting for input
     ...(overwrite ? ['-y'] : ['-n']),
     '-i',
     input,
     ...args,
     '-loglevel',
-    'warning',
+    'error', // Only show errors to reduce output buffering
     output,
   ];
 
+  // Log the command for debugging
+  logToFile(`FFmpeg command: ffmpeg ${ffmpegArgs.join(' ')}`);
+
   try {
-    await execa('ffmpeg', ffmpegArgs, { stdio: 'inherit' });
+    const result = await execa('ffmpeg', ffmpegArgs, {
+      reject: false,
+      timeout: 30 * 60 * 1000, // 30 minute timeout
+      buffer: false, // Don't buffer output to prevent memory issues
+    });
+
+    logToFile(`FFmpeg completed with exit code: ${result.exitCode}`);
+
+    if (result.exitCode !== 0) {
+      const errorMsg = result.stderr || `Exit code ${result.exitCode}`;
+      logToFile(`FFmpeg error: ${errorMsg}`);
+      throw new Error(`FFmpeg failed: ${errorMsg}`);
+    }
+
+    logToFile(`FFmpeg success: Output at ${output}`);
   } catch (error) {
     const execaError = error as ExecaError;
+    logToFile(`FFmpeg exception: ${execaError.message}`);
     throw new Error(`FFmpeg failed: ${execaError.message}`);
   }
 }
@@ -115,12 +136,37 @@ export async function executeFFmpegMultiInput(
 ): Promise<void> {
   const inputArgs = inputs.flatMap((i) => ['-i', i]);
 
-  const ffmpegArgs = [...(overwrite ? ['-y'] : ['-n']), ...inputArgs, ...args, output];
+  const ffmpegArgs = [
+    '-nostdin',
+    ...(overwrite ? ['-y'] : ['-n']),
+    ...inputArgs,
+    ...args,
+    '-loglevel',
+    'error',
+    output,
+  ];
+
+  logToFile(`FFmpeg multi-input command: ffmpeg ${ffmpegArgs.join(' ')}`);
 
   try {
-    await execa('ffmpeg', ffmpegArgs, { stdio: 'inherit' });
+    const result = await execa('ffmpeg', ffmpegArgs, {
+      reject: false,
+      timeout: 30 * 60 * 1000,
+      buffer: false,
+    });
+
+    logToFile(`FFmpeg completed with exit code: ${result.exitCode}`);
+
+    if (result.exitCode !== 0) {
+      const errorMsg = result.stderr || `Exit code ${result.exitCode}`;
+      logToFile(`FFmpeg error: ${errorMsg}`);
+      throw new Error(`FFmpeg failed: ${errorMsg}`);
+    }
+
+    logToFile(`FFmpeg success: Output at ${output}`);
   } catch (error) {
     const execaError = error as ExecaError;
+    logToFile(`FFmpeg exception: ${execaError.message}`);
     throw new Error(`FFmpeg failed: ${execaError.message}`);
   }
 }

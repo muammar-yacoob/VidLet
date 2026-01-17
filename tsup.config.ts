@@ -11,6 +11,7 @@ export default defineConfig({
 	outDir: 'dist',
 	treeshake: true,
 	target: 'node18',
+	silent: true,
 	banner: {
 		js: '#!/usr/bin/env node',
 	},
@@ -23,7 +24,5 @@ export default defineConfig({
 
 		// Copy launcher script
 		cpSync('src/launcher.vbs', 'dist/launcher.vbs');
-
-		console.log('Assets copied to dist/');
 	},
 });

@@ -1,8 +1,9 @@
 import { exec } from 'node:child_process';
+import { writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import { isWSL, wslToWindows } from '../lib/paths.js';
+import { wslToWindows } from '../lib/paths.js';
 import { toolConfigs } from './tools.js';
 
 const execAsync = promisify(exec);
@@ -85,12 +86,8 @@ export interface RegistrationResult {
 }
 
 /**
- * Tools that should open in GUI mode (vs headless with defaults)
- */
-const guiTools = ['compress', 'togif', 'mkv2mp4', 'shrink', 'loop'];
-
-/**
- * Register unified VidLet menu for a single extension
+ * Register unified VidLet menu entry for a single extension
+ * Opens the unified GUI with all tools available
  */
 async function registerMenuForExtension(
 	extension: string,
@@ -102,7 +99,7 @@ async function registerMenuForExtension(
 	const iconsDirWin = wslToWindows(iconsDir);
 	const launcherWin = wslToWindows(launcherPath);
 
-	// Get tools that support this extension
+	// Check if any tools support this extension
 	const extensionTools = toolConfigs.filter((t) =>
 		t.extensions.includes(extension),
 	);
@@ -111,46 +108,22 @@ async function registerMenuForExtension(
 		return results;
 	}
 
-	// Create parent VidLet menu with submenu
-	await addRegistryKey(basePath, 'MUIVerb', 'VidLet');
-	await addRegistryKey(basePath, 'Icon', `${iconsDirWin}\\tv.ico`);
-	await addRegistryKey(basePath, 'SubCommands', '');
+	// Create single VidLet menu entry (opens unified GUI)
+	const menuSuccess = await addRegistryKey(basePath, 'MUIVerb', 'Open with VidLet');
+	const iconSuccess = await addRegistryKey(basePath, 'Icon', `${iconsDirWin}\\tv.ico`);
 
-	// Create submenu for each tool
-	for (const tool of extensionTools) {
-		const toolPath = `${basePath}\\shell\\${tool.id}`;
+	// Enable multi-select
+	await addRegistryKey(basePath, 'MultiSelectModel', 'Player');
 
-		const menuSuccess = await addRegistryKey(toolPath, 'MUIVerb', tool.name);
-		const iconSuccess = await addRegistryKey(
-			toolPath,
-			'Icon',
-			`${iconsDirWin}\\${tool.icon}`,
-		);
+	// Command - opens unified VidLet GUI
+	const commandValue = `wscript.exe //B "${launcherWin}" vidlet "%1" -g`;
+	const cmdSuccess = await addRegistryKey(`${basePath}\\command`, '', commandValue);
 
-		// Enable multi-select
-		await addRegistryKey(toolPath, 'MultiSelectModel', 'Player');
-
-		// Command - use VBScript launcher for hidden cmd.exe window
-		let commandValue: string;
-		if (guiTools.includes(tool.id)) {
-			// GUI mode - opens Edge app window
-			commandValue = `wscript.exe //B "${launcherWin}" ${tool.id} "%1" -g`;
-		} else {
-			// Run headless with defaults
-			commandValue = `wscript.exe //B "${launcherWin}" ${tool.id} "%1" -y`;
-		}
-		const cmdSuccess = await addRegistryKey(
-			`${toolPath}\\command`,
-			'',
-			commandValue,
-		);
-
-		results.push({
-			extension,
-			toolName: tool.name,
-			success: menuSuccess && iconSuccess && cmdSuccess,
-		});
-	}
+	results.push({
+		extension,
+		toolName: 'VidLet',
+		success: menuSuccess && iconSuccess && cmdSuccess,
+	});
 
 	return results;
 }
@@ -164,29 +137,15 @@ async function unregisterMenuForExtension(
 	const results: RegistrationResult[] = [];
 	const basePath = getMenuBasePath(extension);
 
-	// Get tools that support this extension
-	const extensionTools = toolConfigs.filter((t) =>
-		t.extensions.includes(extension),
-	);
+	// Delete command and VidLet menu entry
+	await deleteRegistryKey(`${basePath}\\command`);
+	const success = await deleteRegistryKey(basePath);
 
-	// Delete each tool's submenu
-	for (const tool of extensionTools) {
-		const toolPath = `${basePath}\\shell\\${tool.id}`;
-		await deleteRegistryKey(`${toolPath}\\command`);
-		const success = await deleteRegistryKey(toolPath);
-
-		results.push({
-			extension,
-			toolName: tool.name,
-			success,
-		});
-	}
-
-	// Delete the shell container
-	await deleteRegistryKey(`${basePath}\\shell`);
-
-	// Delete parent VidLet menu
-	await deleteRegistryKey(basePath);
+	results.push({
+		extension,
+		toolName: 'VidLet',
+		success,
+	});
 
 	return results;
 }
@@ -239,4 +198,93 @@ export async function unregisterAllTools(): Promise<RegistrationResult[]> {
 	}
 
 	return results;
+}
+
+/**
+ * Escape a string value for .reg file format
+ */
+function escapeRegValue(value: string): string {
+	return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+/**
+ * Generate registry content for unified VidLet menu
+ */
+function generateRegContent(): string {
+	const distDir = getDistDir();
+	const iconsDir = join(distDir, 'icons');
+	const launcherPath = join(distDir, 'launcher.vbs');
+	const iconsDirWin = wslToWindows(iconsDir);
+	const launcherWin = wslToWindows(launcherPath);
+
+	const lines: string[] = ['Windows Registry Editor Version 5.00', ''];
+
+	for (const extension of getAllExtensions()) {
+		const basePath = `HKEY_CURRENT_USER\\Software\\Classes\\SystemFileAssociations\\${extension}\\shell\\VidLet`;
+
+		// Check if any tools support this extension
+		const extensionTools = toolConfigs.filter((t) =>
+			t.extensions.includes(extension),
+		);
+
+		if (extensionTools.length === 0) {
+			continue;
+		}
+
+		// Create single VidLet menu entry (opens unified GUI)
+		lines.push(`[${basePath}]`);
+		lines.push(`"MUIVerb"="${escapeRegValue('Open with VidLet')}"`);
+		lines.push(`"Icon"="${escapeRegValue(`${iconsDirWin}\\tv.ico`)}"`);
+		lines.push('"MultiSelectModel"="Player"');
+		lines.push('');
+
+		// Command - opens unified VidLet GUI
+		const commandValue = `wscript.exe //B "${launcherWin}" vidlet "%1" -g`;
+		lines.push(`[${basePath}\\command]`);
+		lines.push(`@="${escapeRegValue(commandValue)}"`);
+		lines.push('');
+	}
+
+	return lines.join('\r\n');
+}
+
+/**
+ * Generate uninstall registry content (deletion entries)
+ */
+function generateUninstallRegContent(): string {
+	const lines: string[] = ['Windows Registry Editor Version 5.00', ''];
+
+	for (const extension of getAllExtensions()) {
+		const basePath = `HKEY_CURRENT_USER\\Software\\Classes\\SystemFileAssociations\\${extension}\\shell\\VidLet`;
+
+		// Delete the entire VidLet key (minus sign deletes)
+		lines.push(`[-${basePath}]`);
+		lines.push('');
+	}
+
+	return lines.join('\r\n');
+}
+
+/**
+ * Generate a .reg file for installation
+ * @returns Path to the generated .reg file
+ */
+export async function generateRegFile(): Promise<string> {
+	const distDir = getDistDir();
+	const regPath = join(distDir, 'vidlet-install.reg');
+	const content = generateRegContent();
+	await writeFile(regPath, content, 'utf-8');
+	return regPath;
+}
+
+/**
+ * Generate a .reg file for uninstallation
+ * @returns Path to the generated .reg file
+ */
+export async function generateUninstallRegFile(): Promise<string> {
+	const distDir = getDistDir();
+	const regPath = join(distDir, 'vidlet-uninstall.reg');
+	const content = generateUninstallRegContent();
+	await writeFile(regPath, content, 'utf-8');
+	return regPath;
 }

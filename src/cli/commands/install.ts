@@ -1,8 +1,9 @@
 import type { Command } from 'commander';
 import { printBanner } from '../../lib/banner.js';
 import { fmt } from '../../lib/logger.js';
-import { isWSL } from '../../lib/paths.js';
-import { registerAllTools, unregisterAllTools } from '../registry.js';
+import { isWSL, isWSLInteropEnabled, wslToWindows } from '../../lib/paths.js';
+import { generateRegFile, registerAllTools, unregisterAllTools } from '../registry.js';
+import { toolConfigs } from '../tools.js';
 
 /**
  * Register the install command
@@ -21,6 +22,21 @@ export function registerInstallCommand(program: Command): void {
 				return;
 			}
 
+			if (!isWSLInteropEnabled()) {
+				console.log(fmt.yellow('WSL Interop not available. Generating registry file...\n'));
+
+				const regPath = await generateRegFile();
+				const winPath = wslToWindows(regPath);
+
+				console.log(fmt.green('✓ Generated registry file:'));
+				console.log(fmt.cyan(`  ${winPath}\n`));
+				console.log(fmt.bold('To install, either:'));
+				console.log(fmt.dim('  1. Double-click the .reg file in Windows Explorer'));
+				console.log(fmt.dim(`  2. Run in elevated PowerShell: reg import "${winPath}"`));
+				console.log();
+				return;
+			}
+
 			// Clean up existing entries first
 			console.log(fmt.dim('Removing old entries...'));
 			await unregisterAllTools();
@@ -28,38 +44,25 @@ export function registerInstallCommand(program: Command): void {
 
 			const results = await registerAllTools();
 
-			// Group results by tool name
-			const grouped = new Map<string, { extensions: string[]; allSuccess: boolean }>();
-			for (const result of results) {
-				const existing = grouped.get(result.toolName);
-				if (existing) {
-					existing.extensions.push(result.extension);
-					existing.allSuccess = existing.allSuccess && result.success;
-				} else {
-					grouped.set(result.toolName, {
-						extensions: [result.extension],
-						allSuccess: result.success,
-					});
-				}
-			}
+			// Check if registration was successful (any result with success)
+			const registrationSuccess = results.some((r) => r.success);
 
-			// Display grouped results
-			let successCount = 0;
-			for (const [toolName, { extensions, allSuccess }] of grouped) {
-				const extList = extensions.join(', ');
-				if (allSuccess) {
-					console.log(`${fmt.green('✓')} ${toolName} ${fmt.dim(`[${extList}]`)}`);
-					successCount++;
+			// Display individual tools with their extensions
+			console.log(fmt.bold('Available tools:\n'));
+			for (const tool of toolConfigs) {
+				const extList = tool.extensions.join(', ');
+				if (registrationSuccess) {
+					console.log(`${fmt.green('✓')} ${tool.name} ${fmt.dim(`[${extList}]`)}`);
 				} else {
-					console.log(`${fmt.red('✗')} ${toolName} ${fmt.dim(`[${extList}]`)} ${fmt.red('(failed)')}`);
+					console.log(`${fmt.red('✗')} ${tool.name} ${fmt.dim(`[${extList}]`)} ${fmt.red('(failed)')}`);
 				}
 			}
 
 			console.log();
-			if (successCount === grouped.size) {
-				console.log(fmt.green(`✓ Registered ${grouped.size} context menu entries.`));
+			if (registrationSuccess) {
+				console.log(fmt.green(`✓ Registered unified VidLet context menu.`));
 			} else {
-				console.log(fmt.yellow(`! Registered ${successCount}/${grouped.size} entries.`));
+				console.log(fmt.yellow(`! Registration failed. Try running as administrator.`));
 			}
 
 			console.log(fmt.bold('\nUsage:'));

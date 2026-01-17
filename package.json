@@ -38,6 +38,7 @@
   ],
   "author": "spark-apps",
   "license": "MIT",
+  "homepage": "https://vidlet.app",
   "repository": {
     "type": "git",
     "url": "https://github.com/muammar-yacoob/VidLet.git"

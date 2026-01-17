@@ -5,7 +5,7 @@ import { execa } from 'execa';
 import pixelmatch from 'pixelmatch';
 import { PNG } from 'pngjs';
 import { checkFFmpeg, executeFFmpeg, getVideoInfo } from '../lib/ffmpeg.js';
-import { fmt, header, separator, success } from '../lib/logger.js';
+import { fmt, header, logToFile, separator, success } from '../lib/logger.js';
 import { getOutputPath } from '../lib/paths.js';
 
 export interface LoopOptions {
@@ -56,9 +56,11 @@ async function findLoopPoints(
   const frameSize = 64;
 
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'vidlet_loop_'));
+  logToFile(`Loop: Finding loop points in ${inputPath}, search duration: ${searchDuration}s`);
+  logToFile(`Loop: Temp directory: ${tempDir}`);
 
   try {
-    await execa('ffmpeg', [
+    const ffmpegArgs = [
       '-y',
       '-i',
       inputPath,
@@ -72,7 +74,16 @@ async function findLoopPoints(
       '-hide_banner',
       '-loglevel',
       'error',
-    ]);
+    ];
+
+    logToFile(`Loop: Extracting frames with: ffmpeg ${ffmpegArgs.join(' ')}`);
+
+    const result = await execa('ffmpeg', ffmpegArgs, { reject: false, all: true });
+
+    if (result.exitCode !== 0) {
+      logToFile(`Loop: Frame extraction failed: ${result.all || result.stderr}`);
+      throw new Error(`Frame extraction failed: ${result.all || result.stderr}`);
+    }
 
     const files = await fs.readdir(tempDir);
     const framePaths = files
@@ -80,7 +91,12 @@ async function findLoopPoints(
       .sort()
       .map((f) => path.join(tempDir, f));
 
-    if (framePaths.length < fps * MIN_LOOP_LENGTH) return null;
+    logToFile(`Loop: Extracted ${framePaths.length} frames`);
+
+    if (framePaths.length < fps * MIN_LOOP_LENGTH) {
+      logToFile(`Loop: Not enough frames (need ${fps * MIN_LOOP_LENGTH}, got ${framePaths.length})`);
+      return null;
+    }
 
     const frames: Buffer[] = await Promise.all(framePaths.map((fp) => fs.readFile(fp)));
     const minFrameGap = Math.floor(MIN_LOOP_LENGTH * fps);
@@ -88,6 +104,8 @@ async function findLoopPoints(
     let bestScore = 0;
     let bestStart = 0;
     let bestEnd = 0;
+
+    logToFile(`Loop: Comparing ${frames.length} frames for similarity...`);
 
     for (let i = 0; i < frames.length - minFrameGap; i++) {
       for (let j = i + minFrameGap; j < frames.length; j++) {
@@ -100,12 +118,22 @@ async function findLoopPoints(
       }
     }
 
-    if (bestScore === 0) return null;
+    logToFile(`Loop: Best similarity score: ${bestScore.toFixed(4)}, threshold: ${SIMILARITY_THRESHOLD}`);
 
-    return {
+    if (bestScore === 0) {
+      logToFile('Loop: No similar frames found above threshold');
+      return null;
+    }
+
+    const result_points = {
       start: bestStart / fps,
       end: bestEnd / fps,
     };
+    logToFile(`Loop: Found loop points: ${result_points.start.toFixed(2)}s -> ${result_points.end.toFixed(2)}s`);
+    return result_points;
+  } catch (err) {
+    logToFile(`Loop: Error in findLoopPoints: ${(err as Error).message}`);
+    throw err;
   } finally {
     try {
       await fs.rm(tempDir, { recursive: true, force: true });

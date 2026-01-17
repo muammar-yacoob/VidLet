@@ -4,6 +4,7 @@
 Option Explicit
 
 Dim WshShell, fso, args, command, filePath, wslPath, fullCmd, htaPath, htaProc
+Dim scriptDir, cliPath, wslCliPath
 
 Set WshShell = CreateObject("WScript.Shell")
 Set fso = CreateObject("Scripting.FileSystemObject")
@@ -19,17 +20,22 @@ End If
 command = args(0)
 filePath = args(1)
 
-' Convert Windows path to WSL path
+' Get script directory and CLI path
+scriptDir = fso.GetParentFolderName(WScript.ScriptFullName)
+cliPath = scriptDir & "\cli.js"
+
+' Convert paths to WSL format
 wslPath = ConvertToWSLPath(filePath)
+wslCliPath = ConvertToWSLPath(cliPath)
 
 ' Show loading HTA
-htaPath = fso.GetParentFolderName(WScript.ScriptFullName) & "\gui\loading.hta"
+htaPath = scriptDir & "\gui\loading.hta"
 If fso.FileExists(htaPath) Then
     Set htaProc = WshShell.Exec("mshta.exe """ & htaPath & """")
 End If
 
-' Build the WSL command
-fullCmd = "wsl.exe -e bash -c ""vidlet " & command & " '" & wslPath & "' -g"""
+' Build the WSL command - use bash -c for proper argument handling
+fullCmd = "wsl.exe bash -c ""node '" & wslCliPath & "' " & command & " '" & wslPath & "' -g"""
 
 ' Run the command (hidden window)
 WshShell.Run fullCmd, 0, False

@@ -8,6 +8,9 @@ import { mkv2mp4 } from '../tools/mkv2mp4.js';
 import { shrink } from '../tools/shrink.js';
 import { thumb } from '../tools/thumb.js';
 import { togif } from '../tools/togif.js';
+import { trim, trimAccurate } from '../tools/trim.js';
+import { shorts } from '../tools/shorts.js';
+import * as vidletMain from '../tools/vidlet-main.js';
 
 /**
  * Tool configuration interface - defines metadata for each video tool
@@ -89,6 +92,20 @@ export const toolConfigs: ToolConfig[] = [
 		icon: 'tv.ico',
 		extensions: ['.mp4', '.mkv', '.avi', '.mov', '.webm'],
 		description: 'Create seamless video loop',
+	},
+	{
+		id: 'trim',
+		name: 'Trim',
+		icon: 'tv.ico',
+		extensions: ['.mp4', '.mkv', '.avi', '.mov', '.webm'],
+		description: 'Trim video to specific time range',
+	},
+	{
+		id: 'shorts',
+		name: 'Make Shorts',
+		icon: 'tv.ico',
+		extensions: ['.mp4', '.mkv', '.avi', '.mov', '.webm'],
+		description: 'Convert landscape video to 9:16 portrait for shorts',
 	},
 ];
 
@@ -319,6 +336,70 @@ export const tools: Tool[] = [
 			});
 		},
 	},
+	{
+		config: toolConfigs[6],
+		run: async (input, options) => {
+			const accurate = options.accurate as boolean | undefined;
+			if (accurate) {
+				return trimAccurate({
+					input,
+					output: options.output as string | undefined,
+					start: options.start as number,
+					end: options.end as number,
+				});
+			}
+			return trim({
+				input,
+				output: options.output as string | undefined,
+				start: options.start as number,
+				end: options.end as number,
+			});
+		},
+		runGUI: async (input) => {
+			const videoInfo = await getVideoInfoForGui(input);
+			await startGuiServer({
+				htmlFile: 'trim.html',
+				title: 'Trim Video',
+				videoInfo,
+				defaults: { start: 0, end: videoInfo.duration, accurate: false },
+				onProcess: async (opts) => {
+					const logs: Array<{ type: string; message: string }> = [];
+					try {
+						const accurate = opts.accurate as boolean;
+						logs.push({ type: 'info', message: accurate ? 'Trimming with re-encoding...' : 'Trimming video...' });
+						const output = accurate
+							? await trimAccurate({
+									input,
+									start: opts.start as number,
+									end: opts.end as number,
+								})
+							: await trim({
+									input,
+									start: opts.start as number,
+									end: opts.end as number,
+								});
+						logs.push({ type: 'success', message: 'Video trimmed!' });
+						return { success: true, output, logs };
+					} catch (err) {
+						logs.push({ type: 'error', message: (err as Error).message });
+						return { success: false, error: (err as Error).message, logs };
+					}
+				},
+			});
+		},
+	},
+	{
+		config: toolConfigs[7],
+		run: async (input, options) => {
+			return shorts({
+				input,
+				output: options.output as string | undefined,
+				mode: (options.mode as 'crop' | 'blur') || 'crop',
+				cropX: options.cropX as number | undefined,
+				resolution: options.resolution as number | undefined,
+			});
+		},
+	},
 ];
 
 /**
@@ -342,3 +423,19 @@ export function getToolsForExtension(ext: string): Tool[] {
 	const normalizedExt = ext.toLowerCase().startsWith('.') ? ext.toLowerCase() : `.${ext.toLowerCase()}`;
 	return tools.filter((t) => t.config.extensions.includes(normalizedExt));
 }
+
+/**
+ * Unified tool interface (GUI-only, combines all tools)
+ */
+export interface UnifiedTool {
+	config: ToolConfig;
+	runGUI: (input: string) => Promise<boolean>;
+}
+
+/**
+ * Unified VidLet tool - all-in-one GUI
+ */
+export const vidletTool: UnifiedTool = {
+	config: vidletMain.config,
+	runGUI: vidletMain.runGUI,
+};

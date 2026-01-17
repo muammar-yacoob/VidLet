@@ -1,8 +1,8 @@
 import type { Command } from 'commander';
 import { printBanner } from '../../lib/banner.js';
 import { fmt } from '../../lib/logger.js';
-import { isWSL } from '../../lib/paths.js';
-import { unregisterAllTools } from '../registry.js';
+import { isWSL, isWSLInteropEnabled, wslToWindows } from '../../lib/paths.js';
+import { generateUninstallRegFile, unregisterAllTools } from '../registry.js';
 
 /**
  * Register the uninstall command
@@ -18,6 +18,21 @@ export function registerUninstallCommand(program: Command): void {
 			if (!isWSL()) {
 				console.log(fmt.yellow('! Not running in WSL. Registry removal skipped.'));
 				console.log(fmt.yellow('! Run "vidlet uninstall" from WSL to remove context menu.'));
+				return;
+			}
+
+			if (!isWSLInteropEnabled()) {
+				console.log(fmt.yellow('WSL Interop not available. Generating registry file...\n'));
+
+				const regPath = await generateUninstallRegFile();
+				const winPath = wslToWindows(regPath);
+
+				console.log(fmt.green('✓ Generated uninstall registry file:'));
+				console.log(fmt.cyan(`  ${winPath}\n`));
+				console.log(fmt.bold('To uninstall, either:'));
+				console.log(fmt.dim('  1. Double-click the .reg file in Windows Explorer'));
+				console.log(fmt.dim(`  2. Run in elevated PowerShell: reg import "${winPath}"`));
+				console.log();
 				return;
 			}
 

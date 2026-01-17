@@ -1,13 +1,25 @@
 /**
  * GUI Server - Serves HTML interface and handles API calls for video processing
  */
-import { spawn } from 'node:child_process';
+import { exec, spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
+import { logToFile } from './logger.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+/**
+ * Kill any running FFmpeg processes
+ */
+function killFFmpegProcesses(): void {
+	exec('pkill -f ffmpeg', (err) => {
+		if (!err) {
+			logToFile('Killed FFmpeg processes on shutdown');
+		}
+	});
+}
 
 /**
  * Signal the loading HTA to close by creating a temp file
@@ -29,16 +41,38 @@ function signalReady(): void {
 }
 
 /**
+ * Clean up any stale signal file from previous sessions
+ */
+function cleanupSignalFile(): void {
+	spawn(
+		'powershell.exe',
+		[
+			'-WindowStyle',
+			'Hidden',
+			'-Command',
+			'Remove-Item -Path $env:TEMP\\vidlet-ready.tmp -Force -ErrorAction SilentlyContinue',
+		],
+		{
+			stdio: 'ignore',
+			windowsHide: true,
+		},
+	);
+}
+
+/**
  * Open URL in Edge app mode (standalone window without browser UI)
  */
 function openAppWindow(url: string): void {
+	// Clean up any stale signal file first
+	cleanupSignalFile();
+
 	spawn('powershell.exe', ['-WindowStyle', 'Hidden', '-Command', `Start-Process msedge -ArgumentList '--app=${url}'`], {
 		detached: true,
 		stdio: 'ignore',
 		windowsHide: true,
 	}).unref();
 
-	setTimeout(signalReady, 500);
+	setTimeout(signalReady, 3500);
 }
 
 export interface VideoInfo {
@@ -100,8 +134,8 @@ export function startGuiServer(options: GuiServerOptions): Promise<boolean> {
 		let processResult: boolean | null = null;
 		let server: ReturnType<typeof createServer> | null = null;
 
-		const guiDir = join(__dirname, '..', 'gui');
-		const iconsDir = join(__dirname, '..', 'icons');
+		const guiDir = join(__dirname, 'gui');
+		const iconsDir = join(__dirname, 'icons');
 		app.use(express.static(guiDir));
 		app.use('/icons', express.static(iconsDir));
 
@@ -112,11 +146,22 @@ export function startGuiServer(options: GuiServerOptions): Promise<boolean> {
 		app.get('/api/info', (_req, res) => {
 			res.json({
 				fileName: options.videoInfo.fileName,
+				filePath: options.videoInfo.filePath,
 				width: options.videoInfo.width,
 				height: options.videoInfo.height,
 				duration: options.videoInfo.duration,
 				fps: options.videoInfo.fps,
 				defaults: options.defaults,
+			});
+		});
+
+		// Stream video file for preview
+		app.get('/api/video', (_req, res) => {
+			const filePath = options.videoInfo.filePath;
+			res.sendFile(filePath, (err) => {
+				if (err) {
+					logToFile(`Video stream error: ${err.message}`);
+				}
 			});
 		});
 
@@ -174,11 +219,13 @@ export function startGuiServer(options: GuiServerOptions): Promise<boolean> {
 
 		app.post('/api/cancel', (_req, res) => {
 			processResult = false;
+			killFFmpegProcesses();
 			res.json({ ok: true });
 			shutdown();
 		});
 
 		app.post('/api/close', (_req, res) => {
+			killFFmpegProcesses();
 			res.json({ ok: true });
 			shutdown();
 		});
@@ -198,6 +245,7 @@ export function startGuiServer(options: GuiServerOptions): Promise<boolean> {
 		});
 
 		function shutdown() {
+			killFFmpegProcesses();
 			setTimeout(() => {
 				server?.close();
 				resolve(processResult ?? false);
@@ -205,6 +253,8 @@ export function startGuiServer(options: GuiServerOptions): Promise<boolean> {
 		}
 
 		server = createServer(app);
+		// Set long timeout for processing requests (30 minutes)
+		server.timeout = 30 * 60 * 1000;
 		server.listen(0, '127.0.0.1', () => {
 			const addr = server?.address();
 			if (typeof addr === 'object' && addr) {
@@ -213,11 +263,12 @@ export function startGuiServer(options: GuiServerOptions): Promise<boolean> {
 
 				openAppWindow(url);
 
+				// 30 minute timeout for long operations like compression
 				setTimeout(() => {
 					if (processResult === null) {
 						shutdown();
 					}
-				}, 10 * 60 * 1000);
+				}, 30 * 60 * 1000);
 			}
 		});
 
