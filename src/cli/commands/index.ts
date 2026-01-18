@@ -1,0 +1,11 @@
+export { registerCompressCommand } from './compress.js';
+export { registerConfigCommand } from './config.js';
+export { registerHelpCommand } from './help.js';
+export { registerInstallCommand } from './install.js';
+export { registerLoopCommand } from './loop.js';
+export { registerMkv2mp4Command } from './mkv2mp4.js';
+export { registerShrinkCommand } from './shrink.js';
+export { registerThumbCommand } from './thumb.js';
+export { registerTogifCommand } from './togif.js';
+export { registerUninstallCommand } from './uninstall.js';
+export { registerVidletCommand } from './vidlet.js';

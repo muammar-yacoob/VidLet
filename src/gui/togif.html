@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html data-vidlet data-width="400" data-height="420">
+<head>
+  <meta charset="UTF-8">
+  <title>VidLet - To GIF</title>
+  <link rel="stylesheet" href="/css/theme.css">
+  <link rel="icon" href="/favicon.ico">
+</head>
+<body>
+  <div class="app">
+    <div class="hd">
+      <b>VidLet</b>
+      <span>Convert to GIF</span>
+    </div>
+
+    <div class="meta" id="meta">
+      <div>File: <b id="fileName">-</b></div>
+      <div>Size: <b id="size">-</b></div>
+      <div>Duration: <b id="duration">-</b></div>
+    </div>
+
+    <div class="form" id="form">
+      <div class="row" data-tip="Frames per second (lower = smaller file)">
+        <label>FPS</label>
+        <input type="range" id="fpsRange" min="5" max="30" step="1" value="15">
+        <input type="number" id="fps" min="1" max="60" value="15">
+      </div>
+
+      <div class="row" data-tip="Output width in pixels">
+        <label>Width</label>
+        <input type="range" id="widthRange" min="160" max="800" step="20" value="480">
+        <input type="number" id="width" min="100" max="1920" value="480">
+        <span>px</span>
+      </div>
+
+      <div class="row" data-tip="Dithering algorithm for color reduction">
+        <label>Dither</label>
+        <select id="dither">
+          <option value="none">None</option>
+          <option value="floyd_steinberg">Floyd-Steinberg</option>
+          <option value="sierra2">Sierra2</option>
+          <option value="sierra2_4a" selected>Sierra2-4a</option>
+          <option value="bayer">Bayer</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="ld" id="loading">
+      <div class="sp"></div>
+      <span>Converting to GIF...</span>
+    </div>
+
+    <div class="log" id="log"></div>
+
+    <div class="dn" id="done">
+      <h4>Done!</h4>
+      <p id="output"></p>
+      <div class="btns" style="margin-top:12px;width:100%">
+        <button class="btn btn-p" onclick="VidLet.close()">Close</button>
+      </div>
+    </div>
+
+    <div class="btns" id="btns">
+      <button class="btn btn-g" onclick="VidLet.cancel()">Cancel</button>
+      <button class="btn btn-p" onclick="process()">Convert</button>
+    </div>
+  </div>
+
+  <script src="/js/vidlet.js"></script>
+  <script>
+    const { $, log, postJson, setLoading, showDone, formatDuration } = VidLet;
+    let info = {};
+
+    async function init() {
+      const res = await VidLet.fetchJson('/api/info');
+      info = res;
+      $('fileName').textContent = res.fileName;
+      $('size').textContent = `${res.width}x${res.height}`;
+      $('duration').textContent = formatDuration(res.duration);
+
+      if (res.defaults) {
+        if (res.defaults.fps) {
+          $('fps').value = res.defaults.fps;
+          $('fpsRange').value = res.defaults.fps;
+        }
+        if (res.defaults.width) {
+          $('width').value = res.defaults.width;
+          $('widthRange').value = res.defaults.width;
+        }
+        if (res.defaults.dither) $('dither').value = res.defaults.dither;
+      }
+
+      $('fpsRange').oninput = () => $('fps').value = $('fpsRange').value;
+      $('fps').oninput = () => $('fpsRange').value = $('fps').value;
+      $('widthRange').oninput = () => $('width').value = $('widthRange').value;
+      $('width').oninput = () => $('widthRange').value = $('width').value;
+    }
+
+    async function process() {
+      setLoading(true, 'Converting to GIF...');
+
+      const opts = {
+        fps: parseInt($('fps').value),
+        width: parseInt($('width').value),
+        dither: $('dither').value
+      };
+
+      try {
+        const res = await postJson('/api/process', opts);
+
+        if (res.logs) {
+          res.logs.forEach(l => log('log', l.type === 'error' ? 'e' : l.type === 'success' ? 's' : 'i', l.message));
+        }
+
+        if (res.success) {
+          showDone(true, 'Conversion Complete!', res.output);
+        } else {
+          showDone(false, 'Conversion Failed', res.error);
+        }
+      } catch (err) {
+        showDone(false, 'Error', err.message);
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>

@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html data-vidlet data-width="480" data-height="400">
+<head>
+  <meta charset="UTF-8">
+  <title>VidLet</title>
+  <link rel="stylesheet" href="/css/vidlet.css">
+  <link rel="icon" href="/favicon.ico">
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <script src="https://unpkg.com/@dotlottie/player-component@2.7.12/dist/dotlottie-player.mjs" type="module"></script>
+</head>
+<body>
+  <div class="app">
+    <div class="hd">
+      <div class="hd-top">
+        <div class="hd-brand">
+          <div class="hd-title">
+            <b>VidLet</b>
+            <span class="hd-subtitle">Compress. Convert. Create.</span>
+          </div>
+          <span class="hd-desc">Lightweight video tools for content creators</span>
+        </div>
+        <div class="hd-links">
+          <a href="#" class="hd-coffee" onclick="VidLet.openUrl('https://buymeacoffee.com/spark88');return false">
+            <svg viewBox="0 0 24 24"><path d="M20.216 6.415l-.132-.666c-.119-.598-.388-1.163-1.001-1.379-.197-.069-.42-.098-.57-.241-.152-.143-.196-.366-.231-.572-.065-.378-.125-.756-.192-1.133-.057-.325-.102-.69-.25-.987-.195-.4-.597-.634-.996-.788a5.723 5.723 0 00-.626-.194c-1-.263-2.05-.36-3.077-.416a25.834 25.834 0 00-3.7.062c-.915.083-1.88.184-2.75.5-.318.116-.646.256-.888.501-.297.302-.393.77-.177 1.146.154.267.415.456.692.58.36.162.737.284 1.123.366 1.075.238 2.189.331 3.287.37 1.218.05 2.437.01 3.65-.118.299-.033.598-.073.896-.119.352-.054.578-.513.474-.834-.124-.383-.457-.531-.834-.473-.466.074-.96.108-1.382.146-1.177.08-2.358.082-3.536.006a22.228 22.228 0 01-1.157-.107c-.086-.01-.18-.025-.258-.036-.243-.036-.484-.08-.724-.13-.111-.027-.111-.185 0-.212h.005c.277-.06.557-.108.838-.147h.002c.131-.009.263-.032.394-.048a25.076 25.076 0 013.426-.12c.674.019 1.347.067 2.017.144l.228.031c.267.04.533.088.798.145.392.085.895.113 1.07.542.055.137.08.288.111.431l.319 1.484a.237.237 0 01-.199.284h-.003c-.037.006-.075.01-.112.015a36.704 36.704 0 01-4.743.295 37.059 37.059 0 01-4.699-.304c-.14-.017-.293-.042-.417-.06-.326-.048-.649-.108-.973-.161-.393-.065-.768-.032-1.123.161-.29.16-.527.404-.675.701-.154.316-.199.66-.267 1-.069.34-.176.707-.135 1.056.087.753.613 1.365 1.37 1.502a39.69 39.69 0 0011.343.376.483.483 0 01.535.53l-.071.697-1.018 9.907c-.041.41-.047.832-.125 1.237-.122.637-.553 1.028-1.182 1.171-.577.131-1.165.2-1.756.205-.656.004-1.31-.025-1.966-.022-.699.004-1.556-.06-2.095-.58-.475-.458-.54-1.174-.605-1.793l-.731-7.013-.322-3.094c-.037-.351-.286-.695-.678-.678-.336.015-.718.3-.678.679l.228 2.185.949 9.112c.147 1.344 1.174 2.068 2.446 2.272.742.12 1.503.144 2.257.156.966.016 1.942.053 2.892-.122 1.408-.258 2.465-1.198 2.616-2.657.34-3.332.683-6.663 1.024-9.995l.215-2.087a.484.484 0 01.39-.426c.402-.078.787-.212 1.074-.518.455-.488.546-1.124.385-1.766zm-1.478.772c-.145.137-.363.201-.578.233-2.416.359-4.866.54-7.308.46-1.748-.06-3.477-.254-5.207-.498-.17-.024-.353-.055-.47-.18-.22-.236-.111-.71-.054-.995.052-.26.152-.609.463-.646.484-.057 1.046.148 1.526.22.577.088 1.156.159 1.737.212 2.48.226 5.002.19 7.472-.14.45-.06.899-.13 1.345-.21.399-.072.84-.206 1.08.206.166.281.188.657.162.974a.544.544 0 01-.169.364z"/></svg>
+            Donate
+          </a>
+          <a href="#" id="homepageLink" class="hd-link" onclick="openHomepage();return false">vidlet.app</a>
+          <button class="icon-btn" onclick="openSettings()" title="Settings"><i data-lucide="settings"></i></button>
+        </div>
+      </div>
+      <div class="hd-meta">
+        <div>File<b id="fileName">-</b></div>
+        <div>Size<b id="size">-</b></div>
+        <div>Duration<b id="duration">-</b></div>
+        <div>FPS<b id="fps">-</b></div>
+      </div>
+    </div>
+
+    <div class="main" id="main">
+      <div class="side">
+        <div class="tools">
+          <div class="tool hidden" id="t-mkv2mp4" onclick="selectTool('mkv2mp4')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14,2 14,8 20,8"/></svg>
+            <span>MKV → MP4</span>
+          </div>
+          <div class="tool" id="t-trim" onclick="selectTool('trim')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></svg>
+            <span>Trim</span>
+          </div>
+          <div class="tool" id="t-compress" onclick="selectTool('compress')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18m-6-6 6 6 6-6M6 9l6-6 6 6"/></svg>
+            <span>Compress</span>
+          </div>
+          <div class="tool" id="t-shrink" onclick="selectTool('shrink')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg>
+            <span>Shrink</span>
+          </div>
+          <div class="tool hidden" id="t-portrait" onclick="selectTool('portrait')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="7" y="2" width="10" height="20" rx="2"/><line x1="12" y1="18" x2="12" y2="18.01"/></svg>
+            <span>Portrait</span>
+          </div>
+          <div class="tool" id="t-audio" onclick="selectTool('audio')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+            <span>Add Audio</span>
+          </div>
+          <div class="tool" id="t-thumb" onclick="selectTool('thumb')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+            <span>Thumbnail</span>
+          </div>
+        </div>
+        <div class="export-section">
+          <div class="export-label">Export</div>
+          <div class="tool export-tool" id="t-togif" onclick="selectTool('togif')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+            <span>Export as GIF</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="content">
+        <div class="preview-container" id="previewContainer">
+          <div class="preview-wrap" id="previewWrap">
+            <video id="videoPreview" muted></video>
+            <div class="player-bar" id="playerBar">
+              <div class="player-row">
+                <div class="player-seek" id="playerSeek">
+                  <div class="player-seek-progress" id="playerProgress"></div>
+                  <div class="player-seek-thumb" id="playerThumb"></div>
+                </div>
+              </div>
+              <div class="player-row">
+                <button class="player-btn" id="playBtn" onclick="togglePlay()">
+                  <svg id="playIcon" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
+                  <svg id="pauseIcon" viewBox="0 0 24 24" fill="currentColor" style="display:none"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+                </button>
+                <span class="player-time" id="playerTime">0:00 / 0:00</span>
+                <div class="player-volume">
+                  <button class="player-btn" id="muteBtn" onclick="toggleMute()">
+                    <svg id="volIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11,5 6,9 2,9 2,15 6,15 11,19" fill="currentColor"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
+                    <svg id="mutedIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none"><polygon points="11,5 6,9 2,9 2,15 6,15 11,19" fill="currentColor"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
+                  </button>
+                  <div class="player-volume-slider" id="volumeSlider">
+                    <div class="player-volume-level" id="volumeLevel" style="width:100%"></div>
+                  </div>
+                </div>
+                <div class="speed-control">
+                  <button class="speed-adj" onclick="adjustSpeed(-0.5)">−</button>
+                  <span class="speed-val" id="speedVal" onclick="resetSpeed()">1x</span>
+                  <button class="speed-adj" onclick="adjustSpeed(0.5)">+</button>
+                </div>
+              </div>
+            </div>
+            <div class="hotkey-hint">Space: Play | J/K/L: Speed | ←→: 5s | M: Mute</div>
+            <div class="crop-overlay" id="cropOverlay">
+              <div class="crop-side crop-left" id="cropLeft"></div>
+              <div class="crop-window" id="cropWindow">
+                <div class="crop-handle crop-handle-l"></div>
+                <div class="crop-handle crop-handle-r"></div>
+              </div>
+              <div class="crop-side crop-right" id="cropRight"></div>
+            </div>
+          </div>
+          <div class="resize-divider" id="resizeDivider"></div>
+        </div>
+
+        <div class="opts-area">
+          <div class="opts" id="opts-compress">
+            <div class="opts-row"><label>Quality</label>
+              <div class="preset-btns">
+                <button type="button" class="preset-btn" onclick="setCompressQuality('low')">Small</button>
+                <button type="button" class="preset-btn active" onclick="setCompressQuality('medium')">Balanced</button>
+                <button type="button" class="preset-btn" onclick="setCompressQuality('high')">Quality</button>
+              </div>
+            </div>
+            <div class="opts-row estimate-row"><span id="compress-estimate" class="estimate-text"></span></div>
+            <input type="hidden" id="compress-bitrate" value="2500">
+            <input type="hidden" id="compress-preset" value="medium">
+            <input type="hidden" id="compress-codec" value="h264">
+          </div>
+
+          <div class="opts" id="opts-togif">
+            <div class="opts-row"><label>Quality</label>
+              <div class="preset-btns">
+                <button type="button" class="preset-btn" onclick="setGifQuality('low')">Small</button>
+                <button type="button" class="preset-btn active" onclick="setGifQuality('medium')">Balanced</button>
+                <button type="button" class="preset-btn" onclick="setGifQuality('high')">Smooth</button>
+              </div>
+            </div>
+            <div class="opts-row estimate-row"><span id="togif-estimate" class="estimate-text"></span></div>
+            <input type="hidden" id="togif-fps" value="15">
+            <input type="hidden" id="togif-width" value="480">
+            <input type="hidden" id="togif-dither" value="floyd_steinberg">
+          </div>
+
+          <div class="opts" id="opts-mkv2mp4">
+            <div class="opts-row"><label>Mode</label>
+              <div class="preset-btns">
+                <button type="button" class="preset-btn active" id="mkv-fast" onclick="setMkvMode('fast')">Quick</button>
+                <button type="button" class="preset-btn" id="mkv-compat" onclick="setMkvMode('compat')">Compatible</button>
+              </div>
+            </div>
+            <input type="hidden" id="mkv2mp4-quality" value="23">
+          </div>
+
+          <div class="opts" id="opts-shrink">
+            <div class="opts-row"><label>Target</label>
+              <div class="slider-row shrink-slider-wrap">
+                <div class="shrink-slider-container">
+                  <input type="range" id="shrink-duration" min="10" max="300" step="0.1" value="60" oninput="updateShrinkLabel()">
+                  <div class="shrink-marker" id="shrink-marker-60"></div>
+                </div>
+                <button type="button" class="shrink-60-btn" id="shrink-60-btn" onclick="setShrinkTo60()">60s</button>
+                <span class="slider-val" id="shrink-val">60s</span>
+              </div>
+            </div>
+            <div class="opts-row estimate-row"><span id="shrink-estimate" class="estimate-text"></span></div>
+          </div>
+
+          <div class="opts" id="opts-thumb">
+            <div class="opts-row">
+              <div class="thumb-preview-wrap" id="thumbPreviewWrap" onclick="$('thumbFileInput').click()">
+                <img id="thumbPreview" src="" alt="">
+                <div class="thumb-overlay"><span id="thumbFileName">Click to select thumbnail</span></div>
+                <input type="file" id="thumbFileInput" accept="image/*" style="display:none" onchange="handleThumbFile(this)">
+              </div>
+            </div>
+            <input type="hidden" id="thumb-image" value="">
+          </div>
+
+          <div class="opts" id="opts-audio">
+            <div class="opts-row">
+              <div class="drop-zone" id="audioDropZone" onclick="$('audioFileInput').click()">
+                <span id="audioFileName">Drop audio file or click to browse</span>
+                <input type="file" id="audioFileInput" accept="audio/*" style="display:none" onchange="handleAudioFile(this)">
+              </div>
+            </div>
+            <div class="opts-row"><label>Volume</label>
+              <div class="slider-row">
+                <input type="range" id="audio-volume" min="0" max="100" value="50" oninput="updateAudioVolume()">
+                <span class="slider-val" id="audio-vol-val">50%</span>
+              </div>
+            </div>
+            <div class="opts-row"><label>Mix</label><div class="toggle on" id="audio-toggle" onclick="toggleAudioMix()"><div class="toggle-track"></div><span class="toggle-label">Blend with original</span></div></div>
+            <input type="hidden" id="audio-path" value="">
+            <audio id="audioPreview" style="display:none"></audio>
+          </div>
+
+          <div class="opts" id="opts-portrait">
+            <div class="opts-row" style="justify-content:center"><span style="font-size:11px;color:var(--txt2)">Drag to select 9:16 crop area</span></div>
+          </div>
+
+          <div class="opts" id="opts-trim">
+            <div class="timeline-container" id="timeline-container">
+              <div class="timeline-ticks" id="timeline-ticks"></div>
+              <div class="timeline-viewport" id="timeline-viewport">
+                <div class="timeline" id="timeline">
+                  <div class="timeline-track">
+                    <div class="timeline-range" id="timeline-range"></div>
+                    <div id="match-markers"></div>
+                    <div class="timeline-handle timeline-start" id="handle-start"></div>
+                    <div class="timeline-handle timeline-end" id="handle-end"></div>
+                  </div>
+                  <div class="timeline-playhead" id="timeline-playhead"></div>
+                </div>
+              </div>
+              <div class="timeline-zoom-hint">Scroll to zoom</div>
+            </div>
+            <div class="trim-info-bar" id="trim-controls">
+              <div class="trim-times">
+                <span class="trim-time-badge" id="trim-start-badge">0:00</span>
+                <span class="trim-arrow">→</span>
+                <span class="trim-time-badge" id="trim-end-badge">0:00</span>
+                <span class="trim-duration" id="trim-duration-badge">0.0s</span>
+              </div>
+              <div class="trim-actions">
+                <span id="match-info" class="match-info hidden"></span>
+                <button type="button" class="match-btn hidden" id="cycle-match-btn" onclick="cycleMatch()">Next</button>
+                <button type="button" class="find-btn hidden" id="find-match-btn" onclick="findMatchingFrames()">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                  Find Loop
+                </button>
+              </div>
+            </div>
+            <div class="trim-loading hidden" id="trim-loading">
+              <dotlottie-player src="/bouncing-fruits.lottie" background="transparent" speed="1" style="width:120px;height:120px" loop autoplay></dotlottie-player>
+              <span>Finding matching frames...</span>
+            </div>
+            <input type="hidden" id="trim-start" value="0">
+            <input type="hidden" id="trim-end" value="10">
+            <input type="hidden" id="trim-accurate" value="false">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ft" id="btns">
+      <button class="btn btn-g" onclick="VidLet.cancel()">Cancel</button>
+      <button class="btn btn-p" id="processBtn" onclick="process()" disabled>Process</button>
+    </div>
+
+    <div class="ld" id="loading"><dotlottie-player class="lottie-loader" src="/bouncing-fruits.lottie" background="transparent" speed="1" loop autoplay></dotlottie-player><span>Processing...</span></div>
+    <div class="dn" id="done">
+      <h4>Done!</h4>
+      <p id="output"></p>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button class="btn btn-g" id="continueBtn" onclick="continueEditing()">Continue</button>
+        <button class="btn btn-p" onclick="VidLet.close()">Done</button>
+      </div>
+    </div>
+
+    <div class="modal-overlay" id="settingsModal" onclick="if(event.target===this)closeSettings()">
+      <div class="modal" style="width:280px">
+        <div class="modal-header">
+          <h3>Defaults</h3>
+          <button class="modal-close" onclick="closeSettings()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <div class="modal-section">
+          <div class="modal-section-title">Compress</div>
+          <div class="modal-row">
+            <label>Quality</label>
+            <div class="seg-btns" id="settingsCompressQuality">
+              <button type="button" data-val="fast">Fast</button>
+              <button type="button" data-val="medium" class="active">Balanced</button>
+              <button type="button" data-val="slow">Quality</button>
+            </div>
+          </div>
+          <div class="modal-row">
+            <label>Codec</label>
+            <div class="seg-btns" id="settingsCompressCodec">
+              <button type="button" data-val="h264" class="active">H.264</button>
+              <button type="button" data-val="hevc">HEVC</button>
+            </div>
+          </div>
+        </div>
+        <div class="modal-section">
+          <div class="modal-section-title">GIF</div>
+          <div class="modal-row">
+            <label>FPS</label>
+            <div class="seg-btns" id="settingsGifFps">
+              <button type="button" data-val="10">10</button>
+              <button type="button" data-val="15" class="active">15</button>
+              <button type="button" data-val="24">24</button>
+            </div>
+          </div>
+          <div class="modal-row">
+            <label>Width</label>
+            <div class="seg-btns" id="settingsGifWidth">
+              <button type="button" data-val="320">320</button>
+              <button type="button" data-val="480" class="active">480</button>
+              <button type="button" data-val="720">720</button>
+            </div>
+          </div>
+        </div>
+        <div class="modal-section">
+          <div class="modal-section-title">MKV to MP4</div>
+          <div class="modal-row">
+            <label>Quality</label>
+            <div class="seg-btns" id="settingsMkvQuality">
+              <button type="button" data-val="18">High</button>
+              <button type="button" data-val="23" class="active">Medium</button>
+              <button type="button" data-val="28">Low</button>
+            </div>
+          </div>
+        </div>
+        <div class="modal-section">
+          <div class="modal-section-title">Shrink</div>
+          <div class="modal-row">
+            <label>Target</label>
+            <div class="seg-btns" id="settingsShrinkTarget">
+              <button type="button" data-val="30">30s</button>
+              <button type="button" data-val="60" class="active">60s</button>
+              <button type="button" data-val="90">90s</button>
+            </div>
+          </div>
+        </div>
+        <div class="modal-section">
+          <div class="modal-section-title">Trim</div>
+          <div class="modal-row">
+            <label>Mode</label>
+            <div class="seg-btns" id="settingsTrimMode">
+              <button type="button" data-val="fast" class="active">Fast</button>
+              <button type="button" data-val="accurate">Accurate</button>
+            </div>
+          </div>
+        </div>
+        <div class="modal-section" style="border-bottom:none;padding-bottom:4px">
+          <div class="modal-section-title" style="margin-bottom:4px">Hotkeys</div>
+          <div class="hotkey-compact">
+            <span><b>Space</b> Play</span>
+            <span><b>J/K/L</b> Speed</span>
+            <span><b>←→</b> Seek</span>
+            <span><b>M</b> Mute</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/vidlet.js"></script>
+  <script src="/js/vidlet-app.js"></script>
+</body>
+</html>

@@ -1,0 +1,154 @@
+# VidLet Refactoring PRD - Mimic PicLet Architecture
+
+## Overview
+Refactor VidLet to mirror PicLet's clean architecture, adding GUI support via Express.js server with browser-based HTML/CSS/JS interfaces, and restructuring CLI logic for cleanliness and consistency.
+
+## Goals
+1. Mirror PicLet's project structure and file organization
+2. Add browser-based GUI system using Express.js + vanilla HTML/CSS/JS
+3. Clean up and consolidate CLI logic
+4. Add interactive terminal prompts system
+5. Add VBScript launcher for Windows integration
+6. Ensure all tools work in CLI, batch (-y), and GUI (-g) modes
+7. Pass all linting (biome) and build (bun) tests
+
+## Project Structure Target
+
+```
+src/
+├── cli.ts                    # Main CLI entry (Commander.js)
+├── launcher.vbs              # VBScript for hidden cmd.exe execution
+├── lib/
+│   ├── banner.ts             # ASCII art banner (existing, keep)
+│   ├── config.ts             # Configuration management (existing, keep)
+│   ├── ffmpeg.ts             # FFmpeg wrapper (existing, keep)
+│   ├── gui-server.ts         # NEW: Express.js HTTP server for GUI
+│   ├── logger.ts             # Console logging (existing, enhance)
+│   ├── paths.ts              # Path utilities (existing, keep)
+│   ├── prompts.ts            # NEW: Terminal prompts system
+│   └── registry.ts           # NEW: Windows registry (from install.ts)
+├── tools/
+│   ├── index.ts              # Tool exports
+│   ├── compress.ts           # Existing, add GUI support
+│   ├── togif.ts              # Existing, add GUI support
+│   ├── mkv2mp4.ts            # Existing, add GUI support
+│   ├── shrink.ts             # Existing, add GUI support
+│   ├── thumb.ts              # Existing, add GUI support
+│   ├── loop.ts               # Existing, add GUI support
+│   └── vidlet-main.ts        # NEW: Unified GUI (all tools)
+├── gui/
+│   ├── css/
+│   │   └── theme.css         # Shared dark theme
+│   ├── js/
+│   │   └── vidlet.js         # Shared GUI utilities
+│   ├── vidlet.html           # Unified tool interface
+│   ├── compress.html         # Individual tool pages
+│   ├── togif.html
+│   ├── mkv2mp4.html
+│   ├── shrink.html
+│   ├── thumb.html
+│   ├── loop.html
+│   └── loading.hta           # Loading overlay window
+└── icons/                    # Move from root
+    ├── tv.ico
+    ├── compress.ico
+    ├── mkv2mp4.ico
+    ├── shrink.ico
+    ├── thumb.ico
+    ├── togif.ico
+    └── loop.ico
+```
+
+## Technical Requirements
+
+### 1. GUI Server (lib/gui-server.ts)
+- Express.js HTTP server
+- Dynamic port allocation (find available port)
+- REST API endpoints:
+  - GET /api/info - Get video info and defaults
+  - POST /api/preview - Generate preview (where applicable)
+  - POST /api/process - Execute final processing
+  - POST /api/load - Load new video during session
+  - POST /api/cancel - Cancel and close
+  - POST /api/close - Close after completion
+- Static file serving for HTML/CSS/JS
+- Open Microsoft Edge in app mode via PowerShell
+
+### 2. Prompts System (lib/prompts.ts)
+- Wrapper around 'prompts' npm package
+- Support: text, number, confirm, select
+- CLI override system (match prompt message to set values)
+- Batch mode (-y flag skips all prompts using defaults)
+- Integration with tool configs
+
+### 3. Registry Management (lib/registry.ts)
+- Extract registry logic from install.ts/uninstall.ts
+- Functions: addRegistryKey, deleteRegistryKey
+- WSL detection and path conversion
+- Generate .reg file content
+
+### 4. Tool Updates
+Each tool (compress, togif, mkv2mp4, shrink, thumb, loop) needs:
+- Export ToolConfig interface: { id, name, icon, extensions }
+- run(filePath, options?) - CLI/batch mode
+- runGUI(filePath) - GUI mode (if -g flag)
+- Integrate with prompts system for interactive input
+- Support batch mode (-y) with defaults
+
+### 5. CLI Updates (cli.ts)
+- Add -g/--gui flag to all tool commands
+- Add -y/--yes flag for batch mode (use defaults)
+- Update install/uninstall to use registry.ts
+- Add unified 'vidlet' command for combined GUI
+- Clean up help formatting
+- Consistent error handling
+
+### 6. GUI Pages
+Each HTML page needs:
+- Dark theme matching PicLet
+- Form controls for tool options
+- Video preview (where applicable)
+- Progress/log display
+- Done state with file info
+- Responsive to window size
+
+### 7. VBScript Launcher (launcher.vbs)
+- Convert Windows path to WSL path
+- Show loading HTA during startup
+- Run wsl command with vidlet CLI
+- Hide cmd.exe window
+
+### 8. Build Configuration (tsup.config.ts)
+Update to copy assets:
+- src/icons/ → dist/icons/
+- src/gui/ → dist/gui/
+- src/launcher.vbs → dist/launcher.vbs
+- Add shebang to dist/cli.js
+
+## Dependencies to Add
+- express (HTTP server)
+- prompts (terminal prompts)
+
+## Success Criteria
+1. All tools work in 3 modes: CLI, batch (-y), GUI (-g)
+2. biome lint passes without errors
+3. bun build completes successfully
+4. Windows context menu integration works
+5. GUI opens in Edge and processes videos correctly
+6. Clean, well-organized codebase matching PicLet structure
+
+## Implementation Order
+1. Create directory structure (move icons, create gui folder)
+2. Add dependencies (express, prompts)
+3. Create lib/prompts.ts
+4. Create lib/registry.ts (extract from install.ts)
+5. Create lib/gui-server.ts
+6. Update each tool to export ToolConfig and support GUI
+7. Create GUI pages (theme.css, vidlet.js, HTML files)
+8. Create launcher.vbs
+9. Update cli.ts with new flags and commands
+10. Update tsup.config.ts for asset copying
+11. Update install.ts/uninstall.ts to use registry.ts
+12. Test all tools in all modes
+13. Run biome lint and fix issues
+14. Run bun build and verify

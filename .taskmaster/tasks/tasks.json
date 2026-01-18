@@ -1,0 +1,277 @@
+{
+  "master": {
+    "tasks": [
+      {
+        "id": "18",
+        "title": "Create target directory structure and move icons",
+        "description": "Set up the exact project structure matching PicLet architecture and move existing icons to src/icons/",
+        "details": "Create directories: src/lib, src/tools, src/gui/css, src/gui/js, src/icons. Move all .ico files from root to src/icons/. Ensure banner.ts, config.ts, ffmpeg.ts, logger.ts, paths.ts remain in lib/. Update any path references in existing files.",
+        "testStrategy": "Verify directory structure matches PRD spec using tree command or file explorer. Confirm all 7 icons present in src/icons/. Run biome lint to ensure no path errors.",
+        "priority": "high",
+        "dependencies": [],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-16T21:38:04.169Z"
+      },
+      {
+        "id": "19",
+        "title": "Add required npm dependencies",
+        "description": "Install express and prompts packages as specified in PRD",
+        "details": "Run `bun add express prompts commander`. Update package.json if needed. Verify versions are latest stable (Express ^4.19, prompts ^2.4 as of 2025). No devDependencies needed for these.",
+        "testStrategy": "Check package.json for correct dependencies. Run `bun install` and verify no errors. Import test: `bun run node -e \"require('express'); require('prompts');\"`",
+        "priority": "high",
+        "dependencies": [
+          "18"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-16T21:38:42.151Z"
+      },
+      {
+        "id": "20",
+        "title": "Implement lib/prompts.ts system",
+        "description": "Create comprehensive prompts wrapper using 'prompts' npm package with CLI override and batch mode support",
+        "details": "```ts\nimport prompts from 'prompts';\nexport async function askPrompts(promptsConfig: any[], overrides: Record<string, any> = {}, batchMode = false) {\n  if (batchMode) return Object.fromEntries(promptsConfig.map(p => [p.name, p.initial]));\n  const responses = {};\n  for (const prompt of promptsConfig) {\n    if (overrides[prompt.message]) responses[prompt.name] = overrides[prompt.message];\n    else responses[prompt.name] = await prompts(prompt);\n  }\n  return responses;\n}\n// Support text, number, confirm, select types with validation```",
+        "testStrategy": "Unit test with batchMode=true (returns defaults), overrides object, and interactive mode mock. Test all 4 prompt types: text/number/confirm/select.",
+        "priority": "high",
+        "dependencies": [
+          "19"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-16T21:40:18.545Z"
+      },
+      {
+        "id": "21",
+        "title": "Extract and implement lib/registry.ts",
+        "description": "Move all registry logic from install.ts/uninstall.ts to new registry.ts with WSL detection",
+        "details": "Extract functions: addRegistryKey(keyPath, value), deleteRegistryKey(keyPath), generateRegFile(content). Add WSL detection: `process.env.WSL_DISTRO_NAME`. Convert Windows paths to WSL: replace 'C:' with '/mnt/c/'. Export all functions.",
+        "testStrategy": "Test on Windows: create/delete test registry key. Test WSL path conversion. Verify .reg file generation parses correctly. Dry-run mode for CI.",
+        "priority": "medium",
+        "dependencies": [
+          "18"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-16T21:40:18.576Z"
+      },
+      {
+        "id": "22",
+        "title": "Implement lib/gui-server.ts Express server",
+        "description": "Create full Express.js server with dynamic port, REST API, and static file serving",
+        "details": "```ts\nimport express from 'express';\nimport { getPort } from 'get-port';\nconst app = express();\napp.use(express.json());\napp.use(express.static('gui'));\napp.get('/api/info', getVideoInfo);\napp.post('/api/preview', generatePreview);\napp.post('/api/process', processVideo);\napp.post(['/api/load', '/api/cancel', '/api/close'], handleRequests);\nconst port = await getPort();\napp.listen(port, () => openEdgeAppMode(port));\nexport async function startServer() { /* impl */ }``` Install get-port if needed.",
+        "testStrategy": "curl test all 6 endpoints. Verify static files served at /vidlet.html. Test dynamic port allocation (3000-4000 range). Browser test Edge app mode launch.",
+        "priority": "high",
+        "dependencies": [
+          "19",
+          "20"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-16T21:44:16.647Z"
+      },
+      {
+        "id": "23",
+        "title": "Create base GUI assets (theme.css, vidlet.js)",
+        "description": "Build shared dark theme CSS and GUI utility JavaScript matching PicLet design",
+        "details": "theme.css: dark background (#1a1a1a), accent colors, responsive grid. vidlet.js: API fetch wrappers for /api/* endpoints, progress polling, file drag-drop, form serialization to JSON.",
+        "testStrategy": "Browser devtools: verify CSS variables, responsive breakpoints (320px-1920px), dark mode contrast ratios >4.5:1. Test JS API calls return mock data.",
+        "priority": "medium",
+        "dependencies": [
+          "22"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-16T21:44:16.673Z"
+      },
+      {
+        "id": "24",
+        "title": "Create unified vidlet.html GUI page",
+        "description": "Build main GUI landing page with tool selector using all icons and ToolConfig data",
+        "details": "HTML structure: tool grid with icons/names, click navigates to individual tool pages. Load ToolConfig from /api/info. Include loading.hta overlay integration.",
+        "testStrategy": "Manual browser test: verify all 6 tools clickable, icons display, responsive layout. Check navigation between unified and individual pages.",
+        "priority": "medium",
+        "dependencies": [
+          "23"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-16T21:44:16.697Z"
+      },
+      {
+        "id": "25",
+        "title": "Create individual tool GUI pages (compress.html etc)",
+        "description": "Generate 6 tool-specific HTML pages with forms matching each tool's options",
+        "details": "Template each page: video upload/preview, tool-specific controls (sliders/checkboxes), progress bar, log display, download button. Use vidlet.js utilities.",
+        "testStrategy": "Test each page loads, forms serialize correctly, preview works (where applicable), responsive on mobile/desktop.",
+        "priority": "medium",
+        "dependencies": [
+          "24"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-16T21:44:16.722Z"
+      },
+      {
+        "id": "26",
+        "title": "Update tools index.ts and ToolConfig interfaces",
+        "description": "Create tools/index.ts exports and standardize ToolConfig across all 6 tools",
+        "details": "```ts\nexport interface ToolConfig { id: string; name: string; icon: string; extensions: string[]; }\nexport const tools: ToolConfig[] = [compressConfig, togifConfig /* etc */];\nexport { compress, togif /* all tools */ } from './*.ts';```",
+        "testStrategy": "Verify all 6 tools export correctly. Check each ToolConfig has valid id/name/icon/extensions matching PRD.",
+        "priority": "high",
+        "dependencies": [
+          "18"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-16T21:40:18.615Z"
+      },
+      {
+        "id": "27",
+        "title": "Refactor individual tools for GUI/batch/prompts support",
+        "description": "Update all 6 tools (compress, togif, etc) with run(filePath, options?), runGUI(filePath), ToolConfig, prompts integration",
+        "details": "Each tool: export ToolConfig, add runGUI() calling prompts.askPrompts(), support batchMode flag, consistent error handling with logger.",
+        "testStrategy": "Test each tool in CLI mode, batch (-y), GUI simulation. Verify prompts overridden correctly. FFmpeg calls produce expected outputs.",
+        "priority": "high",
+        "dependencies": [
+          "20",
+          "26"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-16T21:47:23.536Z"
+      },
+      {
+        "id": "28",
+        "title": "Create tools/vidlet-main.ts unified GUI handler",
+        "description": "Implement main GUI tool dispatcher that loads tools dynamically",
+        "details": "```ts\nimport { tools } from './index.js';\nexport async function runVidletGUI() {\n  // Launch gui-server, open unified page\n  await startServer();\n}``` Integrate with cli.ts -g flag.",
+        "testStrategy": "Test launches GUI server and opens Edge correctly. Verify tool selection works end-to-end.",
+        "priority": "medium",
+        "dependencies": [
+          "22",
+          "27"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": "29",
+        "title": "Create launcher.vbs Windows launcher",
+        "description": "Implement VBScript launcher with hidden cmd, WSL path conversion, loading HTA",
+        "details": "```vbs\nSet WshShell = CreateObject(\"WScript.Shell\")\n' Convert win path to WSL, show loading.hta\nWshShell.Run \"wsl vidlet \" & args, 0, false``` Hide cmd window (windowstyle=0).",
+        "testStrategy": "Test on Windows: launcher runs without visible cmd, shows loading overlay, executes vidlet CLI correctly.",
+        "priority": "medium",
+        "dependencies": [
+          "22"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-16T21:44:16.745Z"
+      },
+      {
+        "id": "30",
+        "title": "Update cli.ts with new flags and commands",
+        "description": "Add -g/--gui, -y/--yes flags, unified 'vidlet' command, registry integration",
+        "details": "Use commander.js: program.command('vidlet').action(runVidletGUI); .option('-g, --gui'); .option('-y, --yes'); Update install/uninstall to use registry.ts. Clean help formatting.",
+        "testStrategy": "Test all commands: vidlet -g, tool -y, install, help output. Verify flag parsing correct.",
+        "priority": "high",
+        "dependencies": [
+          "20",
+          "21",
+          "27",
+          "28"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-16T21:47:23.615Z"
+      },
+      {
+        "id": "31",
+        "title": "Update tsup.config.ts for asset copying",
+        "description": "Configure build to copy icons, gui folder, launcher.vbs, add shebang",
+        "details": "```ts\n// tsup.config.ts\nformat: ['cjs'],\noutDir: 'dist',\nassets: ['icons/**', 'gui/**', 'launcher.vbs'],\nshebang: '#!/usr/bin/env node'```",
+        "testStrategy": "Run `bun build`, verify dist/ contains all assets in correct locations, cli.js has shebang.",
+        "priority": "medium",
+        "dependencies": [
+          "18",
+          "23",
+          "29"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-16T21:47:23.679Z"
+      },
+      {
+        "id": "32",
+        "title": "Update install.ts/uninstall.ts to use registry.ts",
+        "description": "Replace direct registry calls with new registry.ts functions",
+        "details": "import { addRegistryKey, deleteRegistryKey } from './lib/registry.js'; Update all calls. Add WSL detection handling.",
+        "testStrategy": "Test install/uninstall: verify registry keys created/deleted correctly. Context menu appears/disappears.",
+        "priority": "medium",
+        "dependencies": [
+          "21",
+          "30"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": "33",
+        "title": "Enhance logger.ts and implement consistent error handling",
+        "description": "Improve logger for CLI/GUI modes, standardize error handling across all tools",
+        "details": "Add log levels (info, warn, error), color support (chalk), GUI mode (no colors). Global error handler catching FFmpeg failures, validation errors.",
+        "testStrategy": "Test all error scenarios: invalid files, FFmpeg fail, network errors. Verify logs format correctly in both modes.",
+        "priority": "medium",
+        "dependencies": [
+          "20",
+          "27"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-16T21:47:23.729Z"
+      },
+      {
+        "id": "34",
+        "title": "Run biome lint and fix all issues",
+        "description": "Execute full biome lint across codebase and resolve violations",
+        "details": "Run `bunx biome lint ./src --apply`, fix remaining issues manually. Configure .biome.json matching PicLet if needed.",
+        "testStrategy": "`bunx biome lint ./src --reporter=json` returns empty array. Verify formatting consistent.",
+        "priority": "high",
+        "dependencies": [
+          "33"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-16T21:47:23.783Z"
+      },
+      {
+        "id": "35",
+        "title": "Full integration test all 3 modes across 6 tools",
+        "description": "Test CLI, batch (-y), GUI (-g) modes for all tools + launcher + registry",
+        "details": "Test matrix: 6 tools × 3 modes = 18 scenarios. Verify inputs→FFmpeg→outputs. Test launcher.vbs → GUI flow. Registry context menu.",
+        "testStrategy": "Automated where possible (batch mode), manual for GUI. Verify output files match expected quality/size.",
+        "priority": "high",
+        "dependencies": [
+          "29",
+          "30",
+          "31",
+          "32",
+          "34"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-01-16T21:51:05.037Z"
+      }
+    ],
+    "metadata": {
+      "version": "1.0.0",
+      "lastModified": "2026-01-16T21:51:05.039Z",
+      "taskCount": 18,
+      "completedCount": 16,
+      "tags": [
+        "master"
+      ]
+    }
+  }
+}
