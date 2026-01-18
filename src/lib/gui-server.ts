@@ -123,6 +123,11 @@ export interface GuiServerOptions {
 		startPoints?: Array<{ id: number; time: number; matches: Array<{ end: number; score: number }> }>;
 		error?: string;
 	}>;
+	onFindMatches?: (referenceTime: number, minGap: number) => Promise<{
+		success: boolean;
+		matches?: Array<{ time: number; score: number }>;
+		error?: string;
+	}>;
 }
 
 /**
@@ -243,6 +248,22 @@ export function startGuiServer(options: GuiServerOptions): Promise<boolean> {
 			}
 		});
 
+		// Find frames from end of video matching a reference time
+		app.post('/api/find-matches', async (req, res) => {
+			if (!options.onFindMatches) {
+				res.json({ success: false, error: 'Match finding not supported' });
+				return;
+			}
+			try {
+				const referenceTime = req.body.referenceTime ?? 0;
+				const minGap = req.body.minGap ?? 3;
+				const result = await options.onFindMatches(referenceTime, minGap);
+				res.json(result);
+			} catch (err) {
+				res.json({ success: false, error: (err as Error).message });
+			}
+		});
+
 		// Upload file (audio/image) and return temp path
 		app.post('/api/upload', (req, res) => {
 			try {
@@ -290,6 +311,12 @@ export function startGuiServer(options: GuiServerOptions): Promise<boolean> {
 				windowsHide: true,
 			}).unref();
 			res.json({ success: true });
+		});
+
+		// Signal that the app is ready (closes loading HTA)
+		app.post('/api/ready', (_req, res) => {
+			signalReady();
+			res.json({ ok: true });
 		});
 
 		function shutdown() {

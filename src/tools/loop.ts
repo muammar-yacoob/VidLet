@@ -263,6 +263,130 @@ export async function findAllLoopPoints(
 }
 
 /**
+ * Match result from end-of-video search
+ */
+export interface EndMatch {
+  time: number;
+  score: number;
+}
+
+/**
+ * Find frames from the END of video that match a reference frame (e.g., first frame)
+ * Used for creating seamless loops - find where the video returns to a similar state
+ */
+export async function findMatchesFromEnd(
+  inputPath: string,
+  duration: number,
+  referenceTime = 0,
+  minGap = 3,
+  threshold = 0.90
+): Promise<EndMatch[]> {
+  const fps = 4;
+  const frameSize = 48;
+  const searchSeconds = Math.min(20, duration - minGap); // Search last 20 seconds
+
+  if (searchSeconds < 2) {
+    return [];
+  }
+
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'vidlet_match_'));
+  logToFile(`Match: Finding matches from end in ${inputPath}, ref=${referenceTime}s, duration=${duration}s`);
+
+  try {
+    // Extract reference frame
+    const refFramePath = path.join(tempDir, 'ref.png');
+    const refArgs = [
+      '-y',
+      '-ss',
+      referenceTime.toString(),
+      '-i',
+      inputPath,
+      '-vframes',
+      '1',
+      '-vf',
+      `scale=${frameSize}:${frameSize}`,
+      refFramePath,
+      '-hide_banner',
+      '-loglevel',
+      'error',
+    ];
+
+    let result = await execa('ffmpeg', refArgs, { reject: false, all: true });
+    if (result.exitCode !== 0) {
+      throw new Error(`Reference frame extraction failed: ${result.all || result.stderr}`);
+    }
+
+    const refFrame = await fs.readFile(refFramePath);
+
+    // Extract frames from the end portion of the video
+    const startTime = Math.max(minGap, duration - searchSeconds);
+    const endArgs = [
+      '-y',
+      '-ss',
+      startTime.toString(),
+      '-i',
+      inputPath,
+      '-t',
+      searchSeconds.toString(),
+      '-vf',
+      `fps=${fps},scale=${frameSize}:${frameSize}`,
+      '-f',
+      'image2',
+      path.join(tempDir, 'end_%04d.png'),
+      '-hide_banner',
+      '-loglevel',
+      'error',
+    ];
+
+    result = await execa('ffmpeg', endArgs, { reject: false, all: true });
+    if (result.exitCode !== 0) {
+      throw new Error(`End frames extraction failed: ${result.all || result.stderr}`);
+    }
+
+    const files = await fs.readdir(tempDir);
+    const framePaths = files
+      .filter((f) => f.startsWith('end_') && f.endsWith('.png'))
+      .sort()
+      .map((f) => path.join(tempDir, f));
+
+    logToFile(`Match: Extracted ${framePaths.length} end frames`);
+
+    if (framePaths.length === 0) {
+      return [];
+    }
+
+    // Compare reference frame against end frames
+    const matches: EndMatch[] = [];
+
+    for (let i = 0; i < framePaths.length; i++) {
+      const endFrame = await fs.readFile(framePaths[i]);
+      const score = compareFrames(refFrame, endFrame);
+
+      if (score >= threshold) {
+        const frameTime = startTime + i / fps;
+        matches.push({ time: frameTime, score });
+      }
+    }
+
+    // Sort by score descending, keep top 5
+    matches.sort((a, b) => b.score - a.score);
+    const topMatches = matches.slice(0, 5);
+
+    logToFile(`Match: Found ${topMatches.length} matches above threshold ${threshold}`);
+    return topMatches;
+  } catch (err) {
+    logToFile(`Match: Error in findMatchesFromEnd: ${(err as Error).message}`);
+    throw err;
+  } finally {
+    try {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    } catch {
+      // Ignore cleanup errors
+    }
+  }
+}
+
+/**
  * Create a seamless looping video
  */
 export async function loop(options: LoopOptions): Promise<string> {

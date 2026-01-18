@@ -65,9 +65,31 @@ export function registerInstallCommand(program: Command): void {
 				console.log(fmt.yellow(`! Registration failed. Try running as administrator.`));
 			}
 
-			console.log(fmt.bold('\nUsage:'));
+			console.log(fmt.bold('\nContext Menu Usage:'));
 			console.log('  Right-click any supported video in Windows Explorer.');
 			console.log('  Multi-select supported for batch processing.');
+
+			console.log(fmt.bold('\nCLI Usage:'));
+			console.log(`  ${fmt.cyan('vidlet <command> <file>')} ${fmt.dim('[options]')}    ${fmt.dim('Run with options')}`);
+			console.log(`  ${fmt.cyan('vidlet <command> <file> -g')}               ${fmt.dim('Open GUI')}`);
+			console.log();
+			console.log(fmt.dim('  compress   Reduce file size with H.264'));
+			console.log(`    ${fmt.cyan('vidlet compress')} video.mp4 -b 2000 -p fast`);
+			console.log();
+			console.log(fmt.dim('  togif      Convert to optimized GIF'));
+			console.log(`    ${fmt.cyan('vidlet togif')} video.mp4 -f 15 -w 480`);
+			console.log();
+			console.log(fmt.dim('  mkv2mp4    Convert MKV to MP4'));
+			console.log(`    ${fmt.cyan('vidlet mkv2mp4')} video.mkv -r -c 23`);
+			console.log();
+			console.log(fmt.dim('  shrink     Speed up to target duration'));
+			console.log(`    ${fmt.cyan('vidlet shrink')} video.mp4 -t 59`);
+			console.log();
+			console.log(fmt.dim('  loop       Create seamless loop'));
+			console.log(`    ${fmt.cyan('vidlet loop')} video.mp4 -s 5 -e 15`);
+			console.log();
+			console.log(fmt.dim('  thumb      Embed thumbnail image'));
+			console.log(`    ${fmt.cyan('vidlet thumb')} video.mp4 cover.jpg`);
 			console.log();
 		});
 }

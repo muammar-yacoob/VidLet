@@ -248,3 +248,27 @@ export function buildH264Args(options: {
 
   return args;
 }
+
+/**
+ * Build HEVC/H.265 encoding args (better compression, ~30-50% smaller)
+ */
+export function buildHEVCArgs(options: {
+  bitrate?: number;
+  preset?: string;
+  crf?: number;
+  audioBitrate?: number;
+}): string[] {
+  const { bitrate, preset = 'medium', crf, audioBitrate = 128 } = options;
+
+  const args = ['-c:v', 'libx265', '-preset', preset, '-tag:v', 'hvc1'];
+
+  if (bitrate) {
+    args.push('-b:v', `${bitrate}k`);
+  } else if (crf !== undefined) {
+    args.push('-crf', crf.toString());
+  }
+
+  args.push('-c:a', 'aac', '-b:a', `${audioBitrate}k`, '-movflags', '+faststart');
+
+  return args;
+}

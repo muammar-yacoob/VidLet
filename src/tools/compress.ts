@@ -1,18 +1,19 @@
 import { type CompressConfig, getToolConfig } from '../lib/config.js';
-import { buildH264Args, checkFFmpeg, executeFFmpeg, getVideoInfo } from '../lib/ffmpeg.js';
+import { buildH264Args, buildHEVCArgs, checkFFmpeg, executeFFmpeg, getVideoInfo } from '../lib/ffmpeg.js';
 import { fmt, header, separator, success } from '../lib/logger.js';
 import { getOutputPath } from '../lib/paths.js';
 
 export interface CompressOptions extends Partial<CompressConfig> {
   input: string;
   output?: string;
+  codec?: 'h264' | 'hevc';
 }
 
 /**
- * Compress a video file using H.264 encoding
+ * Compress a video file using H.264 or HEVC encoding
  */
 export async function compress(options: CompressOptions): Promise<string> {
-  const { input, output: customOutput } = options;
+  const { input, output: customOutput, codec = 'h264' } = options;
 
   if (!(await checkFFmpeg())) {
     throw new Error('FFmpeg not found. Please install ffmpeg: sudo apt install ffmpeg');
@@ -31,10 +32,11 @@ export async function compress(options: CompressOptions): Promise<string> {
   console.log(`Size:     ${fmt.white(`${info.width}x${info.height}`)}`);
   console.log(`Bitrate:  ${fmt.yellow(bitrate.toString())}k`);
   console.log(`Preset:   ${fmt.yellow(preset)}`);
+  console.log(`Codec:    ${fmt.yellow(codec === 'hevc' ? 'HEVC/H.265' : 'H.264')}`);
   separator();
   console.log(fmt.dim('Compressing...'));
 
-  const args = buildH264Args({ bitrate, preset });
+  const args = codec === 'hevc' ? buildHEVCArgs({ bitrate, preset }) : buildH264Args({ bitrate, preset });
 
   await executeFFmpeg({ input, output, args });
 

@@ -9,7 +9,7 @@ import { getVideoInfo } from '../lib/ffmpeg.js';
 import { startGuiServer, type VideoInfo } from '../lib/gui-server.js';
 import { logToFile } from '../lib/logger.js';
 import { compress } from './compress.js';
-import { loop, findAllLoopPoints } from './loop.js';
+import { findAllLoopPoints, findMatchesFromEnd } from './loop.js';
 import { mkv2mp4 } from './mkv2mp4.js';
 import { shrink } from './shrink.js';
 import { thumb } from './thumb.js';
@@ -50,6 +50,7 @@ interface ToolOptions {
 	// Compress options
 	bitrate?: number;
 	preset?: string;
+	codec?: 'h264' | 'hevc';
 	// ToGIF options
 	fps?: number;
 	width?: number;
@@ -59,10 +60,6 @@ interface ToolOptions {
 	crf?: number;
 	// Shrink options
 	targetDuration?: number;
-	// Loop options
-	start?: number;
-	end?: number;
-	autoDetect?: boolean;
 	// Thumb options
 	imagePath?: string;
 	// Trim options
@@ -120,6 +117,7 @@ async function runTool(input: string, opts: ToolOptions): Promise<ProcessResult>
 						| 'slower'
 						| 'veryslow'
 						| undefined,
+					codec: opts.codec,
 				});
 				logs.push({ type: 'success', message: 'Compression complete!' });
 				break;
@@ -155,17 +153,6 @@ async function runTool(input: string, opts: ToolOptions): Promise<ProcessResult>
 					targetDuration: opts.targetDuration,
 				});
 				logs.push({ type: 'success', message: 'Video shrunk!' });
-				break;
-			}
-
-			case 'loop': {
-				logs.push({ type: 'info', message: 'Creating seamless loop...' });
-				output = await loop({
-					input: actualInput,
-					start: opts.autoDetect ? undefined : opts.start,
-					end: opts.autoDetect ? undefined : opts.end,
-				});
-				logs.push({ type: 'success', message: 'Loop created!' });
 				break;
 			}
 
@@ -281,7 +268,6 @@ export async function runGUI(input: string): Promise<boolean> {
 		togif: await getToolConfig('togif'),
 		mkv2mp4: await getToolConfig('mkv2mp4'),
 		shrink: await getToolConfig('shrink'),
-		loop: await getToolConfig('loop'),
 		isMkv: ext === '.mkv',
 		isLandscape,
 		homepage: getHomepage(),
@@ -303,6 +289,17 @@ export async function runGUI(input: string): Promise<boolean> {
 				return { success: true, startPoints };
 			} catch (err) {
 				logToFile(`VidLet: Loop detection failed: ${(err as Error).message}`);
+				return { success: false, error: (err as Error).message };
+			}
+		},
+		onFindMatches: async (referenceTime: number, minGap: number) => {
+			try {
+				logToFile(`VidLet: Finding matches from end, ref=${referenceTime}s, minGap=${minGap}s`);
+				const matches = await findMatchesFromEnd(input, videoInfo.duration, referenceTime, minGap);
+				logToFile(`VidLet: Found ${matches.length} matches from end`);
+				return { success: true, matches };
+			} catch (err) {
+				logToFile(`VidLet: Match finding failed: ${(err as Error).message}`);
 				return { success: false, error: (err as Error).message };
 			}
 		},
