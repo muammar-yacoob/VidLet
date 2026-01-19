@@ -57,6 +57,9 @@ async function init() {
     VidLet.resizeToVideo(res.width, res.height);
   }
 
+  // Signal ready to close loading HTA early (window is now visible)
+  postJson('/api/ready', {});
+
   // Initialize sliders
   $('shrink-duration').max = Math.floor(res.duration);
   $('shrink-duration').value = Math.min(60, Math.floor(res.duration));
@@ -119,9 +122,6 @@ async function init() {
   if (firstTool) {
     selectTool(firstTool.id.replace('t-', ''));
   }
-
-  // Signal ready to close loading HTA
-  postJson('/api/ready', {});
 }
 
 function updateFileDisplay() {

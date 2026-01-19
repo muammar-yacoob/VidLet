@@ -77,7 +77,8 @@ function openAppWindow(url: string): void {
 		windowsHide: true,
 	}).unref();
 
-	// Don't signal here - let the app signal when it's ready via /api/ready
+	// Signal ready after delay to close loading HTA
+	setTimeout(signalReady, 500);
 }
 
 export interface VideoInfo {

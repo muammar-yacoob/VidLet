@@ -1,6 +1,6 @@
 {
   "name": "@spark-apps/vidlet",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Video utility toolkit with Windows shell integration - compress, convert, GIF, loops, and more",
   "type": "module",
   "bin": {

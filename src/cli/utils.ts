@@ -1,13 +1,15 @@
+import { resolve } from 'node:path';
 import { toWSLPath } from '../lib/paths.js';
 
 /**
- * Resolve input path - converts Windows path to WSL if needed
+ * Resolve input path - converts Windows path to WSL if needed, and makes relative paths absolute
  */
 export async function resolveInputPath(inputPath: string): Promise<string> {
 	if (/^[A-Za-z]:/.test(inputPath)) {
 		return toWSLPath(inputPath);
 	}
-	return inputPath;
+	// Make relative paths absolute
+	return resolve(inputPath);
 }
 
 /**
