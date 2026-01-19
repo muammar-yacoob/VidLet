@@ -8,6 +8,7 @@ let info = {};
 let activeTool = null;
 let homepage = 'https://vidlet.app';
 let currentFilePath = null;
+let isMkvFile = false;
 
 // Tool states
 let mkvFastCopy = true;
@@ -34,6 +35,8 @@ let isSeeking = false;
 // Timeline zoom state
 let timelineZoom = 1;
 let timelineOffset = 0; // 0-1, represents the left edge position as fraction of duration
+let autoZoomEnabled = true; // Auto-zoom to marker on hover
+let panToMarker = null; // Function to pan/zoom to current marker (set by initTimelineZoom)
 
 // Quality presets
 const gifPresets = {
@@ -57,9 +60,6 @@ async function init() {
     VidLet.resizeToVideo(res.width, res.height);
   }
 
-  // Signal ready to close loading HTA early (window is now visible)
-  postJson('/api/ready', {});
-
   // Initialize sliders
   $('shrink-duration').max = Math.floor(res.duration);
   $('shrink-duration').value = Math.min(60, Math.floor(res.duration));
@@ -74,9 +74,17 @@ async function init() {
   const isShortVideo = res.duration <= 60;
   $('find-match-btn').classList.toggle('hidden', !isShortVideo);
 
-  // Pre-initialize frame matching in background for short videos
+  // Show badge when loop feature is available
   if (isShortVideo) {
-    preloadPromise = preloadMatches();
+    showLoopBadge();
+  }
+
+  // Auto-find best loop start for short videos
+  if (isShortVideo) {
+    // Find best loop start in first 5 seconds, then preload additional matches
+    findBestLoopStart().then(() => {
+      preloadPromise = preloadMatches();
+    });
   }
 
   if (res.defaults?.homepage) {
@@ -84,18 +92,21 @@ async function init() {
     $('homepageLink').textContent = homepage.replace(/^https?:\/\//, '').replace(/\/$/, '');
   }
 
-  // Show MKV→MP4 only for MKV files
-  if (res.defaults?.isMkv) {
-    $('t-mkv2mp4').classList.remove('hidden');
-  }
+  // Handle MKV files - show converter, disable other tools
+  isMkvFile = res.defaults?.isMkv || false;
+  $('t-mkv2mp4').classList.toggle('hidden', !isMkvFile);
 
-  // Show Portrait only for landscape videos
-  if (res.defaults?.isLandscape) {
-    $('t-portrait').classList.remove('hidden');
-  }
+  // Show Portrait for all videos except 9:16 (already portrait)
+  const aspectRatio = res.width / res.height;
+  const isAlreadyPortrait = Math.abs(aspectRatio - 9/16) < 0.05;
+  $('t-portrait').classList.toggle('hidden', isAlreadyPortrait);
 
-  // Hide GIF export for long videos (>15s)
-  $('t-togif').classList.toggle('hidden', res.duration > 15);
+  // Hide GIF export for long videos (>15s), show badge if available
+  const canExportGif = res.duration <= 15;
+  $('t-togif').classList.toggle('hidden', !canExportGif);
+  if (canExportGif) {
+    showGifBadge();
+  }
 
   // Initialize trim timeline
   $('trim-end').value = res.duration;
@@ -108,7 +119,9 @@ async function init() {
   initResizeDivider();
   initDropZones();
   initVideoZoom();
+  initCaptionTool();
   setupAudioPreviewSync();
+  updateThumbAspectRatio();
 
   updateCompressLabels();
   const defaultPresets = getCompressPresets();
@@ -117,18 +130,100 @@ async function init() {
 
   if (window.lucide) lucide.createIcons();
 
-  // Select first tool
-  const firstTool = document.querySelector('.tool:not(.hidden):not(.disabled)');
-  if (firstTool) {
-    selectTool(firstTool.id.replace('t-', ''));
+  // Select first tool (mkv2mp4 for MKV files, otherwise first available)
+  if (isMkvFile) {
+    selectTool('mkv2mp4');
+  } else {
+    const firstTool = document.querySelector('.tool:not(.hidden):not(.disabled)');
+    if (firstTool) {
+      selectTool(firstTool.id.replace('t-', ''));
+    }
   }
+
+  // Signal ready after window is fully rendered
+  signalAppReady();
+}
+
+/**
+ * Signal that app is ready - waits for video frame, window load, and paint cycle
+ */
+function signalAppReady() {
+  const video = $('videoPreview');
+  let signaled = false;
+
+  const doSignal = () => {
+    if (signaled) return;
+    signaled = true;
+    // Wait for multiple paint cycles to ensure window is fully rendered
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          // Add extra delay to ensure window is visible and stable
+          setTimeout(() => {
+            postJson('/api/ready', {});
+          }, 1500);
+        });
+      });
+    });
+  };
+
+  // Wait for video to have at least one frame (readyState >= 2)
+  const checkVideo = () => {
+    if (video.readyState >= 2) {
+      doSignal();
+    } else {
+      video.addEventListener('canplay', doSignal, { once: true });
+    }
+  };
+
+  // Wait for window load event (all resources loaded)
+  if (document.readyState === 'complete') {
+    checkVideo();
+  } else {
+    window.addEventListener('load', checkVideo, { once: true });
+  }
+
+  // Fallback timeout in case something fails
+  setTimeout(doSignal, 5000);
 }
 
 function updateFileDisplay() {
   $('fileName').textContent = ' ' + info.fileName;
-  $('size').textContent = ' ' + `${info.width}×${info.height}`;
+  $('resolution').textContent = ' ' + `${info.width.toLocaleString()}×${info.height.toLocaleString()}`;
+  $('aspectRatio').textContent = ' ' + getAspectRatioLabel(info.width, info.height);
+  $('fileSize').textContent = ' ' + formatFileSize(info.fileSize);
   $('duration').textContent = ' ' + formatDuration(info.duration);
   $('fps').textContent = ' ' + (info.fps ? info.fps.toFixed(1) : '-');
+}
+
+function getAspectRatioLabel(width, height) {
+  if (!width || !height) return '-';
+  const ratio = width / height;
+  // Common aspect ratios
+  if (Math.abs(ratio - 16/9) < 0.05) return '16:9';
+  if (Math.abs(ratio - 9/16) < 0.05) return '9:16';
+  if (Math.abs(ratio - 4/3) < 0.05) return '4:3';
+  if (Math.abs(ratio - 3/4) < 0.05) return '3:4';
+  if (Math.abs(ratio - 21/9) < 0.05) return '21:9';
+  if (Math.abs(ratio - 1) < 0.05) return '1:1';
+  if (Math.abs(ratio - 3/2) < 0.05) return '3:2';
+  if (Math.abs(ratio - 2/3) < 0.05) return '2:3';
+  // Calculate simplified ratio
+  const gcd = (a, b) => b ? gcd(b, a % b) : a;
+  const divisor = gcd(width, height);
+  const w = width / divisor;
+  const h = height / divisor;
+  if (w <= 100 && h <= 100) return `${w}:${h}`;
+  return ratio.toFixed(2);
+}
+
+function formatFileSize(bytes) {
+  if (!bytes) return '-';
+  const formatNum = (n) => n.toLocaleString('en-US', { maximumFractionDigits: 1 });
+  if (bytes < 1024) return formatNum(bytes) + ' B';
+  if (bytes < 1024 * 1024) return formatNum(bytes / 1024) + ' KB';
+  if (bytes < 1024 * 1024 * 1024) return formatNum(bytes / (1024 * 1024)) + ' MB';
+  return formatNum(bytes / (1024 * 1024 * 1024)) + ' GB';
 }
 
 // ============ TOOL SELECTION ============
@@ -137,16 +232,30 @@ function selectTool(id) {
   if (activeTool === 'audio' && id !== 'audio') {
     stopAudioPreview();
   }
+  if (activeTool === 'filter' && id !== 'filter') {
+    clearFilterPreview();
+  }
 
   document.querySelectorAll('.tool').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.opts').forEach(o => o.classList.remove('active'));
+  $('mkv-notice').classList.remove('active');
 
   const el = $('t-' + id);
   const opts = $('opts-' + id);
 
   $('cropOverlay').classList.remove('active');
+  $('captionOverlay').classList.add('hidden');
 
-  if (el && !el.classList.contains('disabled') && !el.classList.contains('done')) {
+  // MKV files can only use mkv2mp4 tool
+  if (isMkvFile && id !== 'mkv2mp4') {
+    el?.classList.add('active');
+    $('mkv-notice').classList.add('active');
+    activeTool = null;
+    $('processBtn').disabled = true;
+    return;
+  }
+
+  if (el && !el.classList.contains('disabled')) {
     el.classList.add('active');
     if (opts) opts.classList.add('active');
     activeTool = id;
@@ -165,6 +274,23 @@ function selectTool(id) {
     if (id === 'audio') {
       startAudioPreview();
       updateVolumeUI();
+    }
+
+    if (id === 'togif') {
+      hideGifBadge();
+    }
+
+    if (id === 'thumb') {
+      initThumbTool();
+    }
+
+    if (id === 'filter') {
+      applyFilterPreview();
+    }
+
+    if (id === 'caption') {
+      $('captionOverlay').classList.remove('hidden');
+      updateCaptionPreview();
     }
   } else {
     activeTool = null;
@@ -187,40 +313,41 @@ function openSettings() {
   const preset = $('compress-preset').value;
   const presetMap = { ultrafast: 'fast', superfast: 'fast', veryfast: 'fast', faster: 'fast', fast: 'fast', medium: 'medium', slow: 'slow', slower: 'slow', veryslow: 'slow' };
   setSegBtn('settingsCompressQuality', presetMap[preset] || 'medium');
-  setSegBtn('settingsCompressCodec', $('compress-codec').value || 'h264');
   setSegBtn('settingsGifFps', $('togif-fps').value);
   setSegBtn('settingsGifWidth', $('togif-width').value);
   setSegBtn('settingsMkvQuality', $('mkv2mp4-quality').value);
-  setSegBtn('settingsShrinkTarget', Math.round(parseFloat($('shrink-duration').value)));
   setSegBtn('settingsTrimMode', $('trim-accurate').value === 'true' ? 'accurate' : 'fast');
 
   $('settingsModal').classList.add('on');
 }
 
 function closeSettings() {
+  // Compress settings
   const qualityPresetMap = { fast: 'veryfast', medium: 'medium', slow: 'slow' };
+  const bitrateMap = { fast: 0.3, medium: 0.5, slow: 0.7 };
   const quality = getSegVal('settingsCompressQuality');
   $('compress-preset').value = qualityPresetMap[quality] || 'medium';
+  // Update bitrate based on quality preset
+  const origBitrate = info.bitrate || 5000;
+  $('compress-bitrate').value = Math.round(origBitrate * (bitrateMap[quality] || 0.5));
 
-  const codec = getSegVal('settingsCompressCodec');
-  if (codec) $('compress-codec').value = codec;
-
+  // GIF settings
   const fps = getSegVal('settingsGifFps');
   const width = getSegVal('settingsGifWidth');
   if (fps) $('togif-fps').value = fps;
   if (width) $('togif-width').value = width;
 
+  // MKV settings
   const crf = getSegVal('settingsMkvQuality');
   if (crf) $('mkv2mp4-quality').value = crf;
 
-  const shrinkTarget = getSegVal('settingsShrinkTarget');
-  if (shrinkTarget) {
-    $('shrink-duration').value = shrinkTarget;
-    updateShrinkLabel();
-  }
-
+  // Trim settings
   const trimMode = getSegVal('settingsTrimMode');
   $('trim-accurate').value = trimMode === 'accurate' ? 'true' : 'false';
+
+  // Update all estimates
+  updateEstimates();
+  updateCompressLabels();
 
   $('settingsModal').classList.remove('on');
 }
@@ -231,6 +358,23 @@ function setSegBtn(groupId, val) {
   group.querySelectorAll('button').forEach(b => {
     b.classList.toggle('active', b.dataset.val === String(val));
   });
+}
+
+function setSegBtnClosest(groupId, numVal) {
+  const group = $(groupId);
+  if (!group) return;
+  const buttons = Array.from(group.querySelectorAll('button'));
+  let closest = buttons[0];
+  let minDiff = Infinity;
+  buttons.forEach(b => {
+    const diff = Math.abs(parseFloat(b.dataset.val) - numVal);
+    if (diff < minDiff) {
+      minDiff = diff;
+      closest = b;
+    }
+  });
+  buttons.forEach(b => b.classList.remove('active'));
+  if (closest) closest.classList.add('active');
 }
 
 function getSegVal(groupId) {
@@ -393,8 +537,13 @@ function updateTimeline() {
 
   $('timeline-range').style.left = startPct + '%';
   $('timeline-range').style.width = (endPct - startPct) + '%';
-  $('handle-start').style.left = 'calc(' + startPct + '% - 6px)';
-  $('handle-end').style.left = 'calc(' + endPct + '% - 6px)';
+  $('handle-start').style.left = startPct + '%';
+  $('handle-end').style.left = endPct + '%';
+
+  // Position dim overlays (unselected areas)
+  $('timeline-dim-left').style.width = startPct + '%';
+  $('timeline-dim-right').style.left = endPct + '%';
+  $('timeline-dim-right').style.width = (100 - endPct) + '%';
 
   // Update info badges
   const outputDuration = Math.max(0, end - start);
@@ -463,47 +612,132 @@ function updatePlayhead() {
   playhead.style.left = pct + '%';
 }
 
-function initTimelineZoom() {
-  const container = $('timeline-container');
-  const viewport = $('timeline-viewport');
+function toggleAutoZoom() {
+  autoZoomEnabled = !autoZoomEnabled;
+  $('auto-zoom-btn').classList.toggle('active', autoZoomEnabled);
+}
 
-  viewport.addEventListener('wheel', (e) => {
+function initTimelineZoom() {
+  const viewport = $('timeline-viewport');
+  const timelineWrap = $('trim-controls');
+  const timeline = $('timeline');
+  let isHovered = false;
+  let manualZoom = false; // Track if user manually zoomed with wheel
+
+  // Enable CSS transitions for smooth zoom animation
+  function enableTransition() {
+    timeline.style.transition = 'transform 0.25s ease-out, width 0.25s ease-out';
+  }
+  function disableTransition() {
+    timeline.style.transition = 'none';
+  }
+
+  // Zoom to show selected marker when hovered
+  function zoomToMarker() {
+    if (!autoZoomEnabled || matchMarkers.length === 0 || manualZoom) return;
+
+    const duration = info.duration || 1;
+    const marker = matchMarkers[currentMatchIndex];
+    if (!marker) return;
+
+    const markerPosition = marker.time / duration;
+    const autoZoom = 3; // Auto-zoom level for hover
+
+    enableTransition();
+    timelineZoom = autoZoom;
+    const visibleFraction = 1 / timelineZoom;
+    // Center the marker in viewport
+    timelineOffset = Math.max(0, Math.min(1 - visibleFraction, markerPosition - visibleFraction * 0.5));
+    viewport.classList.add('zoomed');
+    updateTimeline();
+    renderMatchMarkers();
+  }
+
+  // Zoom out to full view
+  function zoomOutFull() {
+    if (!autoZoomEnabled || manualZoom) return;
+
+    enableTransition();
+    timelineZoom = 1;
+    timelineOffset = 0;
+    viewport.classList.remove('zoomed');
+    updateTimeline();
+    renderMatchMarkers();
+    // Clear transition after animation
+    setTimeout(disableTransition, 250);
+  }
+
+  // Auto-zoom on hover (only when enabled, markers exist, and not manually zoomed)
+  viewport.addEventListener('mouseenter', () => {
+    isHovered = true;
+    if (autoZoomEnabled && matchMarkers.length > 0 && !manualZoom) {
+      zoomToMarker();
+    }
+  });
+
+  viewport.addEventListener('mouseleave', () => {
+    isHovered = false;
+    if (autoZoomEnabled && !manualZoom) {
+      zoomOutFull();
+    }
+  });
+
+  // Attach wheel to timelineWrap so scrolling on ticks also zooms
+  timelineWrap.addEventListener('wheel', (e) => {
     e.preventDefault();
+    disableTransition();
+    manualZoom = true; // User took control
 
     const rect = viewport.getBoundingClientRect();
-    const mouseX = (e.clientX - rect.left) / rect.width;
+    const duration = info.duration || 1;
+
+    // Get cursor position as fraction of viewport (0-1)
+    const cursorViewportPct = (e.clientX - rect.left) / rect.width;
+
+    // Convert cursor position to time position (accounting for current zoom/offset)
+    const visibleDuration = duration / timelineZoom;
+    const visibleStart = timelineOffset * duration;
+    const cursorTime = visibleStart + cursorViewportPct * visibleDuration;
+    const cursorPosition = cursorTime / duration; // 0-1 position in full timeline
 
     // Zoom in/out
     const delta = e.deltaY > 0 ? -0.2 : 0.2;
-    const oldZoom = timelineZoom;
     timelineZoom = Math.max(1, Math.min(10, timelineZoom + delta * timelineZoom));
 
     if (timelineZoom === 1) {
       timelineOffset = 0;
+      viewport.classList.remove('zoomed');
+      manualZoom = false; // Reset manual control when fully zoomed out
     } else {
-      // Adjust offset to zoom toward mouse position
-      const visibleBefore = 1 / oldZoom;
+      // Adjust offset to keep cursor position stable
       const visibleAfter = 1 / timelineZoom;
-      const mouseTime = timelineOffset + mouseX * visibleBefore;
-      timelineOffset = Math.max(0, Math.min(1 - visibleAfter, mouseTime - mouseX * visibleAfter));
+      timelineOffset = Math.max(0, Math.min(1 - visibleAfter, cursorPosition - cursorViewportPct * visibleAfter));
+      viewport.classList.add('zoomed');
     }
 
     updateTimeline();
     renderMatchMarkers();
   }, { passive: false });
 
-  // Pan with middle mouse or shift+drag
+  // Pan with middle mouse, shift+drag, or left-click drag when zoomed
   let isPanning = false;
   let panStartX = 0;
   let panStartOffset = 0;
 
   viewport.addEventListener('mousedown', (e) => {
-    if (e.button === 1 || (e.button === 0 && e.shiftKey)) {
+    // Allow panning with: middle mouse, shift+left, or left-click when zoomed (not on handles)
+    const isHandle = e.target.classList.contains('timeline-handle');
+    const canPan = e.button === 1 || (e.button === 0 && e.shiftKey) ||
+                   (e.button === 0 && timelineZoom > 1 && !isHandle);
+
+    if (canPan) {
       e.preventDefault();
+      disableTransition();
+      manualZoom = true;
       isPanning = true;
       panStartX = e.clientX;
       panStartOffset = timelineOffset;
-      viewport.style.cursor = 'grabbing';
+      viewport.classList.add('panning');
     }
   });
 
@@ -520,7 +754,7 @@ function initTimelineZoom() {
   document.addEventListener('mouseup', () => {
     if (isPanning) {
       isPanning = false;
-      viewport.style.cursor = '';
+      viewport.classList.remove('panning');
     }
   });
 }
@@ -562,12 +796,14 @@ function initTimelineHandles() {
       $('trim-start').value = newStart.toFixed(2);
       video.currentTime = newStart;
       clearMatchMarkers(); // Clear markers when start changes
+      hideNoMatchesMessage();
     } else {
       const startVal = parseFloat($('trim-start').value);
       const minEnd = startVal + 0.1;
       const newEnd = Math.min(info.duration, Math.max(time, minEnd));
       $('trim-end').value = newEnd.toFixed(2);
       video.currentTime = Math.max(0, newEnd - 0.5);
+      hideNoMatchesMessage();
     }
     updateTimeline();
   }
@@ -592,6 +828,27 @@ function initTimelineHandles() {
       document.addEventListener('mouseup', onMouseUp);
     });
   });
+
+  // Expose pan to marker function for external use (e.g., cycleMatch)
+  panToMarker = function(forceZoom = false) {
+    if (matchMarkers.length === 0) return;
+    const duration = info.duration || 1;
+    const marker = matchMarkers[currentMatchIndex];
+    if (!marker) return;
+
+    const markerPosition = marker.time / duration;
+    const targetZoom = forceZoom ? 3 : Math.max(timelineZoom, 2);
+
+    enableTransition();
+    timelineZoom = targetZoom;
+    const visibleFraction = 1 / timelineZoom;
+    timelineOffset = Math.max(0, Math.min(1 - visibleFraction, markerPosition - visibleFraction * 0.5));
+    viewport.classList.add('zoomed');
+    manualZoom = true; // Prevent auto-zoom from overriding
+    updateTimeline();
+    renderMatchMarkers();
+    setTimeout(disableTransition, 250);
+  };
 }
 
 // ============ MATCH FINDING (LOOP POINTS) ============
@@ -661,6 +918,39 @@ function cycleMatch() {
   currentMatchIndex = (currentMatchIndex + 1) % matchMarkers.length;
   selectMatch(currentMatchIndex);
   renderMatchMarkers();
+  // Pan timeline to focus on the selected marker
+  if (panToMarker) panToMarker();
+}
+
+/**
+ * Find best loop start point in first 5 seconds of video
+ * Sets trim start/end and shows match marker
+ */
+async function findBestLoopStart() {
+  try {
+    const res = await postJson('/api/find-best-start', { searchRange: 5, minGap: 3 });
+    if (res.success && res.score > 0) {
+      // Set trim start and end to the found loop points
+      $('trim-start').value = res.startTime.toFixed(2);
+      $('trim-end').value = res.endTime.toFixed(2);
+
+      // Add match marker for the end point
+      matchMarkers = [{ time: res.endTime, score: res.score }];
+      currentMatchIndex = 0;
+      renderMatchMarkers();
+      updateMatchInfo();
+      updateTimeline();
+
+      // Seek video to start position
+      const video = $('videoPreview');
+      video.currentTime = res.startTime;
+
+      return true;
+    }
+  } catch (err) {
+    console.error('Find best start error:', err);
+  }
+  return false;
 }
 
 /**
@@ -668,7 +958,8 @@ function cycleMatch() {
  */
 async function preloadMatches() {
   try {
-    const res = await postJson('/api/find-matches', { referenceTime: 0, minGap: 3 });
+    const startTime = parseFloat($('trim-start').value) || 0;
+    const res = await postJson('/api/find-matches', { referenceTime: startTime, minGap: 3 });
     if (res.success && res.matches) {
       preloadedMatches = res.matches;
     }
@@ -678,6 +969,9 @@ async function preloadMatches() {
 }
 
 async function findMatchingFrames() {
+  // Dismiss the loop badge when user clicks Find Loop
+  hideLoopBadge();
+
   const startTime = parseFloat($('trim-start').value) || 0;
 
   // Show inline loading, hide controls
@@ -713,16 +1007,19 @@ async function findMatchingFrames() {
       currentMatchIndex = 0;
       renderMatchMarkers();
       updateMatchInfo();
+      hideNoMatchesMessage();
 
       // Auto-select first match
       $('trim-end').value = matchMarkers[0].time.toFixed(2);
       updateTimeline();
     } else {
       clearMatchMarkers();
+      showNoMatchesMessage();
     }
   } catch (err) {
     console.error('Find match error:', err);
     clearMatchMarkers();
+    showNoMatchesMessage();
   } finally {
     // Hide loading, show controls
     $('trim-loading').classList.add('hidden');
@@ -838,21 +1135,99 @@ async function handleAudioFile(input) {
 async function handleThumbFile(input) {
   if (input.files && input.files[0]) {
     const file = input.files[0];
-    $('thumbFileName').textContent = 'Uploading...';
     try {
       const reader = new FileReader();
       reader.onload = (e) => {
         $('thumbPreview').src = e.target.result;
-        $('thumbPreviewWrap').classList.add('has-image');
+        $('thumbUpload').classList.add('has-image');
       };
       reader.readAsDataURL(file);
 
       const path = await uploadFile(file, 'image');
       $('thumb-image').value = path;
-      $('thumbFileName').textContent = 'Click to change';
+      // Auto-select the uploaded image
+      selectUploadedImage();
     } catch (err) {
-      $('thumbFileName').textContent = 'Upload failed: ' + err.message;
-      $('thumbPreviewWrap').classList.remove('has-image');
+      $('thumbUpload').classList.remove('selected', 'has-image');
+    }
+  }
+}
+
+// ============ THUMBNAIL ============
+
+function captureCurrentFrame() {
+  const video = $('videoPreview');
+  const time = video.currentTime;
+  $('thumb-timestamp').value = time.toFixed(3);
+  $('thumb-source').value = 'video';
+  $('thumbCapture').classList.add('selected');
+  $('thumbUpload').classList.remove('selected');
+  drawThumbCanvas();
+}
+
+function handleThumbClick() {
+  // If image already loaded, select it; otherwise open file browser
+  if ($('thumb-image').value) {
+    selectUploadedImage();
+  } else {
+    $('thumbFileInput').click();
+  }
+}
+
+function selectUploadedImage() {
+  $('thumb-source').value = 'file';
+  $('thumb-timestamp').value = '';
+  $('thumbUpload').classList.add('selected');
+  $('thumbCapture').classList.remove('selected');
+}
+
+function updateThumbFrameTime() {
+  if (activeTool !== 'thumb') return;
+  const video = $('videoPreview');
+  $('thumbFrameTime').textContent = formatTimeMs(video.currentTime);
+  // Update canvas preview in real-time (only if not already selected)
+  if (!$('thumbCapture').classList.contains('selected')) {
+    drawThumbCanvas();
+  }
+}
+
+function drawThumbCanvas() {
+  const video = $('videoPreview');
+  const canvas = $('thumbCanvas');
+  if (!canvas || !video.videoWidth) return;
+  const ctx = canvas.getContext('2d');
+
+  // Draw full frame to canvas
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+}
+
+function initThumbTool() {
+  $('thumb-timestamp').value = '';
+  $('thumb-source').value = 'video';
+  $('thumbCapture').classList.remove('selected');
+  $('thumbUpload').classList.remove('selected');
+  // Keep uploaded image - don't clear thumb-image value or has-image class
+  updateThumbAspectRatio();
+  drawThumbCanvas();
+}
+
+function updateThumbAspectRatio() {
+  // Set aspect ratio based on video dimensions
+  if (info.width && info.height) {
+    const aspectRatio = info.width / info.height;
+
+    // Update CSS variable on thumb preview boxes
+    document.querySelectorAll('.thumb-preview-box').forEach(box => {
+      box.style.setProperty('--video-aspect', `${info.width}/${info.height}`);
+    });
+
+    // Update canvas dimensions to match aspect ratio (keep width at 120)
+    const canvas = $('thumbCanvas');
+    if (canvas) {
+      const canvasWidth = 120;
+      const canvasHeight = Math.round(canvasWidth / aspectRatio);
+      canvas.width = canvasWidth;
+      canvas.height = canvasHeight;
     }
   }
 }
@@ -871,18 +1246,69 @@ function initDropZones() {
     }
   });
 
-  const thumbZone = $('thumbPreviewWrap');
-  thumbZone.addEventListener('dragover', (e) => { e.preventDefault(); thumbZone.style.borderColor = 'var(--acc)'; });
-  thumbZone.addEventListener('dragleave', () => thumbZone.style.borderColor = '');
-  thumbZone.addEventListener('drop', async (e) => {
-    e.preventDefault();
-    thumbZone.style.borderColor = '';
-    if (e.dataTransfer.files.length) {
-      const input = $('thumbFileInput');
-      input.files = e.dataTransfer.files;
-      handleThumbFile(input);
+  const thumbZone = $('thumbUpload').querySelector('.thumb-preview-box');
+  if (thumbZone) {
+    thumbZone.addEventListener('dragover', (e) => { e.preventDefault(); thumbZone.style.borderColor = 'var(--acc)'; });
+    thumbZone.addEventListener('dragleave', () => thumbZone.style.borderColor = '');
+    thumbZone.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      thumbZone.style.borderColor = '';
+      if (e.dataTransfer.files.length) {
+        const input = $('thumbFileInput');
+        input.files = e.dataTransfer.files;
+        handleThumbFile(input);
+      }
+    });
+  }
+
+  // Video drop zone on preview area
+  const previewWrap = $('previewWrap');
+  previewWrap.addEventListener('dragover', (e) => {
+    const hasVideo = Array.from(e.dataTransfer.types).includes('Files');
+    if (hasVideo) {
+      e.preventDefault();
+      previewWrap.style.outline = '2px dashed var(--acc)';
+      previewWrap.style.outlineOffset = '-2px';
     }
   });
+  previewWrap.addEventListener('dragleave', (e) => {
+    if (!previewWrap.contains(e.relatedTarget)) {
+      previewWrap.style.outline = '';
+      previewWrap.style.outlineOffset = '';
+    }
+  });
+  previewWrap.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    previewWrap.style.outline = '';
+    previewWrap.style.outlineOffset = '';
+
+    const file = Array.from(e.dataTransfer.files).find(f =>
+      f.type.startsWith('video/') || /\.(mp4|mkv|avi|mov|webm)$/i.test(f.name)
+    );
+
+    if (file) {
+      const confirmed = confirm(`Load "${file.name}" as new video?\n\nThis will replace the current video.`);
+      if (confirmed) {
+        await handleVideoFileDrop(file);
+      }
+    }
+  });
+}
+
+async function handleVideoFileDrop(file) {
+  $('loading').classList.add('on');
+  $('loading').querySelector('span').textContent = 'Loading video...';
+
+  try {
+    const path = await uploadFile(file, 'video');
+    await loadOutputAsSource(path);
+    showToast('Video loaded: ' + file.name);
+  } catch (err) {
+    showToast('Failed to load video');
+    console.error('Video drop error:', err);
+  } finally {
+    $('loading').classList.remove('on');
+  }
 }
 
 // ============ VIDEO PLAYER ============
@@ -916,10 +1342,22 @@ function updateTimeDisplay() {
   const video = $('videoPreview');
   if (!video.duration) return;
 
-  const pct = (video.currentTime / video.duration) * 100;
-  $('playerProgress').style.width = pct + '%';
-  $('playerThumb').style.left = pct + '%';
-  $('playerTime').textContent = formatTime(video.currentTime) + ' / ' + formatTime(video.duration);
+  // In trim mode, normalize to selection range
+  if (activeTool === 'trim') {
+    const trimStart = parseFloat($('trim-start').value) || 0;
+    const trimEnd = parseFloat($('trim-end').value) || video.duration;
+    const trimDuration = trimEnd - trimStart;
+    const relativeTime = Math.max(0, video.currentTime - trimStart);
+    const pct = trimDuration > 0 ? (relativeTime / trimDuration) * 100 : 0;
+    $('playerProgress').style.width = Math.min(100, pct) + '%';
+    $('playerThumb').style.left = Math.min(100, pct) + '%';
+    $('playerTime').textContent = formatTime(relativeTime) + ' / ' + formatTime(trimDuration);
+  } else {
+    const pct = (video.currentTime / video.duration) * 100;
+    $('playerProgress').style.width = pct + '%';
+    $('playerThumb').style.left = pct + '%';
+    $('playerTime').textContent = formatTime(video.currentTime) + ' / ' + formatTime(video.duration);
+  }
 }
 
 function adjustSpeed(delta) {
@@ -944,6 +1382,7 @@ function initPlayerControls() {
   video.addEventListener('timeupdate', () => {
     updateTimeDisplay();
     updatePlayhead();
+    updateThumbFrameTime();
     // Seamless loop in trim mode
     if (activeTool === 'trim' && !video.paused) {
       const trimEnd = parseFloat($('trim-end').value) || video.duration;
@@ -958,7 +1397,14 @@ function initPlayerControls() {
   seek.addEventListener('click', (e) => {
     const rect = seek.getBoundingClientRect();
     const pct = (e.clientX - rect.left) / rect.width;
-    video.currentTime = pct * video.duration;
+    // In trim mode, seek within selection range
+    if (activeTool === 'trim') {
+      const trimStart = parseFloat($('trim-start').value) || 0;
+      const trimEnd = parseFloat($('trim-end').value) || video.duration;
+      video.currentTime = trimStart + pct * (trimEnd - trimStart);
+    } else {
+      video.currentTime = pct * video.duration;
+    }
   });
 
   volumeSlider.addEventListener('click', (e) => {
@@ -972,14 +1418,18 @@ function initPlayerControls() {
   document.addEventListener('keydown', (e) => {
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
 
+    // Alt+Arrow = frame-by-frame (1/fps), normal Arrow = 5s
+    const frameStep = 1 / (info.fps || 30);
+    const seekStep = e.altKey ? frameStep : 5;
+
     switch (e.code) {
       case 'Space': e.preventDefault(); togglePlay(); break;
       case 'KeyM': toggleMute(); break;
       case 'KeyJ': adjustSpeed(-0.5); break;
       case 'KeyK': resetSpeed(); break;
       case 'KeyL': adjustSpeed(0.5); break;
-      case 'ArrowLeft': e.preventDefault(); video.currentTime = Math.max(0, video.currentTime - 5); break;
-      case 'ArrowRight': e.preventDefault(); video.currentTime = Math.min(video.duration, video.currentTime + 5); break;
+      case 'ArrowLeft': e.preventDefault(); video.currentTime = Math.max(0, video.currentTime - seekStep); break;
+      case 'ArrowRight': e.preventDefault(); video.currentTime = Math.min(video.duration, video.currentTime + seekStep); break;
     }
   });
 }
@@ -1089,6 +1539,211 @@ function initVideoZoom() {
       wrap.classList.remove('panning');
     }
   });
+
+  // Double-click to fit/center video
+  wrap.addEventListener('dblclick', (e) => {
+    e.preventDefault();
+    resetZoom();
+  });
+}
+
+// ============ FILTER PREVIEW ============
+
+// Filter state
+const filterState = {
+  brightness: 0,      // -100 to 100 (0 = normal)
+  contrast: 100,      // 0 to 200 (100 = normal)
+  saturation: 100,    // 0 to 200 (100 = normal)
+  blur: 0,            // 0 to 10
+  blurEnabled: false,
+  sharpen: false,
+  vignette: false,
+  vignetteIntensity: 0,
+  bloom: false,
+  bloomIntensity: 0,
+  filterPreset: 'none', // none, grayscale, sepia, vintage, cool, warm
+};
+
+function updateFilterPreview() {
+  // Read slider values
+  const brightness = parseInt($('filter-brightness')?.value) || 0;
+  const contrast = parseInt($('filter-contrast')?.value) || 100;
+  const saturation = parseInt($('filter-saturation')?.value) || 100;
+  const blur = parseFloat($('filter-blur')?.value) || 0;
+  const vignetteIntensity = parseInt($('filter-vignette-intensity')?.value) || 0;
+  const bloomIntensity = parseInt($('filter-bloom-intensity')?.value) || 0;
+
+  // Update state
+  filterState.brightness = brightness;
+  filterState.contrast = contrast;
+  filterState.saturation = saturation;
+  filterState.blur = blur;
+  filterState.vignetteIntensity = vignetteIntensity;
+  filterState.bloomIntensity = bloomIntensity;
+
+  // Auto-toggle effects based on slider values (0 = off)
+  filterState.blurEnabled = blur > 0;
+  filterState.vignette = vignetteIntensity > 0;
+  filterState.bloom = bloomIntensity > 0;
+
+  // Update effect button states based on values
+  $('effect-blur')?.classList.toggle('active', blur > 0);
+  $('effect-vignette')?.classList.toggle('active', vignetteIntensity > 0);
+  $('effect-bloom')?.classList.toggle('active', bloomIntensity > 0);
+
+  // Update value labels
+  if ($('filter-brightness-val')) $('filter-brightness-val').textContent = brightness;
+  if ($('filter-contrast-val')) $('filter-contrast-val').textContent = contrast;
+  if ($('filter-saturation-val')) $('filter-saturation-val').textContent = saturation;
+  if ($('filter-blur-val')) $('filter-blur-val').textContent = blur;
+  if ($('filter-vignette-val')) $('filter-vignette-val').textContent = vignetteIntensity;
+  if ($('filter-bloom-val')) $('filter-bloom-val').textContent = bloomIntensity;
+
+  applyFilterPreview();
+}
+
+function toggleEffect(name) {
+  const btn = $('effect-' + name);
+  const settings = $('settings-' + name);
+
+  // Toggle the effect state
+  if (name === 'blur') {
+    filterState.blurEnabled = !filterState.blurEnabled;
+    btn?.classList.toggle('active', filterState.blurEnabled);
+  } else if (name === 'vignette') {
+    filterState.vignette = !filterState.vignette;
+    btn?.classList.toggle('active', filterState.vignette);
+  } else if (name === 'bloom') {
+    filterState.bloom = !filterState.bloom;
+    btn?.classList.toggle('active', filterState.bloom);
+  } else if (name === 'sharpen') {
+    filterState.sharpen = !filterState.sharpen;
+    btn?.classList.toggle('active', filterState.sharpen);
+  }
+
+  // Show/hide settings panel
+  if (settings) {
+    settings.classList.toggle('hidden', !btn?.classList.contains('active'));
+  }
+
+  applyFilterPreview();
+}
+
+function selectFilterPreset(preset) {
+  filterState.filterPreset = preset;
+
+  // Update button states
+  document.querySelectorAll('.filter-preset').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.filter === preset);
+  });
+
+  applyFilterPreview();
+}
+
+function resetFilters() {
+  resetColorFilters();
+  resetEffectFilters();
+  resetEnhanceFilters();
+}
+
+function resetColorFilters() {
+  filterState.brightness = 0;
+  filterState.contrast = 100;
+  filterState.saturation = 100;
+
+  if ($('filter-brightness')) $('filter-brightness').value = 0;
+  if ($('filter-contrast')) $('filter-contrast').value = 100;
+  if ($('filter-saturation')) $('filter-saturation').value = 100;
+
+  if ($('filter-brightness-val')) $('filter-brightness-val').textContent = '0';
+  if ($('filter-contrast-val')) $('filter-contrast-val').textContent = '100';
+  if ($('filter-saturation-val')) $('filter-saturation-val').textContent = '100';
+
+  applyFilterPreview();
+}
+
+function resetEffectFilters() {
+  filterState.blur = 0;
+  filterState.blurEnabled = false;
+  filterState.sharpen = false;
+  filterState.vignette = false;
+  filterState.vignetteIntensity = 0;
+  filterState.bloom = false;
+  filterState.bloomIntensity = 0;
+
+  if ($('filter-blur')) $('filter-blur').value = 0;
+  if ($('filter-blur-val')) $('filter-blur-val').textContent = '0';
+  if ($('filter-vignette-intensity')) $('filter-vignette-intensity').value = 0;
+  if ($('filter-vignette-val')) $('filter-vignette-val').textContent = '0';
+  if ($('filter-bloom-intensity')) $('filter-bloom-intensity').value = 0;
+  if ($('filter-bloom-val')) $('filter-bloom-val').textContent = '0';
+
+  // Reset effect buttons
+  ['blur', 'sharpen', 'vignette', 'bloom'].forEach(name => {
+    const btn = $('effect-' + name);
+    if (btn) btn.classList.remove('active');
+    const settings = $('settings-' + name);
+    if (settings) settings.classList.add('hidden');
+  });
+
+  // Reset filter preset
+  filterState.filterPreset = 'none';
+  document.querySelectorAll('.filter-preset').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.filter === 'none');
+  });
+
+  applyFilterPreview();
+}
+
+function applyFilterPreview() {
+  const video = $('videoPreview');
+  if (!video) return;
+
+  const filters = [];
+
+  // Brightness: CSS uses 0-2 (1 = normal), our range is -100 to 100 (0 = normal)
+  const brightnessVal = 1 + (filterState.brightness / 100);
+  if (brightnessVal !== 1) filters.push(`brightness(${brightnessVal.toFixed(2)})`);
+
+  // Contrast: CSS uses 0-2+ (1 = normal), our range is 0-200 (100 = normal)
+  const contrastVal = filterState.contrast / 100;
+  if (contrastVal !== 1) filters.push(`contrast(${contrastVal.toFixed(2)})`);
+
+  // Saturation: CSS uses 0-2+ (1 = normal), our range is 0-200 (100 = normal)
+  const saturationVal = filterState.saturation / 100;
+  if (saturationVal !== 1) filters.push(`saturate(${saturationVal.toFixed(2)})`);
+
+  // Blur (only if enabled)
+  if (filterState.blurEnabled && filterState.blur > 0) {
+    filters.push(`blur(${filterState.blur}px)`);
+  }
+
+  // Filter presets
+  switch (filterState.filterPreset) {
+    case 'grayscale':
+      filters.push('grayscale(1)');
+      break;
+    case 'sepia':
+      filters.push('sepia(1)');
+      break;
+    case 'vintage':
+      filters.push('sepia(0.4)', 'contrast(1.1)', 'brightness(0.9)');
+      break;
+    case 'cool':
+      filters.push('saturate(0.9)', 'hue-rotate(15deg)');
+      break;
+    case 'warm':
+      filters.push('saturate(1.2)', 'hue-rotate(-10deg)');
+      break;
+  }
+
+  // Apply CSS filter to video
+  video.style.filter = filters.length > 0 ? filters.join(' ') : '';
+}
+
+function clearFilterPreview() {
+  const video = $('videoPreview');
+  if (video) video.style.filter = '';
 }
 
 // ============ CROP OVERLAY (PORTRAIT) ============
@@ -1176,10 +1831,14 @@ async function process() {
       opts.accurate = $('trim-accurate').value === 'true';
       break;
     case 'thumb':
-      opts.imagePath = $('thumb-image').value;
-      if (!opts.imagePath) {
+      // Check if user selected a frame or uploaded an image
+      if ($('thumb-timestamp').value) {
+        opts.thumbTimestamp = parseFloat($('thumb-timestamp').value);
+      } else if ($('thumb-image').value) {
+        opts.imagePath = $('thumb-image').value;
+      } else {
         $('loading').classList.remove('on');
-        alert('Please select a thumbnail image');
+        alert('Click "Use This Frame" or drop an image');
         return;
       }
       break;
@@ -1198,6 +1857,43 @@ async function process() {
       opts.cropX = portraitCropX;
       opts.resolution = 1080;
       break;
+    case 'filter':
+      // Convert UI values to FFmpeg ranges
+      // Brightness: UI -100 to 100 (0 = normal) -> FFmpeg -1 to 1 (0 = normal)
+      opts.filterBrightness = filterState.brightness / 100;
+      // Contrast: UI 0-200 (100 = normal) -> FFmpeg 0-2 (1 = normal)
+      opts.filterContrast = filterState.contrast / 100;
+      // Saturation: UI 0-200 (100 = normal) -> FFmpeg 0-2 (1 = normal)
+      opts.filterSaturation = filterState.saturation / 100;
+      opts.filterBlur = filterState.blurEnabled ? filterState.blur : 0;
+      opts.filterSharpen = filterState.sharpen;
+      opts.filterVignette = filterState.vignette;
+      // Filter presets
+      opts.filterGrayscale = filterState.filterPreset === 'grayscale';
+      opts.filterSepia = filterState.filterPreset === 'sepia' || filterState.filterPreset === 'vintage';
+
+      // Check if any filter is active
+      const hasFilters = opts.filterBrightness !== 0 ||
+        opts.filterContrast !== 1 ||
+        opts.filterSaturation !== 1 ||
+        opts.filterBlur > 0 ||
+        opts.filterGrayscale ||
+        opts.filterSepia ||
+        opts.filterSharpen ||
+        opts.filterVignette ||
+        filterState.filterPreset !== 'none';
+
+      if (!hasFilters) {
+        $('loading').classList.remove('on');
+        alert('No filters selected');
+        return;
+      }
+      break;
+    case 'caption':
+      opts.srtContent = captionSrtContent;
+      opts.captionFontSize = parseInt($('caption-size').value) || 48;
+      opts.captionPosition = $('caption-position').value || 'bottom';
+      break;
   }
 
   try {
@@ -1205,19 +1901,35 @@ async function process() {
     $('loading').classList.remove('on');
 
     if (res.success) {
-      $('done').classList.add('on', 'ok');
-      $('done').classList.remove('err');
-      $('output').textContent = res.output || 'Done!';
-
-      // Hide continue for GIF export
-      $('continueBtn').classList.toggle('hidden', activeTool === 'togif');
-
       // Mark tool as done
       const toolEl = $('t-' + activeTool);
       if (toolEl) toolEl.classList.add('done');
 
-      // Store output for continue
+      // Store output path
       if (res.output) currentFilePath = res.output;
+
+      // Handle output based on tool type
+      if (activeTool === 'togif') {
+        // GIF - show done modal without continue (different format)
+        $('done').classList.add('on', 'ok');
+        $('done').classList.remove('err');
+        $('output').textContent = res.output || 'Done!';
+        $('continueBtn').classList.add('hidden');
+      } else if (activeTool === 'trim' || activeTool === 'mkv2mp4') {
+        // Trim/MKV - show done modal with continue button
+        $('done').classList.add('on', 'ok');
+        $('done').classList.remove('err');
+        $('output').textContent = res.output || 'Done!';
+        $('continueBtn').classList.remove('hidden');
+        // Store output path for Continue button
+        if (res.output) {
+          currentFilePath = res.output;
+        }
+      } else if (res.output) {
+        // Other tools - auto-load and show toast
+        await loadOutputAsSource(res.output);
+        showToast('Applied: ' + activeTool);
+      }
     } else {
       $('done').classList.add('on', 'err');
       $('done').classList.remove('ok');
@@ -1231,33 +1943,309 @@ async function process() {
   }
 }
 
+/**
+ * Load output video as new source
+ */
+async function loadOutputAsSource(filePath) {
+  try {
+    const res = await postJson('/api/load', { filePath });
+    if (res.success) {
+      info.filePath = filePath;
+      info.fileName = res.fileName || filePath.split(/[\\/]/).pop();
+      info.width = res.width || info.width;
+      info.height = res.height || info.height;
+      info.duration = res.duration || info.duration;
+      info.fps = res.fps || info.fps;
+      info.bitrate = res.bitrate || info.bitrate;
+      info.fileSize = res.fileSize || info.fileSize;
+      currentFilePath = filePath;
+
+      // Update MKV state based on file extension
+      const ext = filePath.split('.').pop()?.toLowerCase();
+      isMkvFile = ext === 'mkv';
+      $('t-mkv2mp4').classList.toggle('hidden', !isMkvFile);
+
+      updateFileDisplay();
+
+      // Update video source
+      const video = $('videoPreview');
+      video.src = '/api/video?t=' + Date.now();
+
+      // Reset and update trim timeline for new duration
+      $('trim-start').value = 0;
+      $('trim-end').value = info.duration;
+      clearMatchMarkers();
+      updateTimeline();
+
+      // Update shrink slider and 60s button
+      $('shrink-duration').max = Math.floor(info.duration);
+      $('shrink-duration').value = Math.min(60, Math.floor(info.duration));
+      updateShrinkLabel();
+      const show60s = info.duration > 60;
+      $('shrink-60-btn').classList.toggle('hidden', !show60s);
+      $('shrink-marker-60').classList.toggle('hidden', !show60s);
+
+      // Update Find Match button visibility (only for short videos)
+      $('find-match-btn').classList.toggle('hidden', info.duration > 60);
+
+      // Update thumbnail aspect ratio
+      updateThumbAspectRatio();
+
+      // Update GIF visibility based on duration
+      $('t-togif').classList.toggle('hidden', info.duration > 15);
+
+      // Update landscape tools visibility
+      // Show Portrait for all videos except 9:16 (already portrait)
+      const aspectRatio = info.width / info.height;
+      const isAlreadyPortrait = Math.abs(aspectRatio - 9/16) < 0.05;
+      $('t-portrait').classList.toggle('hidden', isAlreadyPortrait);
+
+      // Select next uncompleted tool, or first available if all done
+      if (isMkvFile) {
+        selectTool('mkv2mp4');
+      } else {
+        // Prefer uncompleted tools, but fall back to any visible tool
+        const nextTool = document.querySelector('.tool:not(.hidden):not(.disabled):not(.done)') ||
+                         document.querySelector('.tool:not(.hidden):not(.disabled)');
+        if (nextTool) {
+          selectTool(nextTool.id.replace('t-', ''));
+        }
+      }
+
+      return true;
+    }
+  } catch (err) {
+    console.error('Load output error:', err);
+  }
+  return false;
+}
+
+/**
+ * Show a brief toast notification
+ */
+function showToast(message) {
+  let toast = $('toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'toast';
+    toast.className = 'toast';
+    document.body.appendChild(toast);
+  }
+  toast.textContent = message;
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), 2000);
+}
+
+function showLoopTooltip() {
+  // Only show once per session
+  if (window.loopTooltipShown) return;
+  window.loopTooltipShown = true;
+
+  // Wait for trim tab to be visible
+  setTimeout(() => {
+    const btn = $('find-match-btn');
+    if (!btn || btn.classList.contains('hidden')) return;
+
+    let tooltip = document.createElement('div');
+    tooltip.className = 'feature-tooltip';
+    tooltip.innerHTML = '<span>✨</span> Loop detection available for short videos';
+    btn.parentElement.appendChild(tooltip);
+
+    // Position near button
+    setTimeout(() => tooltip.classList.add('show'), 100);
+    setTimeout(() => {
+      tooltip.classList.remove('show');
+      setTimeout(() => tooltip.remove(), 300);
+    }, 4000);
+  }, 500);
+}
+
+function showFeatureBadge(toolId, badgeId, text) {
+  const tool = $(toolId);
+  if (!tool || tool.classList.contains('hidden')) return;
+
+  // Don't show if already exists
+  if ($(badgeId)) return;
+
+  const badge = document.createElement('span');
+  badge.id = badgeId;
+  badge.className = 'feature-badge';
+  badge.textContent = text;
+  tool.appendChild(badge);
+
+  // Animate in
+  setTimeout(() => badge.classList.add('show'), 50);
+}
+
+function hideFeatureBadge(badgeId) {
+  const badge = $(badgeId);
+  if (badge) {
+    badge.classList.remove('show');
+    setTimeout(() => badge.remove(), 300);
+  }
+}
+
+function showLoopBadge() {
+  if (window.loopBadgeDismissed) return;
+  showFeatureBadge('t-trim', 'loop-badge', 'Loop Unlocked');
+}
+
+function hideLoopBadge() {
+  window.loopBadgeDismissed = true;
+  hideFeatureBadge('loop-badge');
+}
+
+function showGifBadge() {
+  if (window.gifBadgeDismissed) return;
+  showFeatureBadge('t-togif', 'gif-badge', 'GIF Unlocked');
+}
+
+function hideGifBadge() {
+  window.gifBadgeDismissed = true;
+  hideFeatureBadge('gif-badge');
+}
+
+function showNoMatchesMessage() {
+  const btn = $('find-match-btn');
+  const msg = $('no-matches-msg');
+
+  if (btn) btn.classList.add('hidden');
+
+  if (!msg) {
+    const noMatchMsg = document.createElement('span');
+    noMatchMsg.id = 'no-matches-msg';
+    noMatchMsg.className = 'no-matches-msg';
+    noMatchMsg.textContent = 'No matching frames found';
+    $('find-match-btn').parentElement.appendChild(noMatchMsg);
+  } else {
+    msg.classList.remove('hidden');
+  }
+}
+
+function hideNoMatchesMessage() {
+  const msg = $('no-matches-msg');
+  const btn = $('find-match-btn');
+
+  if (msg) msg.classList.add('hidden');
+  if (btn && info.duration <= 60) btn.classList.remove('hidden');
+}
+
 async function continueEditing() {
   $('done').classList.remove('on');
 
   if (currentFilePath) {
-    try {
-      const res = await postJson('/api/load', { filePath: currentFilePath });
-      if (res.success) {
-        info.filePath = currentFilePath;
-        info.fileName = res.fileName || currentFilePath.split(/[\\/]/).pop();
-        info.width = res.width || info.width;
-        info.height = res.height || info.height;
-        info.duration = res.duration || info.duration;
-        info.fps = res.fps || info.fps;
-        updateFileDisplay();
-        $('videoPreview').src = '/api/video?t=' + Date.now();
-      }
-    } catch (err) {
-      console.error('Continue error:', err);
+    // Show loading animation
+    $('loading').classList.add('on');
+    $('loading').querySelector('span').textContent = 'Loading video...';
+
+    await loadOutputAsSource(currentFilePath);
+
+    $('loading').classList.remove('on');
+  }
+}
+
+// ============ CAPTION TOOL ============
+
+// Default test SRT content
+const DEFAULT_SRT = `1
+00:00:00,500 --> 00:00:03,000
+This is a sample caption
+
+2
+00:00:03,500 --> 00:00:06,500
+With karaoke style highlighting
+
+3
+00:00:07,000 --> 00:00:10,000
+Words light up as they play
+`;
+
+let captionSrtContent = DEFAULT_SRT;
+let captionUsingDefault = true;
+
+function initCaptionTool() {
+  // Initialize segmented button handlers
+  ['captionPosition', 'captionSize'].forEach(groupId => {
+    const group = $(groupId);
+    if (!group) return;
+    group.querySelectorAll('button').forEach(btn => {
+      btn.onclick = () => {
+        group.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const hiddenId = groupId === 'captionPosition' ? 'caption-position' : 'caption-size';
+        $(hiddenId).value = btn.dataset.val;
+        updateCaptionPreview();
+      };
+    });
+  });
+
+  // Initialize drop zone
+  const dropZone = $('srtDropZone');
+  dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+  dropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropZone.classList.remove('dragover');
+    if (e.dataTransfer.files.length) {
+      const input = $('srtFileInput');
+      input.files = e.dataTransfer.files;
+      handleSrtFile(input);
+    }
+  });
+
+  updateCaptionPreview();
+}
+
+function handleSrtFile(input) {
+  if (input.files && input.files[0]) {
+    const file = input.files[0];
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      captionSrtContent = e.target.result;
+      captionUsingDefault = false;
+      $('srtFileName').textContent = file.name;
+      $('srtDropZone').classList.add('has-file');
+      $('captionStatus').textContent = `Loaded: ${file.name}`;
+      updateCaptionPreview();
+    };
+    reader.readAsText(file);
+  }
+}
+
+function updateCaptionPreview() {
+  const overlay = $('captionOverlay');
+  const textEl = $('captionOverlayText');
+  if (!overlay || !textEl) return;
+
+  // Parse first subtitle for preview
+  const lines = captionSrtContent.split('\n');
+  let previewText = 'Sample caption text';
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].includes('-->') && i + 1 < lines.length) {
+      previewText = lines[i + 1].trim();
+      break;
     }
   }
 
-  // Reset done state on tools
-  document.querySelectorAll('.tool.done').forEach(t => t.classList.remove('done'));
+  // Add highlight to first word
+  const words = previewText.split(' ');
+  if (words.length > 0) {
+    words[0] = `<span class="highlight">${words[0]}</span>`;
+  }
+  textEl.innerHTML = words.join(' ');
 
-  // Select first available tool
-  const firstTool = document.querySelector('.tool:not(.hidden):not(.disabled)');
-  if (firstTool) selectTool(firstTool.id.replace('t-', ''));
+  // Update position class
+  const position = $('caption-position')?.value || 'bottom';
+  overlay.classList.remove('pos-top', 'pos-center');
+  if (position === 'top') overlay.classList.add('pos-top');
+  else if (position === 'center') overlay.classList.add('pos-center');
+
+  // Scale font size based on video preview height
+  const size = parseInt($('caption-size')?.value) || 48;
+  const video = $('videoPreview');
+  const scale = video ? video.clientHeight / 720 : 0.4;
+  const previewSize = Math.round(size * scale);
+  textEl.style.fontSize = Math.max(12, previewSize) + 'px';
 }
 
 // Initialize on load
