@@ -30,7 +30,9 @@
       </div>
       <div class="hd-meta">
         <div>File<b id="fileName">-</b></div>
-        <div>Size<b id="size">-</b></div>
+        <div>Res<b id="resolution">-</b></div>
+        <div>Ratio<b id="aspectRatio">-</b></div>
+        <div>Size<b id="fileSize">-</b></div>
         <div>Duration<b id="duration">-</b></div>
         <div>FPS<b id="fps">-</b></div>
       </div>
@@ -62,6 +64,14 @@
           <div class="tool" id="t-audio" onclick="selectTool('audio')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
             <span>Add Audio</span>
+          </div>
+          <div class="tool" id="t-filter" onclick="selectTool('filter')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+            <span>Adjust</span>
+          </div>
+          <div class="tool" id="t-caption" onclick="selectTool('caption')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M7 15h4M15 15h2M7 11h2M13 11h4"/></svg>
+            <span>Captions</span>
           </div>
           <div class="tool" id="t-thumb" onclick="selectTool('thumb')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
@@ -110,7 +120,12 @@
                 </div>
               </div>
             </div>
-            <div class="hotkey-hint">Space: Play | J/K/L: Speed | ←→: 5s | M: Mute</div>
+            <div class="hotkey-hint">Space: Play | ←→: 5s | Alt+←→: Frame | M: Mute</div>
+            <div class="caption-overlay hidden" id="captionOverlay">
+              <div class="caption-text" id="captionOverlayText">Sample caption text</div>
+            </div>
+            <div class="vignette-overlay hidden" id="vignetteOverlay"></div>
+            <div class="bloom-overlay hidden" id="bloomOverlay"></div>
             <div class="crop-overlay" id="cropOverlay">
               <div class="crop-side crop-left" id="cropLeft"></div>
               <div class="crop-window" id="cropWindow">
@@ -124,6 +139,10 @@
         </div>
 
         <div class="opts-area">
+          <div class="mkv-notice" id="mkv-notice">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            <span>MKV format not supported.<br>Convert to MP4 first.</span>
+          </div>
           <div class="opts" id="opts-compress">
             <div class="opts-row"><label>Quality</label>
               <div class="preset-btns">
@@ -177,14 +196,28 @@
           </div>
 
           <div class="opts" id="opts-thumb">
-            <div class="opts-row">
-              <div class="thumb-preview-wrap" id="thumbPreviewWrap" onclick="$('thumbFileInput').click()">
-                <img id="thumbPreview" src="" alt="">
-                <div class="thumb-overlay"><span id="thumbFileName">Click to select thumbnail</span></div>
+            <div class="thumb-row">
+              <div class="thumb-option" id="thumbCapture" onclick="captureCurrentFrame()">
+                <div class="thumb-preview-box">
+                  <canvas id="thumbCanvas" width="120" height="68"></canvas>
+                </div>
+                <span class="thumb-label">Use current frame</span>
+                <span class="thumb-info" id="thumbFrameTime">0:00.0</span>
+              </div>
+              <div class="thumb-divider">or</div>
+              <div class="thumb-option" id="thumbUpload" onclick="handleThumbClick()">
+                <div class="thumb-preview-box">
+                  <img id="thumbPreview" src="" alt="">
+                  <span class="thumb-drop-hint" id="thumbDropHint">Drop or click</span>
+                </div>
+                <span class="thumb-label">Use custom image</span>
+                <a href="#" class="thumb-replace" id="thumbReplace" onclick="event.stopPropagation();$('thumbFileInput').click()">Replace</a>
                 <input type="file" id="thumbFileInput" accept="image/*" style="display:none" onchange="handleThumbFile(this)">
               </div>
             </div>
             <input type="hidden" id="thumb-image" value="">
+            <input type="hidden" id="thumb-timestamp" value="">
+            <input type="hidden" id="thumb-source" value="video">
           </div>
 
           <div class="opts" id="opts-audio">
@@ -209,29 +242,136 @@
             <div class="opts-row" style="justify-content:center"><span style="font-size:11px;color:var(--txt2)">Drag to select 9:16 crop area</span></div>
           </div>
 
-          <div class="opts" id="opts-trim">
-            <div class="timeline-container" id="timeline-container">
-              <div class="timeline-ticks" id="timeline-ticks"></div>
-              <div class="timeline-viewport" id="timeline-viewport">
-                <div class="timeline" id="timeline">
-                  <div class="timeline-track">
-                    <div class="timeline-range" id="timeline-range"></div>
-                    <div id="match-markers"></div>
-                    <div class="timeline-handle timeline-start" id="handle-start"></div>
-                    <div class="timeline-handle timeline-end" id="handle-end"></div>
+          <div class="opts" id="opts-filter">
+            <div class="adjust-panel">
+              <div class="adjust-section">
+                <div class="adjust-header">
+                  <span>Adjustments</span>
+                  <button class="reset-btn" onclick="resetColorFilters()" title="Reset">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                  </button>
+                </div>
+                <div class="adjust-sliders">
+                  <div class="adjust-row">
+                    <label>Bright</label>
+                    <input type="range" id="filter-brightness" min="-100" max="100" value="0" oninput="updateFilterPreview()">
+                    <span id="filter-brightness-val">0</span>
                   </div>
-                  <div class="timeline-playhead" id="timeline-playhead"></div>
+                  <div class="adjust-row">
+                    <label>Contrast</label>
+                    <input type="range" id="filter-contrast" min="0" max="200" value="100" oninput="updateFilterPreview()">
+                    <span id="filter-contrast-val">100</span>
+                  </div>
+                  <div class="adjust-row">
+                    <label>Saturate</label>
+                    <input type="range" id="filter-saturation" min="0" max="200" value="100" oninput="updateFilterPreview()">
+                    <span id="filter-saturation-val">100</span>
+                  </div>
                 </div>
               </div>
-              <div class="timeline-zoom-hint">Scroll to zoom</div>
+              <div class="adjust-section">
+                <div class="adjust-header">
+                  <span>Effects</span>
+                  <button class="reset-btn" onclick="resetEffectFilters()" title="Reset">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                  </button>
+                </div>
+                <div class="effect-toggles">
+                  <button class="effect-btn" id="effect-blur" onclick="toggleEffect('blur')">
+                    <span class="effect-icon">◐</span>Blur
+                  </button>
+                  <button class="effect-btn" id="effect-sharpen" onclick="toggleEffect('sharpen')">
+                    <span class="effect-icon">◆</span>Sharpen
+                  </button>
+                  <button class="effect-btn" id="effect-vignette" onclick="toggleEffect('vignette')">
+                    <span class="effect-icon">◯</span>Vignette
+                  </button>
+                  <button class="effect-btn" id="effect-bloom" onclick="toggleEffect('bloom')">
+                    <span class="effect-icon">✦</span>Bloom
+                  </button>
+                </div>
+                <div class="effect-settings hidden" id="settings-blur">
+                  <div class="effect-label">Blur Amount</div>
+                  <div class="adjust-row">
+                    <input type="range" id="filter-blur" min="0" max="10" value="0" step="0.5" oninput="updateFilterPreview()">
+                    <span id="filter-blur-val">0</span>
+                  </div>
+                </div>
+                <div class="effect-settings hidden" id="settings-vignette">
+                  <div class="effect-label">Vignette (render only)</div>
+                  <div class="adjust-row">
+                    <input type="range" id="filter-vignette-intensity" min="0" max="100" value="0" oninput="updateFilterPreview()">
+                    <span id="filter-vignette-val">0</span>
+                  </div>
+                </div>
+                <div class="effect-settings hidden" id="settings-bloom">
+                  <div class="effect-label">Bloom (render only)</div>
+                  <div class="adjust-row">
+                    <input type="range" id="filter-bloom-intensity" min="0" max="100" value="0" oninput="updateFilterPreview()">
+                    <span id="filter-bloom-val">0</span>
+                  </div>
+                </div>
+              </div>
+              <div class="adjust-section">
+                <div class="adjust-header"><span>Filter</span></div>
+                <div class="filter-presets">
+                  <button class="filter-preset active" data-filter="none" onclick="selectFilterPreset('none')">None</button>
+                  <button class="filter-preset" data-filter="grayscale" onclick="selectFilterPreset('grayscale')">B&W</button>
+                  <button class="filter-preset" data-filter="sepia" onclick="selectFilterPreset('sepia')">Sepia</button>
+                  <button class="filter-preset" data-filter="vintage" onclick="selectFilterPreset('vintage')">Vintage</button>
+                  <button class="filter-preset" data-filter="cool" onclick="selectFilterPreset('cool')">Cool</button>
+                  <button class="filter-preset" data-filter="warm" onclick="selectFilterPreset('warm')">Warm</button>
+                </div>
+              </div>
             </div>
-            <div class="trim-info-bar" id="trim-controls">
+          </div>
+
+          <div class="opts" id="opts-caption">
+            <div class="caption-panel">
+              <div class="caption-upload">
+                <div class="drop-zone" id="srtDropZone" onclick="$('srtFileInput').click()">
+                  <span id="srtFileName">Drop .srt file or click to browse</span>
+                  <input type="file" id="srtFileInput" accept=".srt" style="display:none" onchange="handleSrtFile(this)">
+                </div>
+              </div>
+              <div class="caption-settings">
+                <div class="caption-row">
+                  <label>Position</label>
+                  <div class="seg-btns caption-pos-btns" id="captionPosition">
+                    <button type="button" data-val="top">Top</button>
+                    <button type="button" data-val="center">Center</button>
+                    <button type="button" data-val="bottom" class="active">Bottom</button>
+                  </div>
+                </div>
+                <div class="caption-row">
+                  <label>Size</label>
+                  <div class="seg-btns caption-size-btns" id="captionSize">
+                    <button type="button" data-val="36">S</button>
+                    <button type="button" data-val="48" class="active">M</button>
+                    <button type="button" data-val="64">L</button>
+                  </div>
+                </div>
+              </div>
+              <div class="caption-info">
+                <span id="captionStatus">Using test subtitle</span>
+              </div>
+            </div>
+            <input type="hidden" id="caption-srt" value="">
+            <input type="hidden" id="caption-position" value="bottom">
+            <input type="hidden" id="caption-size" value="48">
+          </div>
+
+          <div class="opts opts-trim" id="opts-trim">
+            <div class="trim-header">
               <div class="trim-times">
                 <span class="trim-time-badge" id="trim-start-badge">0:00</span>
                 <span class="trim-arrow">→</span>
                 <span class="trim-time-badge" id="trim-end-badge">0:00</span>
-                <span class="trim-duration" id="trim-duration-badge">0.0s</span>
               </div>
+              <span class="trim-duration" id="trim-duration-badge">0.0s</span>
+              <button class="auto-zoom-btn active" id="auto-zoom-btn" onclick="toggleAutoZoom()" title="Auto-zoom to marker on hover">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/><path d="M11 8v6M8 11h6"/></svg>
+              </button>
               <div class="trim-actions">
                 <span id="match-info" class="match-info hidden"></span>
                 <button type="button" class="match-btn hidden" id="cycle-match-btn" onclick="cycleMatch()">Next</button>
@@ -241,9 +381,25 @@
                 </button>
               </div>
             </div>
+            <div class="timeline-wrap" id="trim-controls">
+              <div class="timeline-ticks" id="timeline-ticks"></div>
+              <div class="timeline-viewport" id="timeline-viewport">
+                <div class="timeline" id="timeline">
+                  <div class="timeline-track"></div>
+                  <div class="timeline-dim-left" id="timeline-dim-left"></div>
+                  <div class="timeline-dim-right" id="timeline-dim-right"></div>
+                  <div class="timeline-range" id="timeline-range"></div>
+                  <div id="match-markers"></div>
+                  <div class="timeline-handle timeline-start" id="handle-start"></div>
+                  <div class="timeline-handle timeline-end" id="handle-end"></div>
+                  <div class="timeline-playhead" id="timeline-playhead"></div>
+                </div>
+              </div>
+              <div class="timeline-zoom-hint">Scroll to zoom · Drag to pan</div>
+            </div>
             <div class="trim-loading hidden" id="trim-loading">
-              <dotlottie-player src="/bouncing-fruits.lottie" background="transparent" speed="1" style="width:120px;height:120px" loop autoplay></dotlottie-player>
-              <span>Finding matching frames...</span>
+              <dotlottie-player src="/bouncing-fruits.lottie" background="transparent" speed="1" style="width:80px;height:80px" loop autoplay></dotlottie-player>
+              <span>Finding loops...</span>
             </div>
             <input type="hidden" id="trim-start" value="0">
             <input type="hidden" id="trim-end" value="10">
@@ -286,13 +442,6 @@
               <button type="button" data-val="slow">Quality</button>
             </div>
           </div>
-          <div class="modal-row">
-            <label>Codec</label>
-            <div class="seg-btns" id="settingsCompressCodec">
-              <button type="button" data-val="h264" class="active">H.264</button>
-              <button type="button" data-val="hevc">HEVC</button>
-            </div>
-          </div>
         </div>
         <div class="modal-section">
           <div class="modal-section-title">GIF</div>
@@ -325,17 +474,6 @@
           </div>
         </div>
         <div class="modal-section">
-          <div class="modal-section-title">Shrink</div>
-          <div class="modal-row">
-            <label>Target</label>
-            <div class="seg-btns" id="settingsShrinkTarget">
-              <button type="button" data-val="30">30s</button>
-              <button type="button" data-val="60" class="active">60s</button>
-              <button type="button" data-val="90">90s</button>
-            </div>
-          </div>
-        </div>
-        <div class="modal-section">
           <div class="modal-section-title">Trim</div>
           <div class="modal-row">
             <label>Mode</label>
@@ -349,8 +487,8 @@
           <div class="modal-section-title" style="margin-bottom:4px">Hotkeys</div>
           <div class="hotkey-compact">
             <span><b>Space</b> Play</span>
-            <span><b>J/K/L</b> Speed</span>
-            <span><b>←→</b> Seek</span>
+            <span><b>←→</b> 5s</span>
+            <span><b>Alt+←→</b> Frame</span>
             <span><b>M</b> Mute</span>
           </div>
         </div>

@@ -271,8 +271,8 @@ export interface EndMatch {
 }
 
 /**
- * Find frames from the END of video that match a reference frame (e.g., first frame)
- * Used for creating seamless loops - find where the video returns to a similar state
+ * Find frames FORWARD from a reference time that match the reference frame
+ * Searches from referenceTime + minGap to end of video
  */
 export async function findMatchesFromEnd(
   inputPath: string,
@@ -283,32 +283,29 @@ export async function findMatchesFromEnd(
 ): Promise<EndMatch[]> {
   const fps = 4;
   const frameSize = 48;
-  const searchSeconds = Math.min(20, duration - minGap); // Search last 20 seconds
 
-  if (searchSeconds < 2) {
+  // Search forward from reference time + minGap to end of video
+  const searchStart = referenceTime + minGap;
+  const searchDuration = duration - searchStart;
+
+  if (searchDuration < 1) {
     return [];
   }
 
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'vidlet_match_'));
-  logToFile(`Match: Finding matches from end in ${inputPath}, ref=${referenceTime}s, duration=${duration}s`);
+  logToFile(`Match: Finding matches forward from ${referenceTime}s, searching ${searchStart}s to ${duration}s`);
 
   try {
-    // Extract reference frame
+    // Extract reference frame at the start position
     const refFramePath = path.join(tempDir, 'ref.png');
     const refArgs = [
       '-y',
-      '-ss',
-      referenceTime.toString(),
-      '-i',
-      inputPath,
-      '-vframes',
-      '1',
-      '-vf',
-      `scale=${frameSize}:${frameSize}`,
+      '-ss', referenceTime.toString(),
+      '-i', inputPath,
+      '-vframes', '1',
+      '-vf', `scale=${frameSize}:${frameSize}`,
       refFramePath,
-      '-hide_banner',
-      '-loglevel',
-      'error',
+      '-hide_banner', '-loglevel', 'error',
     ];
 
     let result = await execa('ffmpeg', refArgs, { reject: false, all: true });
@@ -318,64 +315,190 @@ export async function findMatchesFromEnd(
 
     const refFrame = await fs.readFile(refFramePath);
 
-    // Extract frames from the end portion of the video
-    const startTime = Math.max(minGap, duration - searchSeconds);
-    const endArgs = [
+    // Extract frames forward from searchStart to end of video
+    const searchArgs = [
       '-y',
-      '-ss',
-      startTime.toString(),
-      '-i',
-      inputPath,
-      '-t',
-      searchSeconds.toString(),
-      '-vf',
-      `fps=${fps},scale=${frameSize}:${frameSize}`,
-      '-f',
-      'image2',
-      path.join(tempDir, 'end_%04d.png'),
-      '-hide_banner',
-      '-loglevel',
-      'error',
+      '-ss', searchStart.toString(),
+      '-i', inputPath,
+      '-t', searchDuration.toString(),
+      '-vf', `fps=${fps},scale=${frameSize}:${frameSize}`,
+      '-f', 'image2',
+      path.join(tempDir, 'frame_%04d.png'),
+      '-hide_banner', '-loglevel', 'error',
     ];
 
-    result = await execa('ffmpeg', endArgs, { reject: false, all: true });
+    result = await execa('ffmpeg', searchArgs, { reject: false, all: true });
     if (result.exitCode !== 0) {
-      throw new Error(`End frames extraction failed: ${result.all || result.stderr}`);
+      throw new Error(`Forward frames extraction failed: ${result.all || result.stderr}`);
     }
 
     const files = await fs.readdir(tempDir);
     const framePaths = files
-      .filter((f) => f.startsWith('end_') && f.endsWith('.png'))
+      .filter((f) => f.startsWith('frame_') && f.endsWith('.png'))
       .sort()
       .map((f) => path.join(tempDir, f));
 
-    logToFile(`Match: Extracted ${framePaths.length} end frames`);
+    logToFile(`Match: Extracted ${framePaths.length} frames to search`);
 
     if (framePaths.length === 0) {
       return [];
     }
 
-    // Compare reference frame against end frames
+    // Compare reference frame against all forward frames
     const matches: EndMatch[] = [];
 
     for (let i = 0; i < framePaths.length; i++) {
-      const endFrame = await fs.readFile(framePaths[i]);
-      const score = compareFrames(refFrame, endFrame);
+      const frame = await fs.readFile(framePaths[i]);
+      const score = compareFrames(refFrame, frame);
 
       if (score >= threshold) {
-        const frameTime = startTime + i / fps;
+        const frameTime = searchStart + i / fps;
         matches.push({ time: frameTime, score });
       }
     }
 
-    // Sort by score descending, keep top 5
-    matches.sort((a, b) => b.score - a.score);
-    const topMatches = matches.slice(0, 5);
+    // Sort by time (earliest first), then by score for same-time frames
+    matches.sort((a, b) => a.time - b.time || b.score - a.score);
 
-    logToFile(`Match: Found ${topMatches.length} matches above threshold ${threshold}`);
-    return topMatches;
+    // Keep top 5 unique time points (avoid clustering)
+    const uniqueMatches: EndMatch[] = [];
+    for (const match of matches) {
+      const tooClose = uniqueMatches.some(m => Math.abs(m.time - match.time) < 0.5);
+      if (!tooClose) {
+        uniqueMatches.push(match);
+        if (uniqueMatches.length >= 5) break;
+      }
+    }
+
+    logToFile(`Match: Found ${uniqueMatches.length} matches above threshold ${threshold}`);
+    return uniqueMatches;
   } catch (err) {
     logToFile(`Match: Error in findMatchesFromEnd: ${(err as Error).message}`);
+    throw err;
+  } finally {
+    try {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    } catch {
+      // Ignore cleanup errors
+    }
+  }
+}
+
+/**
+ * Find the best loop starting point within a time range
+ * Returns the start time that has the best matching end point
+ */
+export async function findBestLoopStart(
+  inputPath: string,
+  duration: number,
+  searchRange = 5, // Search first N seconds
+  minGap = 3,
+  threshold = 0.90
+): Promise<{ startTime: number; endTime: number; score: number } | null> {
+  const fps = 4;
+  const frameSize = 48;
+  const searchStart = Math.min(searchRange, duration - minGap);
+
+  if (searchStart < 0.5) {
+    return null;
+  }
+
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'vidlet_beststart_'));
+  logToFile(`BestStart: Searching in first ${searchStart}s of ${inputPath}`);
+
+  try {
+    // Extract frames from the start of the video (first N seconds)
+    const startFramesDir = path.join(tempDir, 'start');
+    await fs.mkdir(startFramesDir);
+
+    const startArgs = [
+      '-y',
+      '-i', inputPath,
+      '-t', searchStart.toString(),
+      '-vf', `fps=${fps},scale=${frameSize}:${frameSize}`,
+      '-f', 'image2',
+      path.join(startFramesDir, 'frame_%04d.png'),
+      '-hide_banner', '-loglevel', 'error',
+    ];
+
+    await execa('ffmpeg', startArgs, { reject: false });
+
+    const startFiles = await fs.readdir(startFramesDir);
+    const startFramePaths = startFiles
+      .filter((f) => f.startsWith('frame_') && f.endsWith('.png'))
+      .sort()
+      .map((f) => path.join(startFramesDir, f));
+
+    if (startFramePaths.length === 0) {
+      return null;
+    }
+
+    // Extract frames from the end of the video (last 20 seconds)
+    const endSearchDuration = Math.min(20, duration - searchRange - minGap);
+    if (endSearchDuration < 2) {
+      return null;
+    }
+
+    const endStartTime = duration - endSearchDuration;
+    const endFramesDir = path.join(tempDir, 'end');
+    await fs.mkdir(endFramesDir);
+
+    const endArgs = [
+      '-y',
+      '-ss', endStartTime.toString(),
+      '-i', inputPath,
+      '-t', endSearchDuration.toString(),
+      '-vf', `fps=${fps},scale=${frameSize}:${frameSize}`,
+      '-f', 'image2',
+      path.join(endFramesDir, 'frame_%04d.png'),
+      '-hide_banner', '-loglevel', 'error',
+    ];
+
+    await execa('ffmpeg', endArgs, { reject: false });
+
+    const endFiles = await fs.readdir(endFramesDir);
+    const endFramePaths = endFiles
+      .filter((f) => f.startsWith('frame_') && f.endsWith('.png'))
+      .sort()
+      .map((f) => path.join(endFramesDir, f));
+
+    if (endFramePaths.length === 0) {
+      return null;
+    }
+
+    // Load all frames
+    const startFrames = await Promise.all(startFramePaths.map((fp) => fs.readFile(fp)));
+    const endFrames = await Promise.all(endFramePaths.map((fp) => fs.readFile(fp)));
+
+    // Find best match: for each start frame, find best matching end frame
+    let bestMatch: { startTime: number; endTime: number; score: number } | null = null;
+
+    for (let si = 0; si < startFrames.length; si++) {
+      const startTime = si / fps;
+
+      for (let ei = 0; ei < endFrames.length; ei++) {
+        const endTime = endStartTime + ei / fps;
+        const gap = endTime - startTime;
+
+        if (gap < minGap) continue;
+
+        const score = compareFrames(startFrames[si], endFrames[ei]);
+
+        if (score >= threshold && (!bestMatch || score > bestMatch.score)) {
+          bestMatch = { startTime, endTime, score };
+        }
+      }
+    }
+
+    if (bestMatch) {
+      logToFile(`BestStart: Found best match at ${bestMatch.startTime.toFixed(2)}s -> ${bestMatch.endTime.toFixed(2)}s (${(bestMatch.score * 100).toFixed(0)}%)`);
+    } else {
+      logToFile(`BestStart: No matches found above threshold ${threshold}`);
+    }
+
+    return bestMatch;
+  } catch (err) {
+    logToFile(`BestStart: Error: ${(err as Error).message}`);
     throw err;
   } finally {
     try {

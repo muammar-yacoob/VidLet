@@ -6,17 +6,11 @@
 
 <div align="center">
 
-```
- _    ___     ____         __
-| |  / (_)___/ / /   ___  / /_
-| | / / / __  / /   / _ \/ __/
-| |/ / / /_/ / /___/  __/ /_
-|___/_/\__,_/_____/\___/\__/  🎬
-```
+<img src="src/icons/tv.png" alt="VidLet" width="120">
 
-# Video Utility Toolkit
+# VidLet
 
-**Right-click context menu tools for Windows • Powered by WSL & FFmpeg**
+**Video utility toolkit with Windows shell integration**
 
 [![npm version](https://img.shields.io/npm/v/@spark-apps/vidlet?color=cb3837&logo=npm)](https://www.npmjs.com/package/@spark-apps/vidlet)
 [![Buy Me Coffee](https://img.shields.io/badge/Buy%20Me-☕%20Coffee-green?logo=buy-me-a-coffee&logoColor=white)][coffee-link]
@@ -61,37 +55,26 @@ vidlet install
 
 Follow the on-screen instructions to import the registry file (requires Admin).
 
+Once installed, right-click any video file in Windows Explorer to access VidLet tools directly.
+
 ---
 
 ## 💻 CLI Usage
 
+<div align="center">
+<img src="res/imgs/cli logo.png" alt="VidLet CLI" width="280">
+</div>
+
 ```bash
-# Show help with gradient banner
-vidlet --help
-
-# Compress video
-vidlet compress video.mp4
-vidlet compress video.mp4 --bitrate 2000 --preset fast
-
-# Convert to GIF
-vidlet togif video.mp4
-vidlet togif video.mp4 --fps 20 --width 640
-
-# Convert MKV to MP4
-vidlet mkv2mp4 video.mkv
-vidlet mkv2mp4 video.mkv --no-copy  # Re-encode
-
-# Shrink for Shorts (default: 59.5s)
-vidlet shrink video.mp4
-vidlet shrink video.mp4 --target 30
-
-# Set thumbnail
-vidlet thumb video.mp4 --timestamp 00:00:05
-
-# Create seamless loop
-vidlet loop video.mp4
-vidlet loop video.mp4 --threshold 0.95 --crossfade 0.3
+vidlet compress video.mp4 -b 2000    # Reduce to 2000 kbps
+vidlet togif video.mp4 -f 15 -w 480  # GIF at 15fps, 480px wide
+vidlet mkv2mp4 video.mkv             # Convert MKV to MP4
+vidlet shrink video.mp4 -t 59        # Speed up to 59 seconds
+vidlet loop video.mp4 -s 5 -e 15     # Trim between 5s and 15s
+vidlet thumb video.mp4 cover.jpg     # Embed cover.jpg as thumbnail
 ```
+
+Run `vidlet --help` to see all available options.
 
 ---
 

@@ -77,8 +77,7 @@ function openAppWindow(url: string): void {
 		windowsHide: true,
 	}).unref();
 
-	// Signal ready after delay to close loading HTA
-	setTimeout(signalReady, 500);
+	// Note: signalReady is called by frontend via /api/ready when app is actually loaded
 }
 
 export interface VideoInfo {
@@ -89,6 +88,7 @@ export interface VideoInfo {
 	duration: number;
 	fps: number;
 	bitrate: number;
+	fileSize: number;
 }
 
 export interface GuiServerOptions {
@@ -109,7 +109,7 @@ export interface GuiServerOptions {
 		error?: string;
 		logs: Array<{ type: string; message: string }>;
 	}>;
-	onLoadVideo?: (data: { fileName: string; data: string; mimeType: string }) => Promise<{
+	onLoadVideo?: (data: { filePath: string }) => Promise<{
 		success: boolean;
 		filePath?: string;
 		fileName?: string;
@@ -127,6 +127,13 @@ export interface GuiServerOptions {
 	onFindMatches?: (referenceTime: number, minGap: number) => Promise<{
 		success: boolean;
 		matches?: Array<{ time: number; score: number }>;
+		error?: string;
+	}>;
+	onFindBestStart?: (searchRange: number, minGap: number) => Promise<{
+		success: boolean;
+		startTime?: number;
+		endTime?: number;
+		score?: number;
 		error?: string;
 	}>;
 }
@@ -259,6 +266,22 @@ export function startGuiServer(options: GuiServerOptions): Promise<boolean> {
 				const referenceTime = req.body.referenceTime ?? 0;
 				const minGap = req.body.minGap ?? 3;
 				const result = await options.onFindMatches(referenceTime, minGap);
+				res.json(result);
+			} catch (err) {
+				res.json({ success: false, error: (err as Error).message });
+			}
+		});
+
+		// Find best loop starting point in a time range
+		app.post('/api/find-best-start', async (req, res) => {
+			if (!options.onFindBestStart) {
+				res.json({ success: false, error: 'Best start finding not supported' });
+				return;
+			}
+			try {
+				const searchRange = req.body.searchRange ?? 5;
+				const minGap = req.body.minGap ?? 3;
+				const result = await options.onFindBestStart(searchRange, minGap);
 				res.json(result);
 			} catch (err) {
 				res.json({ success: false, error: (err as Error).message });

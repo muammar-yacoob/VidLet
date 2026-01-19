@@ -9,7 +9,7 @@ import { getVideoInfo } from '../lib/ffmpeg.js';
 import { startGuiServer, type VideoInfo } from '../lib/gui-server.js';
 import { logToFile } from '../lib/logger.js';
 import { compress } from './compress.js';
-import { findAllLoopPoints, findMatchesFromEnd } from './loop.js';
+import { findAllLoopPoints, findMatchesFromEnd, findBestLoopStart } from './loop.js';
 import { mkv2mp4 } from './mkv2mp4.js';
 import { shrink } from './shrink.js';
 import { thumb } from './thumb.js';
@@ -17,6 +17,8 @@ import { togif } from './togif.js';
 import { trim, trimAccurate } from './trim.js';
 import { portrait } from './shorts.js';
 import { addAudio } from './audio.js';
+import { filter } from './filter.js';
+import { caption } from './caption.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -62,6 +64,7 @@ interface ToolOptions {
 	targetDuration?: number;
 	// Thumb options
 	imagePath?: string;
+	thumbTimestamp?: number;
 	// Trim options
 	trimStart?: number;
 	trimEnd?: number;
@@ -74,6 +77,19 @@ interface ToolOptions {
 	audioPath?: string;
 	audioVolume?: number;
 	audioMix?: boolean;
+	// Filter options
+	filterBrightness?: number;
+	filterContrast?: number;
+	filterSaturation?: number;
+	filterGrayscale?: boolean;
+	filterSepia?: boolean;
+	filterBlur?: number;
+	filterSharpen?: boolean;
+	filterVignette?: boolean;
+	// Caption options
+	srtContent?: string;
+	captionFontSize?: number;
+	captionPosition?: 'bottom' | 'center' | 'top';
 }
 
 /** Process result */
@@ -157,13 +173,14 @@ async function runTool(input: string, opts: ToolOptions): Promise<ProcessResult>
 			}
 
 			case 'thumb': {
-				if (!opts.imagePath) {
-					throw new Error('No image path provided for thumbnail');
+				if (!opts.imagePath && opts.thumbTimestamp === undefined) {
+					throw new Error('No image or frame timestamp provided for thumbnail');
 				}
 				logs.push({ type: 'info', message: 'Embedding thumbnail...' });
 				output = await thumb({
 					input: actualInput,
 					image: opts.imagePath,
+					timestamp: opts.thumbTimestamp,
 				});
 				logs.push({ type: 'success', message: 'Thumbnail set!' });
 				break;
@@ -219,6 +236,38 @@ async function runTool(input: string, opts: ToolOptions): Promise<ProcessResult>
 				break;
 			}
 
+			case 'filter': {
+				logs.push({ type: 'info', message: 'Applying filters...' });
+				output = await filter({
+					input: actualInput,
+					brightness: opts.filterBrightness,
+					contrast: opts.filterContrast,
+					saturation: opts.filterSaturation,
+					grayscale: opts.filterGrayscale,
+					sepia: opts.filterSepia,
+					blur: opts.filterBlur,
+					sharpen: opts.filterSharpen,
+					vignette: opts.filterVignette,
+				});
+				logs.push({ type: 'success', message: 'Filters applied!' });
+				break;
+			}
+
+			case 'caption': {
+				if (!opts.srtContent) {
+					throw new Error('No subtitle content provided');
+				}
+				logs.push({ type: 'info', message: 'Adding captions...' });
+				output = await caption({
+					input: actualInput,
+					srtContent: opts.srtContent,
+					fontSize: opts.captionFontSize,
+					position: opts.captionPosition,
+				});
+				logs.push({ type: 'success', message: 'Captions added!' });
+				break;
+			}
+
 			default:
 				throw new Error(`Unknown tool: ${toolId}`);
 		}
@@ -238,6 +287,7 @@ async function runTool(input: string, opts: ToolOptions): Promise<ProcessResult>
  */
 async function getVideoInfoForGui(filePath: string): Promise<VideoInfo> {
 	const info = await getVideoInfo(filePath);
+	const stats = fs.statSync(filePath);
 	return {
 		filePath,
 		fileName: path.basename(filePath),
@@ -246,6 +296,7 @@ async function getVideoInfoForGui(filePath: string): Promise<VideoInfo> {
 		duration: info.duration,
 		fps: info.fps ?? 30,
 		bitrate: info.bitrate ?? 0,
+		fileSize: stats.size,
 	};
 }
 
@@ -273,18 +324,52 @@ export async function runGUI(input: string): Promise<boolean> {
 		homepage: getHomepage(),
 	};
 
+	// Track current input for chained operations
+	let currentInput = input;
+
 	return startGuiServer({
 		htmlFile: 'vidlet.html',
 		title: 'VidLet',
 		videoInfo,
 		defaults,
 		onProcess: async (opts) => {
-			return runTool(input, opts as ToolOptions);
+			return runTool(currentInput, opts as ToolOptions);
+		},
+		onLoadVideo: async (data: { filePath: string }) => {
+			try {
+				logToFile(`VidLet: Loading new video: ${data.filePath}`);
+				const newInfo = await getVideoInfo(data.filePath);
+				const stats = fs.statSync(data.filePath);
+				currentInput = data.filePath;
+				// Update videoInfo for the server
+				videoInfo.filePath = data.filePath;
+				videoInfo.fileName = path.basename(data.filePath);
+				videoInfo.width = newInfo.width;
+				videoInfo.height = newInfo.height;
+				videoInfo.duration = newInfo.duration;
+				videoInfo.fps = newInfo.fps ?? 30;
+				videoInfo.bitrate = newInfo.bitrate ?? 0;
+				videoInfo.fileSize = stats.size;
+				logToFile(`VidLet: Loaded ${videoInfo.fileName} (${videoInfo.width}x${videoInfo.height}, ${videoInfo.duration}s)`);
+				return {
+					success: true,
+					filePath: data.filePath,
+					fileName: videoInfo.fileName,
+					width: videoInfo.width,
+					height: videoInfo.height,
+					duration: videoInfo.duration,
+					fps: videoInfo.fps,
+					fileSize: videoInfo.fileSize,
+				};
+			} catch (err) {
+				logToFile(`VidLet: Failed to load video: ${(err as Error).message}`);
+				return { success: false, error: (err as Error).message };
+			}
 		},
 		onDetectLoops: async (minGap: number) => {
 			try {
 				logToFile(`VidLet: Detecting loop points with minGap=${minGap}s`);
-				const startPoints = await findAllLoopPoints(input, videoInfo.duration, minGap);
+				const startPoints = await findAllLoopPoints(currentInput, videoInfo.duration, minGap);
 				logToFile(`VidLet: Found ${startPoints.length} start points`);
 				return { success: true, startPoints };
 			} catch (err) {
@@ -295,11 +380,25 @@ export async function runGUI(input: string): Promise<boolean> {
 		onFindMatches: async (referenceTime: number, minGap: number) => {
 			try {
 				logToFile(`VidLet: Finding matches from end, ref=${referenceTime}s, minGap=${minGap}s`);
-				const matches = await findMatchesFromEnd(input, videoInfo.duration, referenceTime, minGap);
+				const matches = await findMatchesFromEnd(currentInput, videoInfo.duration, referenceTime, minGap);
 				logToFile(`VidLet: Found ${matches.length} matches from end`);
 				return { success: true, matches };
 			} catch (err) {
 				logToFile(`VidLet: Match finding failed: ${(err as Error).message}`);
+				return { success: false, error: (err as Error).message };
+			}
+		},
+		onFindBestStart: async (searchRange: number, minGap: number) => {
+			try {
+				logToFile(`VidLet: Finding best loop start in first ${searchRange}s`);
+				const result = await findBestLoopStart(currentInput, videoInfo.duration, searchRange, minGap);
+				if (result) {
+					logToFile(`VidLet: Best start at ${result.startTime.toFixed(2)}s -> ${result.endTime.toFixed(2)}s`);
+					return { success: true, ...result };
+				}
+				return { success: true, startTime: 0, endTime: 0, score: 0 };
+			} catch (err) {
+				logToFile(`VidLet: Best start finding failed: ${(err as Error).message}`);
 				return { success: false, error: (err as Error).message };
 			}
 		},

@@ -8,3 +8,5 @@ export { mkv2mp4, type Mkv2Mp4Options } from './mkv2mp4.js';
 export { shrink, type ShrinkOptions } from './shrink.js';
 export { thumb, type ThumbOptions } from './thumb.js';
 export { togif, type ToGifOptions } from './togif.js';
+export { filter, type FilterOptions } from './filter.js';
+export { caption, type CaptionOptions, DEFAULT_SRT } from './caption.js';

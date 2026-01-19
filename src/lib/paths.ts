@@ -1,4 +1,5 @@
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
+import { dirname, basename, join } from 'node:path';
 import { execa } from 'execa';
 
 /**
@@ -125,25 +126,41 @@ function manualToWindowsPath(wslPath: string): string {
 }
 
 /**
- * Generate output filename with suffix
- * @example getOutputPath('/path/video.mp4', '_compressed') => '/path/video_compressed.mp4'
+ * Ensure VidLet output directory exists
  */
-export function getOutputPath(inputPath: string, suffix: string): string {
-  const lastDot = inputPath.lastIndexOf('.');
-  if (lastDot === -1) {
-    return `${inputPath}${suffix}`;
+function ensureVidLetDir(inputPath: string): string {
+  const dir = dirname(inputPath);
+  const vidletDir = join(dir, 'VidLet');
+  if (!existsSync(vidletDir)) {
+    mkdirSync(vidletDir, { recursive: true });
   }
-  return `${inputPath.slice(0, lastDot)}${suffix}${inputPath.slice(lastDot)}`;
+  return vidletDir;
 }
 
 /**
- * Change file extension
- * @example changeExtension('/path/video.mp4', '.gif') => '/path/video.gif'
+ * Generate output filename with suffix in VidLet subdirectory
+ * @example getOutputPath('/path/video.mp4', '_compressed') => '/path/VidLet/video_compressed.mp4'
+ */
+export function getOutputPath(inputPath: string, suffix: string): string {
+  const vidletDir = ensureVidLetDir(inputPath);
+  const fileName = basename(inputPath);
+  const lastDot = fileName.lastIndexOf('.');
+  if (lastDot === -1) {
+    return join(vidletDir, `${fileName}${suffix}`);
+  }
+  return join(vidletDir, `${fileName.slice(0, lastDot)}${suffix}${fileName.slice(lastDot)}`);
+}
+
+/**
+ * Change file extension and output to VidLet subdirectory
+ * @example changeExtension('/path/video.mp4', '.gif') => '/path/VidLet/video.gif'
  */
 export function changeExtension(inputPath: string, newExt: string): string {
-  const lastDot = inputPath.lastIndexOf('.');
+  const vidletDir = ensureVidLetDir(inputPath);
+  const fileName = basename(inputPath);
+  const lastDot = fileName.lastIndexOf('.');
   if (lastDot === -1) {
-    return `${inputPath}${newExt}`;
+    return join(vidletDir, `${fileName}${newExt}`);
   }
-  return `${inputPath.slice(0, lastDot)}${newExt}`;
+  return join(vidletDir, `${fileName.slice(0, lastDot)}${newExt}`);
 }

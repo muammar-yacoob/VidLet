@@ -118,13 +118,12 @@ export async function executeFFmpeg(options: FFmpegOptions): Promise<void> {
     const result = await execa('ffmpeg', ffmpegArgs, {
       reject: false,
       timeout: 30 * 60 * 1000, // 30 minute timeout
-      buffer: false, // Don't buffer output to prevent memory issues
     });
 
     logToFile(`FFmpeg completed with exit code: ${result.exitCode}`);
 
     if (result.exitCode !== 0) {
-      const errorMsg = result.stderr || `Exit code ${result.exitCode}`;
+      const errorMsg = result.stderr?.trim() || `Exit code ${result.exitCode}`;
       logToFile(`FFmpeg error: ${errorMsg}`);
       const err = new Error(`FFmpeg failed: ${errorMsg}`);
       (err as any).isFFmpegError = true;
@@ -168,13 +167,12 @@ export async function executeFFmpegMultiInput(
     const result = await execa('ffmpeg', ffmpegArgs, {
       reject: false,
       timeout: 30 * 60 * 1000,
-      buffer: false,
     });
 
     logToFile(`FFmpeg completed with exit code: ${result.exitCode}`);
 
     if (result.exitCode !== 0) {
-      const errorMsg = result.stderr || `Exit code ${result.exitCode}`;
+      const errorMsg = result.stderr?.trim() || `Exit code ${result.exitCode}`;
       logToFile(`FFmpeg error: ${errorMsg}`);
       const err = new Error(`FFmpeg failed: ${errorMsg}`);
       (err as any).isFFmpegError = true;
