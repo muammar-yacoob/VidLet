@@ -45,7 +45,7 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14,2 14,8 20,8"/></svg>
             <span>MKV → MP4</span>
           </div>
-          <div class="tool" id="t-trim" onclick="selectTool('trim')">
+          <div class="tool" id="t-trim" onclick="hideTrimStar(); selectTool('trim')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></svg>
             <span>Trim</span>
           </div>
@@ -79,8 +79,7 @@
           </div>
         </div>
         <div class="export-section">
-          <div class="export-label">Export</div>
-          <div class="tool export-tool" id="t-togif" onclick="selectTool('togif')">
+          <div class="tool export-tool" id="t-togif" onclick="hideGifStar(); selectTool('togif')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
             <span>Export as GIF</span>
           </div>
@@ -193,6 +192,14 @@
               </div>
             </div>
             <div class="opts-row estimate-row"><span id="shrink-estimate" class="estimate-text"></span></div>
+            <div class="feature-unlock-hint" id="shrink-unlock-hint">
+              <span class="hint-icon">💡</span>
+              <span class="hint-text">
+                <span class="hint-item">Under 60s → Find Loop</span>
+                <span class="hint-sep">•</span>
+                <span class="hint-item">Under 15s → Export GIF</span>
+              </span>
+            </div>
           </div>
 
           <div class="opts" id="opts-thumb">
@@ -259,13 +266,13 @@
                   </div>
                   <div class="adjust-row">
                     <label>Contrast</label>
-                    <input type="range" id="filter-contrast" min="0" max="200" value="100" oninput="updateFilterPreview()">
-                    <span id="filter-contrast-val">100</span>
+                    <input type="range" id="filter-contrast" min="-100" max="100" value="0" oninput="updateFilterPreview()">
+                    <span id="filter-contrast-val">0</span>
                   </div>
                   <div class="adjust-row">
                     <label>Saturate</label>
-                    <input type="range" id="filter-saturation" min="0" max="200" value="100" oninput="updateFilterPreview()">
-                    <span id="filter-saturation-val">100</span>
+                    <input type="range" id="filter-saturation" min="-100" max="100" value="0" oninput="updateFilterPreview()">
+                    <span id="filter-saturation-val">0</span>
                   </div>
                 </div>
               </div>
@@ -354,6 +361,7 @@
               </div>
               <div class="caption-info">
                 <span id="captionStatus">Using test subtitle</span>
+                <span class="render-only-badge">Render only</span>
               </div>
             </div>
             <input type="hidden" id="caption-srt" value="">
@@ -368,10 +376,6 @@
                 <span class="trim-arrow">→</span>
                 <span class="trim-time-badge" id="trim-end-badge">0:00</span>
               </div>
-              <span class="trim-duration" id="trim-duration-badge">0.0s</span>
-              <button class="auto-zoom-btn active" id="auto-zoom-btn" onclick="toggleAutoZoom()" title="Auto-zoom to marker on hover">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/><path d="M11 8v6M8 11h6"/></svg>
-              </button>
               <div class="trim-actions">
                 <span id="match-info" class="match-info hidden"></span>
                 <button type="button" class="match-btn hidden" id="cycle-match-btn" onclick="cycleMatch()">Next</button>
@@ -379,6 +383,10 @@
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
                   Find Loop
                 </button>
+              </div>
+              <div class="trim-output">
+                <span class="trim-output-label">Output</span>
+                <span class="trim-output-value" id="trim-duration-badge">0.0s</span>
               </div>
             </div>
             <div class="timeline-wrap" id="trim-controls">
@@ -404,6 +412,14 @@
             <input type="hidden" id="trim-start" value="0">
             <input type="hidden" id="trim-end" value="10">
             <input type="hidden" id="trim-accurate" value="false">
+            <div class="feature-unlock-hint" id="trim-unlock-hint">
+              <span class="hint-icon">💡</span>
+              <span class="hint-text">
+                <span id="hint-loop" class="hint-item">Under 60s → Find Loop</span>
+                <span class="hint-sep">•</span>
+                <span id="hint-gif" class="hint-item">Under 15s → Export GIF</span>
+              </span>
+            </div>
           </div>
         </div>
       </div>
@@ -491,6 +507,20 @@
             <span><b>Alt+←→</b> Frame</span>
             <span><b>M</b> Mute</span>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-overlay" id="confirmModal" onclick="if(event.target===this)closeConfirmModal(false)">
+      <div class="modal confirm-modal">
+        <div class="confirm-icon" id="confirmIcon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+        </div>
+        <div class="confirm-title" id="confirmTitle">Confirm Action</div>
+        <div class="confirm-message" id="confirmMessage">Are you sure?</div>
+        <div class="confirm-buttons">
+          <button class="btn btn-g" onclick="closeConfirmModal(false)">Cancel</button>
+          <button class="btn btn-p" id="confirmOkBtn" onclick="closeConfirmModal(true)">OK</button>
         </div>
       </div>
     </div>

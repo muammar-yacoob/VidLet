@@ -127,9 +127,16 @@ function manualToWindowsPath(wslPath: string): string {
 
 /**
  * Ensure VidLet output directory exists
+ * Reuses existing VidLet directory if input is already inside one
  */
 function ensureVidLetDir(inputPath: string): string {
   const dir = dirname(inputPath);
+
+  // If already inside a VidLet directory, reuse it
+  if (basename(dir) === 'VidLet') {
+    return dir;
+  }
+
   const vidletDir = join(dir, 'VidLet');
   if (!existsSync(vidletDir)) {
     mkdirSync(vidletDir, { recursive: true });

@@ -9,6 +9,7 @@ let activeTool = null;
 let homepage = 'https://vidlet.app';
 let currentFilePath = null;
 let isMkvFile = false;
+let skipReloadOnContinue = false;
 
 // Tool states
 let mkvFastCopy = true;
@@ -74,11 +75,6 @@ async function init() {
   const isShortVideo = res.duration <= 60;
   $('find-match-btn').classList.toggle('hidden', !isShortVideo);
 
-  // Show badge when loop feature is available
-  if (isShortVideo) {
-    showLoopBadge();
-  }
-
   // Auto-find best loop start for short videos
   if (isShortVideo) {
     // Find best loop start in first 5 seconds, then preload additional matches
@@ -108,8 +104,12 @@ async function init() {
     showGifBadge();
   }
 
-  // Initialize trim timeline
-  $('trim-end').value = res.duration;
+  // Initialize trim timeline with visible default boundaries
+  // Set start at 10% and end at 90% so handles are easy to see and grab
+  const trimStart = Math.min(res.duration * 0.1, 5); // 10% or max 5s
+  const trimEnd = Math.max(res.duration * 0.9, res.duration - 5); // 90% or at least 5s from end
+  $('trim-start').value = trimStart.toFixed(2);
+  $('trim-end').value = Math.max(trimEnd, trimStart + 1).toFixed(2); // Ensure at least 1s range
   updateTimeline();
   initTimelineHandles();
   initTimelineZoom();
@@ -472,6 +472,7 @@ function updateShrinkLabel() {
   $('shrink-val').textContent = (val % 1 === 0 ? val : val.toFixed(1)) + 's';
   updateEstimates();
   updateShrinkMarker();
+  updateFeatureHints('shrink', val);
 }
 
 function updateShrinkMarker() {
@@ -487,6 +488,27 @@ function updateShrinkMarker() {
   } else {
     marker.style.display = 'none';
   }
+}
+
+/**
+ * Update feature unlock hints based on output duration
+ */
+function updateFeatureHints(tool, outputDuration) {
+  const hintEl = $(tool + '-unlock-hint');
+  if (!hintEl) return;
+
+  const loopUnlocked = outputDuration <= 60;
+  const gifUnlocked = outputDuration <= 15;
+
+  const hintItems = hintEl.querySelectorAll('.hint-item');
+  hintItems.forEach(item => {
+    const text = item.textContent;
+    if (text.includes('60s') || text.includes('Loop')) {
+      item.classList.toggle('unlocked', loopUnlocked);
+    } else if (text.includes('15s') || text.includes('GIF')) {
+      item.classList.toggle('unlocked', gifUnlocked);
+    }
+  });
 }
 
 function setShrinkTo60() {
@@ -529,16 +551,22 @@ function updateTimeline() {
   // Timeline element width scales with zoom
   const timeline = $('timeline');
   timeline.style.width = (timelineZoom * 100) + '%';
-  timeline.style.transform = `translateX(${-timelineOffset * 100 * timelineZoom}%)`;
+  // translateX percentage is relative to element's own width, so no need to multiply by zoom
+  timeline.style.transform = `translateX(${-timelineOffset * 100}%)`;
 
   // Position handles and range (as percentage of full duration)
   const startPct = (start / duration) * 100;
   const endPct = (end / duration) * 100;
 
+  // Clamp handle positions to stay visible (handles are ~5px wide, need ~1% padding at edges)
+  const handlePadding = 1; // percentage
+  const startHandlePct = Math.max(handlePadding, startPct);
+  const endHandlePct = Math.min(100 - handlePadding, endPct);
+
   $('timeline-range').style.left = startPct + '%';
   $('timeline-range').style.width = (endPct - startPct) + '%';
-  $('handle-start').style.left = startPct + '%';
-  $('handle-end').style.left = endPct + '%';
+  $('handle-start').style.left = startHandlePct + '%';
+  $('handle-end').style.left = endHandlePct + '%';
 
   // Position dim overlays (unselected areas)
   $('timeline-dim-left').style.width = startPct + '%';
@@ -550,6 +578,9 @@ function updateTimeline() {
   $('trim-start-badge').textContent = formatTimeMs(start);
   $('trim-end-badge').textContent = formatTimeMs(end);
   $('trim-duration-badge').textContent = outputDuration.toFixed(1) + 's';
+
+  // Update feature hints based on output duration
+  updateFeatureHints('trim', outputDuration);
 
   // Update ticks
   renderTimelineTicks();
@@ -969,8 +1000,8 @@ async function preloadMatches() {
 }
 
 async function findMatchingFrames() {
-  // Dismiss the loop badge when user clicks Find Loop
-  hideLoopBadge();
+  // Remove glow from Find Loop button when clicked
+  $('find-match-btn')?.classList.remove('new-feature');
 
   const startTime = parseFloat($('trim-start').value) || 0;
 
@@ -1287,7 +1318,12 @@ function initDropZones() {
     );
 
     if (file) {
-      const confirmed = confirm(`Load "${file.name}" as new video?\n\nThis will replace the current video.`);
+      const confirmed = await showConfirmModal({
+        title: 'Load New Video',
+        message: `Load <b>${file.name}</b> as new video?<br><br>This will replace the current video.`,
+        okText: 'Load',
+        icon: 'warning'
+      });
       if (confirmed) {
         await handleVideoFileDrop(file);
       }
@@ -1484,6 +1520,11 @@ function initVideoZoom() {
   let panStartX = 0, panStartY = 0;
   let startPanX = 0, startPanY = 0;
 
+  // Touch pinch state
+  let initialPinchDistance = 0;
+  let initialPinchZoom = 1;
+  let pinchCenterX = 0, pinchCenterY = 0;
+
   function updateVideoTransform() {
     video.style.transform = `scale(${videoZoom}) translate(${videoPanX}px, ${videoPanY}px)`;
     wrap.classList.toggle('zoomed', videoZoom > 1);
@@ -1496,22 +1537,53 @@ function initVideoZoom() {
     updateVideoTransform();
   }
 
-  wrap.addEventListener('wheel', (e) => {
-    e.preventDefault();
-    const delta = e.deltaY > 0 ? -0.1 : 0.1;
-    const newZoom = Math.max(1, Math.min(5, videoZoom + delta));
+  function clampPan() {
+    const maxPan = (videoZoom - 1) * 50;
+    videoPanX = Math.max(-maxPan, Math.min(maxPan, videoPanX));
+    videoPanY = Math.max(-maxPan, Math.min(maxPan, videoPanY));
+  }
 
+  // Get cursor position relative to wrap center
+  function getCursorOffset(clientX, clientY) {
+    const rect = wrap.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    return {
+      x: clientX - centerX,
+      y: clientY - centerY
+    };
+  }
+
+  // Zoom towards a point (cursor or pinch center)
+  function zoomTowards(newZoom, pointX, pointY) {
     if (newZoom === 1) {
       resetZoom();
-    } else {
-      videoZoom = newZoom;
-      const maxPan = (videoZoom - 1) * 50;
-      videoPanX = Math.max(-maxPan, Math.min(maxPan, videoPanX));
-      videoPanY = Math.max(-maxPan, Math.min(maxPan, videoPanY));
-      updateVideoTransform();
+      return;
     }
+
+    const oldZoom = videoZoom;
+    videoZoom = newZoom;
+
+    // Adjust pan so the point under cursor stays under cursor
+    // Point on video: (pointX/oldZoom - oldPanX, pointY/oldZoom - oldPanY)
+    // After zoom: (pointX/newZoom - newPanX, pointY/newZoom - newPanY) should equal same point
+    videoPanX += pointX * (1/newZoom - 1/oldZoom);
+    videoPanY += pointY * (1/newZoom - 1/oldZoom);
+
+    clampPan();
+    updateVideoTransform();
+  }
+
+  // Mouse wheel zoom towards cursor
+  wrap.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? -0.15 : 0.15;
+    const newZoom = Math.max(1, Math.min(5, videoZoom + delta));
+    const cursor = getCursorOffset(e.clientX, e.clientY);
+    zoomTowards(newZoom, cursor.x, cursor.y);
   }, { passive: false });
 
+  // Mouse pan
   video.addEventListener('mousedown', (e) => {
     if (videoZoom <= 1) return;
     e.preventDefault();
@@ -1527,9 +1599,9 @@ function initVideoZoom() {
     if (!isPanning) return;
     const dx = (e.clientX - panStartX) / videoZoom;
     const dy = (e.clientY - panStartY) / videoZoom;
-    const maxPan = (videoZoom - 1) * 50;
-    videoPanX = Math.max(-maxPan, Math.min(maxPan, startPanX + dx));
-    videoPanY = Math.max(-maxPan, Math.min(maxPan, startPanY + dy));
+    videoPanX = startPanX + dx;
+    videoPanY = startPanY + dy;
+    clampPan();
     updateVideoTransform();
   });
 
@@ -1540,7 +1612,66 @@ function initVideoZoom() {
     }
   });
 
-  // Double-click to fit/center video
+  // Touch pinch-to-zoom
+  wrap.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 2) {
+      e.preventDefault();
+      const touch1 = e.touches[0];
+      const touch2 = e.touches[1];
+      initialPinchDistance = Math.hypot(touch2.clientX - touch1.clientX, touch2.clientY - touch1.clientY);
+      initialPinchZoom = videoZoom;
+      // Pinch center
+      const centerX = (touch1.clientX + touch2.clientX) / 2;
+      const centerY = (touch1.clientY + touch2.clientY) / 2;
+      const offset = getCursorOffset(centerX, centerY);
+      pinchCenterX = offset.x;
+      pinchCenterY = offset.y;
+    } else if (e.touches.length === 1 && videoZoom > 1) {
+      // Single touch pan
+      isPanning = true;
+      panStartX = e.touches[0].clientX;
+      panStartY = e.touches[0].clientY;
+      startPanX = videoPanX;
+      startPanY = videoPanY;
+    }
+  }, { passive: false });
+
+  wrap.addEventListener('touchmove', (e) => {
+    if (e.touches.length === 2) {
+      e.preventDefault();
+      const touch1 = e.touches[0];
+      const touch2 = e.touches[1];
+      const currentDistance = Math.hypot(touch2.clientX - touch1.clientX, touch2.clientY - touch1.clientY);
+      const scale = currentDistance / initialPinchDistance;
+      const newZoom = Math.max(1, Math.min(5, initialPinchZoom * scale));
+
+      // Update pinch center as fingers move
+      const centerX = (touch1.clientX + touch2.clientX) / 2;
+      const centerY = (touch1.clientY + touch2.clientY) / 2;
+      const offset = getCursorOffset(centerX, centerY);
+
+      zoomTowards(newZoom, offset.x, offset.y);
+    } else if (e.touches.length === 1 && isPanning) {
+      e.preventDefault();
+      const dx = (e.touches[0].clientX - panStartX) / videoZoom;
+      const dy = (e.touches[0].clientY - panStartY) / videoZoom;
+      videoPanX = startPanX + dx;
+      videoPanY = startPanY + dy;
+      clampPan();
+      updateVideoTransform();
+    }
+  }, { passive: false });
+
+  wrap.addEventListener('touchend', (e) => {
+    if (e.touches.length < 2) {
+      initialPinchDistance = 0;
+    }
+    if (e.touches.length === 0) {
+      isPanning = false;
+    }
+  });
+
+  // Double-click/tap to fit/center video
   wrap.addEventListener('dblclick', (e) => {
     e.preventDefault();
     resetZoom();
@@ -1552,8 +1683,8 @@ function initVideoZoom() {
 // Filter state
 const filterState = {
   brightness: 0,      // -100 to 100 (0 = normal)
-  contrast: 100,      // 0 to 200 (100 = normal)
-  saturation: 100,    // 0 to 200 (100 = normal)
+  contrast: 0,        // -100 to 100 (0 = normal)
+  saturation: 0,      // -100 to 100 (0 = normal)
   blur: 0,            // 0 to 10
   blurEnabled: false,
   sharpen: false,
@@ -1565,10 +1696,10 @@ const filterState = {
 };
 
 function updateFilterPreview() {
-  // Read slider values
+  // Read slider values (all use 0 as neutral)
   const brightness = parseInt($('filter-brightness')?.value) || 0;
-  const contrast = parseInt($('filter-contrast')?.value) || 100;
-  const saturation = parseInt($('filter-saturation')?.value) || 100;
+  const contrast = parseInt($('filter-contrast')?.value) || 0;
+  const saturation = parseInt($('filter-saturation')?.value) || 0;
   const blur = parseFloat($('filter-blur')?.value) || 0;
   const vignetteIntensity = parseInt($('filter-vignette-intensity')?.value) || 0;
   const bloomIntensity = parseInt($('filter-bloom-intensity')?.value) || 0;
@@ -1610,12 +1741,30 @@ function toggleEffect(name) {
   if (name === 'blur') {
     filterState.blurEnabled = !filterState.blurEnabled;
     btn?.classList.toggle('active', filterState.blurEnabled);
+    // Set default value when first enabled
+    if (filterState.blurEnabled && filterState.blur === 0) {
+      filterState.blur = 3;
+      if ($('filter-blur')) $('filter-blur').value = 3;
+      if ($('filter-blur-val')) $('filter-blur-val').textContent = '3';
+    }
   } else if (name === 'vignette') {
     filterState.vignette = !filterState.vignette;
     btn?.classList.toggle('active', filterState.vignette);
+    // Set default value when first enabled
+    if (filterState.vignette && filterState.vignetteIntensity === 0) {
+      filterState.vignetteIntensity = 60;
+      if ($('filter-vignette-intensity')) $('filter-vignette-intensity').value = 60;
+      if ($('filter-vignette-val')) $('filter-vignette-val').textContent = '60';
+    }
   } else if (name === 'bloom') {
     filterState.bloom = !filterState.bloom;
     btn?.classList.toggle('active', filterState.bloom);
+    // Set default value when first enabled
+    if (filterState.bloom && filterState.bloomIntensity === 0) {
+      filterState.bloomIntensity = 50;
+      if ($('filter-bloom-intensity')) $('filter-bloom-intensity').value = 50;
+      if ($('filter-bloom-val')) $('filter-bloom-val').textContent = '50';
+    }
   } else if (name === 'sharpen') {
     filterState.sharpen = !filterState.sharpen;
     btn?.classList.toggle('active', filterState.sharpen);
@@ -1648,16 +1797,16 @@ function resetFilters() {
 
 function resetColorFilters() {
   filterState.brightness = 0;
-  filterState.contrast = 100;
-  filterState.saturation = 100;
+  filterState.contrast = 0;
+  filterState.saturation = 0;
 
   if ($('filter-brightness')) $('filter-brightness').value = 0;
-  if ($('filter-contrast')) $('filter-contrast').value = 100;
-  if ($('filter-saturation')) $('filter-saturation').value = 100;
+  if ($('filter-contrast')) $('filter-contrast').value = 0;
+  if ($('filter-saturation')) $('filter-saturation').value = 0;
 
   if ($('filter-brightness-val')) $('filter-brightness-val').textContent = '0';
-  if ($('filter-contrast-val')) $('filter-contrast-val').textContent = '100';
-  if ($('filter-saturation-val')) $('filter-saturation-val').textContent = '100';
+  if ($('filter-contrast-val')) $('filter-contrast-val').textContent = '0';
+  if ($('filter-saturation-val')) $('filter-saturation-val').textContent = '0';
 
   applyFilterPreview();
 }
@@ -1705,12 +1854,12 @@ function applyFilterPreview() {
   const brightnessVal = 1 + (filterState.brightness / 100);
   if (brightnessVal !== 1) filters.push(`brightness(${brightnessVal.toFixed(2)})`);
 
-  // Contrast: CSS uses 0-2+ (1 = normal), our range is 0-200 (100 = normal)
-  const contrastVal = filterState.contrast / 100;
+  // Contrast: CSS uses 0-2+ (1 = normal), our range is -100 to 100 (0 = normal)
+  const contrastVal = 1 + (filterState.contrast / 100);
   if (contrastVal !== 1) filters.push(`contrast(${contrastVal.toFixed(2)})`);
 
-  // Saturation: CSS uses 0-2+ (1 = normal), our range is 0-200 (100 = normal)
-  const saturationVal = filterState.saturation / 100;
+  // Saturation: CSS uses 0-2+ (1 = normal), our range is -100 to 100 (0 = normal)
+  const saturationVal = 1 + (filterState.saturation / 100);
   if (saturationVal !== 1) filters.push(`saturate(${saturationVal.toFixed(2)})`);
 
   // Blur (only if enabled)
@@ -1739,11 +1888,42 @@ function applyFilterPreview() {
 
   // Apply CSS filter to video
   video.style.filter = filters.length > 0 ? filters.join(' ') : '';
+
+  // Vignette overlay preview
+  const vignetteOverlay = $('vignetteOverlay');
+  if (vignetteOverlay) {
+    const showVignette = filterState.vignette && filterState.vignetteIntensity > 0;
+    vignetteOverlay.classList.toggle('hidden', !showVignette);
+    if (showVignette) {
+      // Intensity 0-100 maps to opacity and spread
+      const intensity = filterState.vignetteIntensity / 100;
+      const innerStop = Math.max(0, 50 - intensity * 30); // 50% down to 20%
+      const opacity = 0.3 + intensity * 0.6; // 0.3 to 0.9
+      vignetteOverlay.style.background = `radial-gradient(ellipse at center, transparent 0%, transparent ${innerStop}%, rgba(0,0,0,${opacity.toFixed(2)}) 100%)`;
+    }
+  }
+
+  // Bloom overlay preview
+  const bloomOverlay = $('bloomOverlay');
+  if (bloomOverlay) {
+    const showBloom = filterState.bloom && filterState.bloomIntensity > 0;
+    bloomOverlay.classList.toggle('hidden', !showBloom);
+    if (showBloom) {
+      // Intensity 0-100 maps to glow strength
+      const intensity = filterState.bloomIntensity / 100;
+      const opacity = 0.1 + intensity * 0.25; // 0.1 to 0.35
+      const spread = 40 + intensity * 30; // 40% to 70%
+      bloomOverlay.style.background = `radial-gradient(ellipse at center, rgba(255,255,255,${opacity.toFixed(2)}) 0%, transparent ${spread}%)`;
+    }
+  }
 }
 
 function clearFilterPreview() {
   const video = $('videoPreview');
   if (video) video.style.filter = '';
+  // Hide vignette and bloom overlays
+  $('vignetteOverlay')?.classList.add('hidden');
+  $('bloomOverlay')?.classList.add('hidden');
 }
 
 // ============ CROP OVERLAY (PORTRAIT) ============
@@ -1910,11 +2090,13 @@ async function process() {
 
       // Handle output based on tool type
       if (activeTool === 'togif') {
-        // GIF - show done modal without continue (different format)
+        // GIF - show done modal with continue (but don't reload GIF as source)
         $('done').classList.add('on', 'ok');
         $('done').classList.remove('err');
         $('output').textContent = res.output || 'Done!';
-        $('continueBtn').classList.add('hidden');
+        $('continueBtn').classList.remove('hidden');
+        // Don't update currentFilePath - keep original video loaded
+        skipReloadOnContinue = true;
       } else if (activeTool === 'trim' || activeTool === 'mkv2mp4') {
         // Trim/MKV - show done modal with continue button
         $('done').classList.add('on', 'ok');
@@ -1925,6 +2107,7 @@ async function process() {
         if (res.output) {
           currentFilePath = res.output;
         }
+        skipReloadOnContinue = false;
       } else if (res.output) {
         // Other tools - auto-load and show toast
         await loadOutputAsSource(res.output);
@@ -1986,13 +2169,24 @@ async function loadOutputAsSource(filePath) {
       $('shrink-marker-60').classList.toggle('hidden', !show60s);
 
       // Update Find Match button visibility (only for short videos)
-      $('find-match-btn').classList.toggle('hidden', info.duration > 60);
+      const isNowShort = info.duration <= 60;
+      $('find-match-btn').classList.toggle('hidden', !isNowShort);
+
+      // Show star and glow hint when loop feature becomes available after processing
+      if (isNowShort && !window.trimStarDismissed) {
+        showTrimStar();
+        $('find-match-btn').classList.add('new-feature');
+      }
 
       // Update thumbnail aspect ratio
       updateThumbAspectRatio();
 
-      // Update GIF visibility based on duration
-      $('t-togif').classList.toggle('hidden', info.duration > 15);
+      // Update GIF visibility based on duration and show star/glow if newly available
+      const canExportGif = info.duration <= 15;
+      $('t-togif').classList.toggle('hidden', !canExportGif);
+      if (canExportGif && !window.gifStarDismissed) {
+        showGifStar();
+      }
 
       // Update landscape tools visibility
       // Show Portrait for all videos except 9:16 (already portrait)
@@ -2085,14 +2279,36 @@ function hideFeatureBadge(badgeId) {
   }
 }
 
-function showLoopBadge() {
-  if (window.loopBadgeDismissed) return;
-  showFeatureBadge('t-trim', 'loop-badge', 'Loop Unlocked');
+function showTrimStar() {
+  if (window.trimStarDismissed) return;
+  const tool = $('t-trim');
+  if (!tool || $('trim-star') || tool.classList.contains('done')) return;
+
+  // Add animated star next to trim label
+  const star = document.createElement('span');
+  star.id = 'trim-star';
+  star.className = 'feature-star';
+  star.innerHTML = '★';
+  tool.appendChild(star);
+
+  // Add glow animation to the tab
+  tool.classList.add('new-feature');
+
+  setTimeout(() => star.classList.add('show'), 50);
 }
 
-function hideLoopBadge() {
-  window.loopBadgeDismissed = true;
-  hideFeatureBadge('loop-badge');
+function hideTrimStar() {
+  window.trimStarDismissed = true;
+  const star = $('trim-star');
+  const tool = $('t-trim');
+
+  if (star) {
+    star.classList.remove('show');
+    setTimeout(() => star.remove(), 300);
+  }
+
+  // Remove glow from trim tab
+  tool?.classList.remove('new-feature');
 }
 
 function showGifBadge() {
@@ -2103,6 +2319,38 @@ function showGifBadge() {
 function hideGifBadge() {
   window.gifBadgeDismissed = true;
   hideFeatureBadge('gif-badge');
+}
+
+function showGifStar() {
+  if (window.gifStarDismissed) return;
+  const tool = $('t-togif');
+  if (!tool || tool.classList.contains('hidden') || tool.classList.contains('done') || $('gif-star')) return;
+
+  // Add animated star next to GIF label
+  const star = document.createElement('span');
+  star.id = 'gif-star';
+  star.className = 'feature-star';
+  star.innerHTML = '★';
+  tool.appendChild(star);
+
+  // Add glow animation to the tab
+  tool.classList.add('new-feature');
+
+  setTimeout(() => star.classList.add('show'), 50);
+}
+
+function hideGifStar() {
+  window.gifStarDismissed = true;
+  const star = $('gif-star');
+  const tool = $('t-togif');
+
+  if (star) {
+    star.classList.remove('show');
+    setTimeout(() => star.remove(), 300);
+  }
+
+  // Remove glow from GIF tab
+  tool?.classList.remove('new-feature');
 }
 
 function showNoMatchesMessage() {
@@ -2132,6 +2380,12 @@ function hideNoMatchesMessage() {
 
 async function continueEditing() {
   $('done').classList.remove('on');
+
+  // Skip reload for GIF export (keeps original video)
+  if (skipReloadOnContinue) {
+    skipReloadOnContinue = false;
+    return;
+  }
 
   if (currentFilePath) {
     // Show loading animation
@@ -2246,6 +2500,59 @@ function updateCaptionPreview() {
   const scale = video ? video.clientHeight / 720 : 0.4;
   const previewSize = Math.round(size * scale);
   textEl.style.fontSize = Math.max(12, previewSize) + 'px';
+}
+
+// ============ CONFIRM MODAL ============
+
+let confirmResolve = null;
+
+function showConfirmModal(options = {}) {
+  const {
+    title = 'Confirm Action',
+    message = 'Are you sure?',
+    okText = 'OK',
+    cancelText = 'Cancel',
+    icon = 'info' // 'info', 'warning', 'danger'
+  } = options;
+
+  $('confirmTitle').textContent = title;
+  $('confirmMessage').innerHTML = message;
+  $('confirmOkBtn').textContent = okText;
+
+  const iconEl = $('confirmIcon');
+  iconEl.className = 'confirm-icon';
+  if (icon === 'warning') iconEl.classList.add('warning');
+  else if (icon === 'danger') iconEl.classList.add('danger');
+
+  $('confirmModal').classList.add('on');
+  $('confirmOkBtn').focus();
+
+  // Keyboard handler
+  const keyHandler = (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      closeConfirmModal(false);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      closeConfirmModal(true);
+    }
+  };
+  document.addEventListener('keydown', keyHandler);
+
+  return new Promise(resolve => {
+    confirmResolve = (result) => {
+      document.removeEventListener('keydown', keyHandler);
+      resolve(result);
+    };
+  });
+}
+
+function closeConfirmModal(result) {
+  $('confirmModal').classList.remove('on');
+  if (confirmResolve) {
+    confirmResolve(result);
+    confirmResolve = null;
+  }
 }
 
 // Initialize on load
