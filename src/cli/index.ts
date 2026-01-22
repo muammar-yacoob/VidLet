@@ -3,6 +3,7 @@ import { showHelp } from '../lib/help.js';
 import {
 	registerCompressCommand,
 	registerConfigCommand,
+	registerExtractAudioCommand,
 	registerHelpCommand,
 	registerInstallCommand,
 	registerLoopCommand,
@@ -45,6 +46,7 @@ export function createProgram(): Command {
 	registerShrinkCommand(program);
 	registerThumbCommand(program);
 	registerLoopCommand(program);
+	registerExtractAudioCommand(program);
 	registerVidletCommand(program);
 
 	return program;

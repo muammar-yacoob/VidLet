@@ -9,3 +9,4 @@ export { registerThumbCommand } from './thumb.js';
 export { registerTogifCommand } from './togif.js';
 export { registerUninstallCommand } from './uninstall.js';
 export { registerVidletCommand } from './vidlet.js';
+export { registerExtractAudioCommand } from './extractaudio.js';
