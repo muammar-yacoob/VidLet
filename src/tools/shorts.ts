@@ -1,6 +1,16 @@
-import { checkFFmpeg, executeFFmpeg, getVideoInfo } from '../lib/ffmpeg.js';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as os from 'node:os';
+import { checkFFmpeg, executeFFmpeg, getVideoInfo, executeFFmpegRaw } from '../lib/ffmpeg.js';
 import { fmt, header, separator, success } from '../lib/logger.js';
 import { getOutputPath } from '../lib/paths.js';
+
+export interface PortraitSegment {
+	id: string;
+	startTime: number;
+	endTime: number;
+	cropX: number; // 0-1, horizontal crop position
+}
 
 export interface PortraitOptions {
 	input: string;
@@ -80,4 +90,127 @@ export async function portrait(options: PortraitOptions): Promise<string> {
 	success(`Output: ${output}`);
 
 	return output;
+}
+
+export interface PortraitMultiSegmentOptions {
+	input: string;
+	output?: string;
+	segments: PortraitSegment[];
+	resolution?: number;
+}
+
+/**
+ * Convert landscape video to portrait with multiple segments having different crop positions
+ */
+export async function portraitMultiSegment(options: PortraitMultiSegmentOptions): Promise<string> {
+	const { input, output: customOutput, segments, resolution = 1080 } = options;
+
+	if (!(await checkFFmpeg())) {
+		throw new Error('FFmpeg not found. Please install ffmpeg: sudo apt install ffmpeg');
+	}
+
+	if (!segments || segments.length === 0) {
+		throw new Error('No segments provided');
+	}
+
+	// If only one segment, use the simpler portrait function
+	if (segments.length === 1) {
+		return portrait({
+			input,
+			output: customOutput,
+			mode: 'crop',
+			cropX: segments[0].cropX,
+			resolution,
+		});
+	}
+
+	const info = await getVideoInfo(input);
+
+	// Calculate output dimensions (9:16 aspect ratio)
+	const outWidth = resolution;
+	const outHeight = Math.round((resolution * 16) / 9);
+
+	const output = customOutput ?? getOutputPath(input, '_portrait');
+
+	header('Create Portrait (Multi-Segment)');
+	console.log(`Input:    ${fmt.white(input)}`);
+	console.log(`Size:     ${fmt.white(`${info.width}x${info.height}`)}`);
+	console.log(`Output:   ${fmt.yellow(`${outWidth}x${outHeight}`)} (9:16)`);
+	console.log(`Segments: ${fmt.yellow(String(segments.length))}`);
+	separator();
+	console.log(fmt.dim('Processing segments...'));
+
+	// Create temp directory for segments
+	const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vidlet-portrait-'));
+	const segmentFiles: string[] = [];
+
+	try {
+		// Process each segment
+		for (let i = 0; i < segments.length; i++) {
+			const seg = segments[i];
+			const duration = seg.endTime - seg.startTime;
+			const segmentFile = path.join(tempDir, `segment_${i}.mp4`);
+			segmentFiles.push(segmentFile);
+
+			console.log(fmt.dim(`  Segment ${i + 1}/${segments.length}: ${seg.startTime.toFixed(2)}s - ${seg.endTime.toFixed(2)}s (crop: ${(seg.cropX * 100).toFixed(0)}%)`));
+
+			const cropExpr = `${seg.cropX}*(in_w-out_w)`;
+			const filterComplex = `scale=-1:${outHeight},crop=${outWidth}:${outHeight}:${cropExpr}:0,format=yuv420p`;
+
+			const args = [
+				'-ss',
+				seg.startTime.toString(),
+				'-t',
+				duration.toString(),
+				'-i',
+				input,
+				'-vf',
+				filterComplex,
+				'-c:v',
+				'libx264',
+				'-preset',
+				'medium',
+				'-crf',
+				'18',
+				'-c:a',
+				'aac',
+				'-b:a',
+				'192k',
+				'-movflags',
+				'+faststart',
+				'-y',
+				segmentFile,
+			];
+
+			await executeFFmpegRaw(args);
+		}
+
+		// Create concat file
+		const concatFile = path.join(tempDir, 'concat.txt');
+		const concatContent = segmentFiles.map((f) => `file '${f.replace(/'/g, "'\\''")}'`).join('\n');
+		fs.writeFileSync(concatFile, concatContent);
+
+		console.log(fmt.dim('Concatenating segments...'));
+
+		// Concatenate segments
+		const concatArgs = ['-f', 'concat', '-safe', '0', '-i', concatFile, '-c', 'copy', '-movflags', '+faststart', '-y', output];
+
+		await executeFFmpegRaw(concatArgs);
+
+		success(`Output: ${output}`);
+		return output;
+	} finally {
+		// Cleanup temp files
+		try {
+			for (const f of segmentFiles) {
+				if (fs.existsSync(f)) fs.unlinkSync(f);
+			}
+			if (fs.existsSync(path.join(tempDir, 'concat.txt'))) {
+				fs.unlinkSync(path.join(tempDir, 'concat.txt'));
+			}
+			fs.rmdirSync(tempDir);
+		} catch {
+			// Ignore cleanup errors
+		}
+	}
 }
