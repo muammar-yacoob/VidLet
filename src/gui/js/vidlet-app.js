@@ -19,7 +19,25 @@ let audioMix = true;
 // Portrait segment state
 let portraitSegments = []; // [{id, startTime, endTime, cropX}]
 let selectedSegmentIndex = 0;
-const SEGMENT_COLORS = ['#a855f7', '#22c55e', '#3b82f6', '#f59e0b', '#ec4889'];
+let portraitSegmentsInitialized = false; // Track if portrait has been initialized (to preserve on tool switch)
+const SEGMENT_COLORS = [
+  '#a855f7', // purple
+  '#22c55e', // green
+  '#3b82f6', // blue
+  '#f59e0b', // amber
+  '#ec4899', // pink
+  '#06b6d4', // cyan
+  '#f43f5e', // rose
+  '#84cc16', // lime
+  '#8b5cf6', // violet
+  '#14b8a6', // teal
+  '#f97316', // orange
+  '#6366f1', // indigo
+];
+
+// Portrait keyframes for smooth crop animation: [{time, cropX}]
+let portraitKeyframes = [];
+let keyframeAnimationEnabled = false;
 
 // Portrait timeline zoom state
 let portraitZoom = 1;
@@ -42,11 +60,235 @@ const MAX_SPEED = 8;
 let currentSpeed = 1;
 let isSeeking = false;
 
+// Frame cache for smooth scrubbing
+let frameCache = [];        // Array of {time, imageData}
+let frameCacheCanvas = null;
+let frameCacheCtx = null;
+let frameCacheReady = false;
+const FRAME_CACHE_INTERVAL = 0.25; // Cache a frame every 0.25 seconds
+
 // Timeline zoom state
 let timelineZoom = 1;
 let timelineOffset = 0; // 0-1, represents the left edge position as fraction of duration
-let autoZoomEnabled = true; // Auto-zoom to marker on hover
+let autoZoomEnabled = false; // Auto-zoom to marker on hover (disabled by default)
 let panToMarker = null; // Function to pan/zoom to current marker (set by initTimelineZoom)
+
+// ============ UNDO/REDO SYSTEM ============
+const MAX_HISTORY = 20;
+let undoStack = [];
+let redoStack = [];
+
+/**
+ * Get current state snapshot for undo
+ */
+function getStateSnapshot() {
+  return {
+    tool: activeTool,
+    portraitSegments: JSON.parse(JSON.stringify(portraitSegments)),
+    selectedSegmentIndex,
+    portraitCropX,
+    portraitKeyframes: JSON.parse(JSON.stringify(portraitKeyframes)),
+    trimStart: $('trim-start')?.value,
+    trimEnd: $('trim-end')?.value,
+  };
+}
+
+/**
+ * Restore state from snapshot
+ */
+function restoreState(snapshot) {
+  if (snapshot.tool === 'portrait') {
+    portraitSegments = snapshot.portraitSegments;
+    selectedSegmentIndex = snapshot.selectedSegmentIndex;
+    portraitCropX = snapshot.portraitCropX;
+    portraitKeyframes = snapshot.portraitKeyframes;
+    renderPortraitSegments();
+    updateCropOverlay();
+    updatePortraitUI();
+    renderKeyframeMarkers();
+  }
+  if (snapshot.tool === 'trim') {
+    if (snapshot.trimStart !== undefined) $('trim-start').value = snapshot.trimStart;
+    if (snapshot.trimEnd !== undefined) $('trim-end').value = snapshot.trimEnd;
+    updateTimeline();
+  }
+}
+
+/**
+ * Save current state to undo stack
+ */
+function saveUndoState() {
+  const snapshot = getStateSnapshot();
+  undoStack.push(snapshot);
+  if (undoStack.length > MAX_HISTORY) {
+    undoStack.shift();
+  }
+  redoStack = []; // Clear redo stack on new action
+  updateUndoButtons();
+}
+
+/**
+ * Undo last action
+ */
+function undo() {
+  if (undoStack.length === 0) return;
+  const current = getStateSnapshot();
+  redoStack.push(current);
+  const previous = undoStack.pop();
+  restoreState(previous);
+  updateUndoButtons();
+  showToast('Undo');
+}
+
+/**
+ * Redo last undone action
+ */
+function redo() {
+  if (redoStack.length === 0) return;
+  const current = getStateSnapshot();
+  undoStack.push(current);
+  const next = redoStack.pop();
+  restoreState(next);
+  updateUndoButtons();
+  showToast('Redo');
+}
+
+/**
+ * Update undo/redo button states
+ */
+function updateUndoButtons() {
+  const undoBtn = $('undo-btn');
+  const redoBtn = $('redo-btn');
+  if (undoBtn) undoBtn.disabled = undoStack.length === 0;
+  if (redoBtn) redoBtn.disabled = redoStack.length === 0;
+}
+
+// Hotkey presets - maps action names to key bindings
+let currentHotkeyPreset = 'premiere';
+let cacheThreshold = 20; // Percentage of frames to cache before closing loading window
+const HOTKEY_PRESETS = {
+  premiere: {
+    name: 'Adobe Premiere',
+    split: { key: 'KeyK', ctrl: true },
+    delete: { key: 'Delete' },
+    rippleDelete: { key: 'Delete', shift: true },
+    selectPrev: { key: 'BracketLeft' },
+    selectNext: { key: 'BracketRight' },
+    markIn: { key: 'KeyI' },
+    markOut: { key: 'KeyO' },
+  },
+  resolve: {
+    name: 'DaVinci Resolve',
+    split: { key: 'KeyB', ctrl: true },
+    delete: { key: 'Backspace' },
+    rippleDelete: { key: 'Backspace', shift: true },
+    selectPrev: { key: 'ArrowUp' },
+    selectNext: { key: 'ArrowDown' },
+    markIn: { key: 'KeyI' },
+    markOut: { key: 'KeyO' },
+  },
+  capcut: {
+    name: 'CapCut',
+    split: { key: 'KeyB', ctrl: true },
+    delete: { key: 'Delete' },
+    rippleDelete: { key: 'Delete' },
+    selectPrev: { key: 'ArrowUp' },
+    selectNext: { key: 'ArrowDown' },
+    markIn: { key: 'BracketLeft' },
+    markOut: { key: 'BracketRight' },
+  },
+  shotcut: {
+    name: 'Shotcut',
+    split: { key: 'KeyS' },
+    delete: { key: 'KeyX' },
+    rippleDelete: { key: 'KeyZ' },
+    selectPrev: { key: 'BracketLeft' },
+    selectNext: { key: 'BracketRight' },
+    markIn: { key: 'KeyI' },
+    markOut: { key: 'KeyO' },
+  },
+  descript: {
+    name: 'Descript',
+    split: { key: 'KeyK', ctrl: true },
+    delete: { key: 'Backspace' },
+    rippleDelete: { key: 'Backspace' },
+    selectPrev: { key: 'BracketLeft', ctrl: true },
+    selectNext: { key: 'BracketRight', ctrl: true },
+    markIn: { key: 'KeyI' },
+    markOut: { key: 'KeyO' },
+  },
+  camtasia: {
+    name: 'Camtasia',
+    split: { key: 'KeyS', ctrl: true },
+    delete: { key: 'Delete' },
+    rippleDelete: { key: 'Delete', ctrl: true },
+    selectPrev: { key: 'PageUp' },
+    selectNext: { key: 'PageDown' },
+    markIn: { key: 'KeyI' },
+    markOut: { key: 'KeyO' },
+  },
+};
+
+/** Check if keyboard event matches a hotkey binding */
+function matchesHotkey(event, binding) {
+  if (!binding) return false;
+  const ctrlMatch = binding.ctrl ? (event.ctrlKey || event.metaKey) : !(event.ctrlKey || event.metaKey);
+  const shiftMatch = binding.shift ? event.shiftKey : !event.shiftKey;
+  const altMatch = binding.alt ? event.altKey : !event.altKey;
+  return event.code === binding.key && ctrlMatch && shiftMatch && altMatch;
+}
+
+/** Format a hotkey binding for display */
+function formatHotkey(binding) {
+  if (!binding) return '';
+  const parts = [];
+  if (binding.ctrl) parts.push('Ctrl');
+  if (binding.shift) parts.push('Shift');
+  if (binding.alt) parts.push('Alt');
+  let keyName = binding.key
+    .replace('Key', '')
+    .replace('Arrow', '')
+    .replace('Bracket', '')
+    .replace('Left', '[')
+    .replace('Right', ']');
+  if (keyName === 'Space') keyName = 'Space';
+  else if (keyName === 'Delete') keyName = 'Del';
+  else if (keyName === 'Backspace') keyName = 'Bksp';
+  else if (keyName === 'PageUp') keyName = 'PgUp';
+  else if (keyName === 'PageDown') keyName = 'PgDn';
+  parts.push(keyName);
+  return parts.join('+');
+}
+
+/** Get current hotkey map */
+function getHotkeyMap() {
+  return HOTKEY_PRESETS[currentHotkeyPreset] || HOTKEY_PRESETS.premiere;
+}
+
+/** Set hotkey preset and update UI */
+function setHotkeyPreset(preset) {
+  if (!HOTKEY_PRESETS[preset]) return;
+  currentHotkeyPreset = preset;
+  updateHotkeyDisplay();
+  updatePlayerHotkeyHint();
+  // Save to config
+  saveSettings();
+}
+
+/** Update hotkey display in settings */
+function updateHotkeyDisplay() {
+  const map = getHotkeyMap();
+  const markInEl = $('hk-markIn');
+  const markOutEl = $('hk-markOut');
+  const splitEl = $('hk-split');
+  const deleteEl = $('hk-delete');
+  const rippleEl = $('hk-ripple');
+  if (markInEl) markInEl.textContent = formatHotkey(map.markIn);
+  if (markOutEl) markOutEl.textContent = formatHotkey(map.markOut);
+  if (splitEl) splitEl.textContent = formatHotkey(map.split);
+  if (deleteEl) deleteEl.textContent = formatHotkey(map.delete);
+  if (rippleEl) rippleEl.textContent = formatHotkey(map.rippleDelete);
+}
 
 // Quality presets
 const gifPresets = {
@@ -100,6 +342,17 @@ async function init() {
     $('homepageLink').textContent = homepage.replace(/^https?:\/\//, '').replace(/\/$/, '');
   }
 
+  // Load hotkey preset
+  if (res.defaults?.hotkeyPreset && HOTKEY_PRESETS[res.defaults.hotkeyPreset]) {
+    currentHotkeyPreset = res.defaults.hotkeyPreset;
+    updateHotkeyDisplay();
+  }
+
+  // Load cache threshold
+  if (typeof res.defaults?.cacheThreshold === 'number') {
+    cacheThreshold = res.defaults.cacheThreshold;
+  }
+
   // Handle MKV files - show converter, disable other tools
   isMkvFile = res.defaults?.isMkv || false;
   $('t-mkv2mp4').classList.toggle('hidden', !isMkvFile);
@@ -140,8 +393,6 @@ async function init() {
   $('compress-bitrate').value = defaultPresets.medium.bitrate;
   updateEstimates();
 
-  if (window.lucide) lucide.createIcons();
-
   // Prevent page zoom except on video player
   initPageZoomLock();
 
@@ -160,46 +411,73 @@ async function init() {
 }
 
 /**
- * Signal that app is ready - waits for video frame, window load, and paint cycle
+ * Start frame caching and show progress in loading HTA and main window
+ * Loading HTA closes when cache threshold is reached
  */
 function signalAppReady() {
   const video = $('videoPreview');
   let signaled = false;
 
+  // Signal loading HTA to open main window
   const doSignal = () => {
     if (signaled) return;
     signaled = true;
-    // Wait for multiple paint cycles to ensure window is fully rendered
+    // Small delay to ensure Edge window is ready
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          // Add extra delay to ensure window is visible and stable
-          setTimeout(() => {
-            postJson('/api/ready', {});
-          }, 1500);
-        });
+        // Signal is now handled by writing to temp file via /api/progress
+        // The ready file is written server-side, we just need to reach threshold
       });
     });
   };
 
-  // Wait for video to have at least one frame (readyState >= 2)
-  const checkVideo = () => {
-    if (video.readyState >= 2) {
+  // Show progress UI and start caching
+  const startCaching = () => {
+    // Show progress bar in main app
+    const progressEl = $('cache-progress');
+    if (progressEl) {
+      progressEl.style.display = 'flex';
+      $('cache-progress-label').textContent = 'Caching frames...';
+      $('cache-progress-fill').style.width = '0%';
+      $('cache-progress-pct').textContent = '0%';
+    }
+
+    // If already cached, signal immediately
+    if (frameCacheReady && frameCache.length > 0) {
+      VidLet.postJson('/api/progress', { percent: 100 });
       doSignal();
-    } else {
-      video.addEventListener('canplay', doSignal, { once: true });
+      return;
+    }
+
+    // Start frame cache in background
+    // Progress is sent to loading HTA
+    buildFrameCache((pct) => {
+      // Send progress to loading HTA
+      VidLet.postJson('/api/progress', { percent: pct });
+    });
+  };
+
+  // Wait for video to be ready before starting cache
+  const waitForVideo = () => {
+    if (video && video.readyState >= 2 && video.duration > 0) {
+      startCaching();
+    } else if (video) {
+      // Send initial progress to show loading HTA we're working
+      VidLet.postJson('/api/progress', { percent: 0 });
+      video.addEventListener('canplay', () => {
+        if (video.duration > 0) {
+          startCaching();
+        }
+      }, { once: true });
     }
   };
 
-  // Wait for window load event (all resources loaded)
+  // Start once DOM is ready
   if (document.readyState === 'complete') {
-    checkVideo();
+    waitForVideo();
   } else {
-    window.addEventListener('load', checkVideo, { once: true });
+    window.addEventListener('load', waitForVideo, { once: true });
   }
-
-  // Fallback timeout in case something fails
-  setTimeout(doSignal, 5000);
 }
 
 function updateFileDisplay() {
@@ -280,6 +558,7 @@ function selectTool(id) {
       $('cropOverlay').classList.add('active');
       initPortraitSegments();
       updateCropOverlay();
+      updateTransitionUI();
     }
 
     if (id === 'trim') {
@@ -312,6 +591,31 @@ function selectTool(id) {
     activeTool = null;
     $('processBtn').disabled = true;
   }
+
+  updatePlayerHotkeyHint();
+}
+
+/**
+ * Update player hotkey hint based on active tool
+ */
+function updatePlayerHotkeyHint() {
+  const hint = $('playerHotkeyHint');
+  if (!hint) return;
+
+  // Base hints (always shown)
+  const baseHints = 'Space: Play | ←→: 5s | Alt+←→: Frame | M: Mute';
+
+  // Tool-specific hints
+  let toolHints = '';
+  const hotkeys = HOTKEY_PRESETS[currentHotkeyPreset] || HOTKEY_PRESETS.premiere;
+
+  if (activeTool === 'portrait') {
+    toolHints = ` | ${formatHotkey(hotkeys.split)}: Split | ${formatHotkey(hotkeys.delete)}: Del`;
+  } else if (activeTool === 'trim') {
+    toolHints = ` | ${formatHotkey(hotkeys.markIn)}: Set In | ${formatHotkey(hotkeys.markOut)}: Set Out`;
+  }
+
+  hint.textContent = baseHints + toolHints;
 }
 
 // ============ SETTINGS MODAL ============
@@ -334,7 +638,28 @@ function openSettings() {
   setSegBtn('settingsMkvQuality', $('mkv2mp4-quality').value);
   setSegBtn('settingsTrimMode', $('trim-accurate').value === 'true' ? 'accurate' : 'fast');
 
+  // Hotkey preset
+  const hotkeySelect = $('settingsHotkeyPreset');
+  if (hotkeySelect) hotkeySelect.value = currentHotkeyPreset;
+  updateHotkeyDisplay();
+
+  // Cache threshold
+  const cacheSlider = $('settingsCacheThreshold');
+  if (cacheSlider) {
+    cacheSlider.value = cacheThreshold;
+    updateCacheThresholdLabel();
+  }
+
   $('settingsModal').classList.add('on');
+}
+
+/** Update cache threshold label */
+function updateCacheThresholdLabel() {
+  const slider = $('settingsCacheThreshold');
+  const label = $('cacheThresholdVal');
+  if (slider && label) {
+    label.textContent = slider.value + '%';
+  }
 }
 
 function closeSettings() {
@@ -361,11 +686,71 @@ function closeSettings() {
   const trimMode = getSegVal('settingsTrimMode');
   $('trim-accurate').value = trimMode === 'accurate' ? 'true' : 'false';
 
+  // Cache threshold
+  const cacheSlider = $('settingsCacheThreshold');
+  if (cacheSlider) {
+    cacheThreshold = parseInt(cacheSlider.value, 10) || 20;
+  }
+
   // Update all estimates
   updateEstimates();
   updateCompressLabels();
 
   $('settingsModal').classList.remove('on');
+
+  // Save settings to server
+  saveSettings();
+}
+
+/** Save app settings to config file */
+async function saveSettings() {
+  try {
+    await postJson('/api/save-settings', {
+      hotkeyPreset: currentHotkeyPreset,
+      cacheThreshold: cacheThreshold,
+    });
+  } catch (err) {
+    console.warn('Failed to save settings:', err);
+  }
+}
+
+// ============ EXTRACT AUDIO MODAL ============
+
+function openExtractAudioModal() {
+  $('extractAudioModal').classList.add('on');
+}
+
+function closeExtractAudioModal() {
+  $('extractAudioModal').classList.remove('on');
+}
+
+async function extractAudio() {
+  closeExtractAudioModal();
+
+  $('loading').classList.add('on');
+  $('loading').querySelector('span').textContent = 'Extracting audio...';
+
+  const opts = {
+    tool: 'extractaudio',
+    audioFormat: $('extract-audio-format').value || 'mp3',
+    audioBitrate: parseInt($('extract-audio-bitrate').value) || 192
+  };
+
+  try {
+    const res = await postJson('/api/process', opts);
+    $('loading').classList.remove('on');
+
+    if (res.success) {
+      celebrate();
+      $('done').classList.add('on');
+      $('output').textContent = res.output || 'Audio extracted!';
+    } else {
+      alert('Error: ' + (res.error || 'Unknown error'));
+    }
+  } catch (err) {
+    $('loading').classList.remove('on');
+    alert('Error: ' + err.message);
+  }
 }
 
 function setSegBtn(groupId, val) {
@@ -475,6 +860,23 @@ function setGifQuality(level) {
   document.querySelectorAll('#opts-togif .preset-btn').forEach(b => b.classList.remove('active'));
   event.target.classList.add('active');
   updateEstimates();
+}
+
+function setAudioFormat(format) {
+  $('extract-audio-format').value = format;
+  document.querySelectorAll('#audio-format-btns .seg-btn').forEach(b => b.classList.remove('active'));
+  document.querySelector(`#audio-format-btns [data-val="${format}"]`).classList.add('active');
+  // Hide bitrate for lossless formats
+  const bitrateRow = $('audio-bitrate-row');
+  if (bitrateRow) {
+    bitrateRow.style.display = (format === 'wav' || format === 'flac') ? 'none' : 'flex';
+  }
+}
+
+function setAudioBitrate(bitrate) {
+  $('extract-audio-bitrate').value = bitrate;
+  document.querySelectorAll('#audio-bitrate-btns .seg-btn').forEach(b => b.classList.remove('active'));
+  document.querySelector(`#audio-bitrate-btns [data-val="${bitrate}"]`).classList.add('active');
 }
 
 function setMkvMode(mode) {
@@ -660,6 +1062,166 @@ function updatePlayhead() {
 
   const pct = (video.currentTime / info.duration) * 100;
   playhead.style.left = pct + '%';
+}
+
+// ============ FRAME CACHE FOR SMOOTH SCRUBBING ============
+
+/**
+ * Build frame cache for smooth scrubbing preview
+ * Uses a hidden video element to avoid blocking the main player
+ * @param {function} onProgress - Optional callback called with progress (0-100)
+ */
+async function buildFrameCache(onProgress) {
+  const mainVideo = $('videoPreview');
+
+  // Send initial progress immediately
+  if (onProgress) onProgress(0);
+
+  // Validate video is ready
+  if (!mainVideo || !mainVideo.duration || mainVideo.duration <= 0) {
+    console.warn('buildFrameCache: Video not ready or no duration');
+    if (onProgress) onProgress(100); // Signal complete to close loading window
+    return;
+  }
+
+  // Don't cache twice
+  if (frameCacheReady || frameCache.length > 0) {
+    if (onProgress) onProgress(100);
+    return;
+  }
+
+  // Create hidden video element for background caching
+  const cacheVideo = document.createElement('video');
+  cacheVideo.src = mainVideo.src;
+  cacheVideo.muted = true;
+  cacheVideo.preload = 'auto';
+  cacheVideo.style.display = 'none';
+  document.body.appendChild(cacheVideo);
+
+  // Wait for video to be ready
+  await new Promise(resolve => {
+    cacheVideo.addEventListener('loadeddata', resolve, { once: true });
+    cacheVideo.load();
+  });
+
+  // Create offscreen canvas for frame extraction
+  frameCacheCanvas = document.createElement('canvas');
+  const scale = 0.5; // Cache at half resolution for memory efficiency
+  frameCacheCanvas.width = cacheVideo.videoWidth * scale;
+  frameCacheCanvas.height = cacheVideo.videoHeight * scale;
+  frameCacheCtx = frameCacheCanvas.getContext('2d', { willReadFrequently: true });
+
+  frameCache = [];
+  const duration = cacheVideo.duration;
+  const frameCount = Math.ceil(duration / FRAME_CACHE_INTERVAL);
+
+  // Show caching progress
+  const progressEl = $('cache-progress');
+  const progressFill = $('cache-progress-fill');
+  const progressPct = $('cache-progress-pct');
+  if (progressEl) progressEl.style.display = 'flex';
+
+  // Track last reported progress to avoid redundant updates
+  let lastReportedPct = 0;
+
+  for (let i = 0; i <= frameCount; i++) {
+    const time = Math.min(i * FRAME_CACHE_INTERVAL, duration);
+
+    await new Promise(resolve => {
+      const onSeeked = () => {
+        cacheVideo.removeEventListener('seeked', onSeeked);
+        // Draw frame to canvas
+        frameCacheCtx.drawImage(cacheVideo, 0, 0, frameCacheCanvas.width, frameCacheCanvas.height);
+        // Store as data URL for quick access
+        frameCache.push({
+          time,
+          dataUrl: frameCacheCanvas.toDataURL('image/jpeg', 0.7)
+        });
+        resolve();
+      };
+      cacheVideo.addEventListener('seeked', onSeeked);
+      cacheVideo.currentTime = time;
+    });
+
+    // Calculate progress percentage
+    const pct = Math.round((i / frameCount) * 100);
+
+    // Update UI every 2 frames or at key thresholds (10%, 20%, 30%, etc.)
+    const isKeyThreshold = pct >= lastReportedPct + 10;
+    if (i % 2 === 0 || isKeyThreshold) {
+      if (progressFill) progressFill.style.width = `${pct}%`;
+      if (progressPct) progressPct.textContent = `${pct}%`;
+      if (onProgress && pct > lastReportedPct) {
+        onProgress(pct);
+        lastReportedPct = pct;
+      }
+    }
+
+    // Yield to allow UI updates
+    if (i % 4 === 0) {
+      await new Promise(r => setTimeout(r, 0));
+    }
+  }
+
+  // Cleanup
+  cacheVideo.remove();
+  frameCacheReady = true;
+  if (progressEl) progressEl.style.display = 'none';
+
+  // Signal 100% complete
+  if (onProgress) onProgress(100);
+
+  console.log(`Frame cache ready: ${frameCache.length} frames`);
+}
+
+/**
+ * Get cached frame closest to given time
+ */
+function getCachedFrame(time) {
+  if (!frameCacheReady || frameCache.length === 0) return null;
+
+  // Binary search for closest frame
+  let left = 0;
+  let right = frameCache.length - 1;
+
+  while (left < right) {
+    const mid = Math.floor((left + right) / 2);
+    if (frameCache[mid].time < time) {
+      left = mid + 1;
+    } else {
+      right = mid;
+    }
+  }
+
+  // Check if previous frame is closer
+  if (left > 0 && Math.abs(frameCache[left - 1].time - time) < Math.abs(frameCache[left].time - time)) {
+    left--;
+  }
+
+  return frameCache[left];
+}
+
+/**
+ * Show scrub overlay with cached frame
+ */
+function showScrubFrame(time) {
+  const overlay = $('scrub-overlay');
+  const img = $('scrub-frame');
+  if (!overlay || !img) return;
+
+  const frame = getCachedFrame(time);
+  if (frame) {
+    img.src = frame.dataUrl;
+    overlay.style.display = 'block';
+  }
+}
+
+/**
+ * Hide scrub overlay
+ */
+function hideScrubFrame() {
+  const overlay = $('scrub-overlay');
+  if (overlay) overlay.style.display = 'none';
 }
 
 function toggleAutoZoom() {
@@ -1393,25 +1955,27 @@ function updateVolumeUI() {
   $('volumeLevel').style.width = (muted ? 0 : video.volume * 100) + '%';
 }
 
-function updateTimeDisplay() {
+function updateTimeDisplay(overrideTime) {
   const video = $('videoPreview');
   if (!video.duration) return;
+
+  const currentTime = overrideTime !== undefined ? overrideTime : video.currentTime;
 
   // In trim mode, normalize to selection range
   if (activeTool === 'trim') {
     const trimStart = parseFloat($('trim-start').value) || 0;
     const trimEnd = parseFloat($('trim-end').value) || video.duration;
     const trimDuration = trimEnd - trimStart;
-    const relativeTime = Math.max(0, video.currentTime - trimStart);
+    const relativeTime = Math.max(0, currentTime - trimStart);
     const pct = trimDuration > 0 ? (relativeTime / trimDuration) * 100 : 0;
     $('playerProgress').style.width = Math.min(100, pct) + '%';
     $('playerThumb').style.left = Math.min(100, pct) + '%';
     $('playerTime').textContent = formatTime(relativeTime) + ' / ' + formatTime(trimDuration);
   } else {
-    const pct = (video.currentTime / video.duration) * 100;
+    const pct = (currentTime / video.duration) * 100;
     $('playerProgress').style.width = pct + '%';
     $('playerThumb').style.left = pct + '%';
-    $('playerTime').textContent = formatTime(video.currentTime) + ' / ' + formatTime(video.duration);
+    $('playerTime').textContent = formatTime(currentTime) + ' / ' + formatTime(video.duration);
   }
 }
 
@@ -1438,9 +2002,17 @@ function initPlayerControls() {
     updateTimeDisplay();
     updatePlayhead();
     updateThumbFrameTime();
-    // Update portrait segment playhead
+    // Update portrait segment playhead and keyframe animation
     if (activeTool === 'portrait') {
       updatePortraitPlayhead();
+      // Animate crop position based on keyframes during playback
+      if (keyframeAnimationEnabled && !video.paused && portraitKeyframes.length > 0) {
+        const newCropX = getCropXAtTime(video.currentTime);
+        if (Math.abs(newCropX - portraitCropX) > 0.001) {
+          portraitCropX = newCropX;
+          updateCropOverlay();
+        }
+      }
     }
     // Seamless loop in trim mode
     if (activeTool === 'trim' && !video.paused) {
@@ -1453,20 +2025,39 @@ function initPlayerControls() {
   });
   video.addEventListener('loadedmetadata', updateTimeDisplay);
 
-  // Seek bar scrubbing support
+  // Seek bar scrubbing support with frame cache
   let isSeeking = false;
   let wasPlayingBeforeSeek = false;
+  let lastScrubTime = 0;
 
-  function seekToPosition(e) {
+  function getTimeFromPosition(e) {
     const rect = seek.getBoundingClientRect();
     const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    // In trim mode, seek within selection range
     if (activeTool === 'trim') {
       const trimStart = parseFloat($('trim-start').value) || 0;
       const trimEnd = parseFloat($('trim-end').value) || video.duration;
-      video.currentTime = trimStart + pct * (trimEnd - trimStart);
-    } else {
-      video.currentTime = pct * video.duration;
+      return trimStart + pct * (trimEnd - trimStart);
+    }
+    return pct * video.duration;
+  }
+
+  function seekToPosition(e) {
+    const time = getTimeFromPosition(e);
+
+    // Show cached frame instantly during scrubbing
+    if (frameCacheReady && isSeeking) {
+      showScrubFrame(time);
+      // Update playhead position immediately
+      const pct = (time / info.duration) * 100;
+      $('timeline-playhead').style.left = pct + '%';
+      updateTimeDisplay(time);
+    }
+
+    // Throttle actual video seeks for performance
+    const now = performance.now();
+    if (now - lastScrubTime > 50) { // Seek at most every 50ms
+      video.currentTime = time;
+      lastScrubTime = now;
     }
   }
 
@@ -1483,9 +2074,12 @@ function initPlayerControls() {
     seekToPosition(e);
   });
 
-  document.addEventListener('mouseup', () => {
+  document.addEventListener('mouseup', (e) => {
     if (!isSeeking) return;
     isSeeking = false;
+    hideScrubFrame();
+    // Final seek to exact position
+    video.currentTime = getTimeFromPosition(e);
     if (wasPlayingBeforeSeek) {
       video.play();
     }
@@ -1500,29 +2094,134 @@ function initPlayerControls() {
   });
 
   document.addEventListener('keydown', (e) => {
-    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
 
-    // Ctrl+K / Cmd+K = Split segment (Adobe Premiere shortcut)
-    if ((e.ctrlKey || e.metaKey) && e.code === 'KeyK') {
-      if (activeTool === 'portrait') {
+    const hotkeys = getHotkeyMap();
+
+    // Portrait tool hotkeys (configurable based on preset)
+    if (activeTool === 'portrait') {
+      // Split segment
+      if (matchesHotkey(e, hotkeys.split)) {
         e.preventDefault();
         splitPortraitSegment();
         return;
       }
+
+      // Delete selected segment (leave gap)
+      if (matchesHotkey(e, hotkeys.delete)) {
+        e.preventDefault();
+        deleteSelectedSegment(false);
+        return;
+      }
+
+      // Ripple delete (fill gap)
+      if (matchesHotkey(e, hotkeys.rippleDelete)) {
+        e.preventDefault();
+        deleteSelectedSegment(true);
+        return;
+      }
+
+      // Select previous segment
+      if (matchesHotkey(e, hotkeys.selectPrev)) {
+        e.preventDefault();
+        if (selectedSegmentIndex > 0) {
+          selectSegment(selectedSegmentIndex - 1);
+        }
+        return;
+      }
+
+      // Select next segment
+      if (matchesHotkey(e, hotkeys.selectNext)) {
+        e.preventDefault();
+        if (selectedSegmentIndex < portraitSegments.length - 1) {
+          selectSegment(selectedSegmentIndex + 1);
+        }
+        return;
+      }
+
+      // Add keyframe at current position ('K' key in portrait mode)
+      if (e.code === 'KeyK' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        addKeyframe();
+        return;
+      }
     }
 
-    // Alt+Arrow = frame-by-frame (1/fps), normal Arrow = 5s
-    const frameStep = 1 / (info.fps || 30);
-    const seekStep = e.altKey ? frameStep : 5;
+    // Undo/Redo (Ctrl+Z, Ctrl+Shift+Z or Ctrl+Y)
+    if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ') {
+      e.preventDefault();
+      if (e.shiftKey) {
+        redo();
+      } else {
+        undo();
+      }
+      return;
+    }
+    if ((e.ctrlKey || e.metaKey) && e.code === 'KeyY') {
+      e.preventDefault();
+      redo();
+      return;
+    }
 
+    // Navigation steps
+    const frameStep = 1 / (info.fps || 30);
+    const shortSeek = e.altKey ? frameStep : 5;  // Alt = frame, normal = 5s
+    const longSeek = e.shiftKey ? 30 : 10;       // Shift = 30s, normal = 10s
+
+    // Global playback & navigation hotkeys
     switch (e.code) {
+      // Playback
       case 'Space': e.preventDefault(); togglePlay(); break;
       case 'KeyM': toggleMute(); break;
       case 'KeyJ': adjustSpeed(-0.5); break;
-      case 'KeyK': resetSpeed(); break;
+      case 'KeyK': if (!e.ctrlKey && !e.metaKey) resetSpeed(); break;
       case 'KeyL': adjustSpeed(0.5); break;
-      case 'ArrowLeft': e.preventDefault(); video.currentTime = Math.max(0, video.currentTime - seekStep); break;
-      case 'ArrowRight': e.preventDefault(); video.currentTime = Math.min(video.duration, video.currentTime + seekStep); break;
+
+      // Navigation: Arrow keys (Alt = frame, normal = 5s)
+      case 'ArrowLeft':
+        e.preventDefault();
+        video.currentTime = Math.max(0, video.currentTime - shortSeek);
+        break;
+      case 'ArrowRight':
+        e.preventDefault();
+        video.currentTime = Math.min(video.duration, video.currentTime + shortSeek);
+        break;
+
+      // Navigation: Home/End = start/end of video
+      case 'Home':
+        e.preventDefault();
+        video.currentTime = 0;
+        break;
+      case 'End':
+        e.preventDefault();
+        video.currentTime = video.duration;
+        break;
+
+      // Navigation: Page Up/Down = 10s jumps (Shift = 30s)
+      case 'PageUp':
+        e.preventDefault();
+        video.currentTime = Math.max(0, video.currentTime - longSeek);
+        break;
+      case 'PageDown':
+        e.preventDefault();
+        video.currentTime = Math.min(video.duration, video.currentTime + longSeek);
+        break;
+
+      // Mark In/Out points (I/O keys - common in NLEs)
+      case 'KeyI':
+        if (activeTool === 'trim') {
+          e.preventDefault();
+          $('trim-start').value = video.currentTime.toFixed(2);
+          updateTimeline();
+        }
+        break;
+      case 'KeyO':
+        if (activeTool === 'trim') {
+          e.preventDefault();
+          $('trim-end').value = video.currentTime.toFixed(2);
+          updateTimeline();
+        }
+        break;
     }
   });
 }
@@ -2045,20 +2744,32 @@ function updateCropOverlay() {
 // ============ PORTRAIT SEGMENTS ============
 
 function initPortraitSegments() {
+  // If already initialized, just refresh UI (preserve segments on tool switch)
+  if (portraitSegmentsInitialized && portraitSegments.length > 0) {
+    renderPortraitSegments();
+    updatePortraitUI();
+    return;
+  }
+
   // Reset zoom state
   portraitZoom = 1;
   portraitOffset = 0;
   $('segment-timeline-wrap')?.classList.remove('zoomed');
 
-  // Create default segment covering entire video
+  // Use trim values if set, otherwise full video duration
+  const trimStart = parseFloat($('trim-start')?.value) || 0;
+  const trimEnd = parseFloat($('trim-end')?.value) || info.duration || 10;
+
+  // Create default segment covering the trim range
   portraitSegments = [{
     id: 'seg_' + Date.now(),
-    startTime: 0,
-    endTime: info.duration || 10,
+    startTime: trimStart,
+    endTime: trimEnd,
     cropX: 0.5
   }];
   selectedSegmentIndex = 0;
   portraitCropX = 0.5;
+  portraitSegmentsInitialized = true;
   renderPortraitSegments();
   updatePortraitUI();
 
@@ -2067,6 +2778,8 @@ function initPortraitSegments() {
 }
 
 function splitPortraitSegment() {
+  saveUndoState();
+
   const video = $('videoPreview');
   const currentTime = video.currentTime;
 
@@ -2105,19 +2818,28 @@ function splitPortraitSegment() {
   updateCropOverlay();
 }
 
-function deleteSelectedSegment() {
+function deleteSelectedSegment(ripple = true) {
   if (portraitSegments.length <= 1) return;
+
+  saveUndoState();
 
   const deleted = portraitSegments.splice(selectedSegmentIndex, 1)[0];
 
-  // Merge with previous or next segment
-  if (selectedSegmentIndex > 0) {
-    // Merge with previous
-    portraitSegments[selectedSegmentIndex - 1].endTime = deleted.endTime;
-    selectedSegmentIndex--;
-  } else if (portraitSegments.length > 0) {
-    // Merge with next
-    portraitSegments[0].startTime = deleted.startTime;
+  if (ripple) {
+    // Ripple delete: merge with previous or next segment (fills the gap)
+    if (selectedSegmentIndex > 0) {
+      // Merge with previous
+      portraitSegments[selectedSegmentIndex - 1].endTime = deleted.endTime;
+      selectedSegmentIndex--;
+    } else if (portraitSegments.length > 0) {
+      // Merge with next
+      portraitSegments[0].startTime = deleted.startTime;
+    }
+  } else {
+    // Regular delete: just remove, leave gap (other segments don't change)
+    if (selectedSegmentIndex >= portraitSegments.length) {
+      selectedSegmentIndex = Math.max(0, portraitSegments.length - 1);
+    }
   }
 
   // Update cropX to selected segment
@@ -2128,6 +2850,135 @@ function deleteSelectedSegment() {
   renderPortraitSegments();
   updatePortraitUI();
   updateCropOverlay();
+}
+
+/**
+ * Get interpolated cropX at a given time from keyframes
+ */
+function getCropXAtTime(time) {
+  if (portraitKeyframes.length === 0) return 0.5;
+  if (portraitKeyframes.length === 1) return portraitKeyframes[0].cropX;
+
+  // Find surrounding keyframes
+  let before = portraitKeyframes[0];
+  let after = portraitKeyframes[portraitKeyframes.length - 1];
+
+  for (let i = 0; i < portraitKeyframes.length - 1; i++) {
+    if (portraitKeyframes[i].time <= time && portraitKeyframes[i + 1].time >= time) {
+      before = portraitKeyframes[i];
+      after = portraitKeyframes[i + 1];
+      break;
+    }
+  }
+
+  // Interpolate
+  if (before.time === after.time) return before.cropX;
+  const t = (time - before.time) / (after.time - before.time);
+  return before.cropX + (after.cropX - before.cropX) * t;
+}
+
+/**
+ * Add a keyframe at current video time with current crop position
+ */
+function addKeyframe() {
+  const video = $('videoPreview');
+  const time = video.currentTime;
+
+  // Remove existing keyframe at same time (within 0.1s)
+  portraitKeyframes = portraitKeyframes.filter(k => Math.abs(k.time - time) > 0.1);
+
+  // Add new keyframe
+  portraitKeyframes.push({ time, cropX: portraitCropX });
+  portraitKeyframes.sort((a, b) => a.time - b.time);
+
+  keyframeAnimationEnabled = true;
+  showToast(`Keyframe added at ${time.toFixed(1)}s`);
+  renderKeyframeMarkers();
+}
+
+/**
+ * Clear all keyframes
+ */
+function clearKeyframes() {
+  if (portraitKeyframes.length === 0) {
+    showToast('No keyframes to clear');
+    return;
+  }
+  portraitKeyframes = [];
+  keyframeAnimationEnabled = false;
+  renderKeyframeMarkers();
+  showToast('Keyframes cleared');
+}
+
+/**
+ * Render keyframe markers on timeline
+ */
+function renderKeyframeMarkers() {
+  const timeline = $('segment-timeline');
+  if (!timeline) return;
+
+  // Remove existing keyframe markers
+  timeline.querySelectorAll('.keyframe-marker').forEach(m => m.remove());
+
+  const duration = info.duration || 1;
+  portraitKeyframes.forEach((kf, i) => {
+    const marker = document.createElement('div');
+    marker.className = 'keyframe-marker';
+    marker.style.left = `${(kf.time / duration) * 100}%`;
+    marker.title = `${kf.time.toFixed(1)}s: ${Math.round(kf.cropX * 100)}%`;
+    marker.onclick = (e) => {
+      e.stopPropagation();
+      $('videoPreview').currentTime = kf.time;
+      portraitCropX = kf.cropX;
+      updateCropOverlay();
+    };
+    timeline.appendChild(marker);
+  });
+}
+
+/**
+ * Auto-split segments - divides each segment in half
+ * Doubles segments each click: 1 -> 2 -> 4 -> 8, then hides
+ */
+function autoSplitSegments() {
+  // Don't split if already at 8 or more segments
+  if (portraitSegments.length >= 8) return;
+
+  saveUndoState();
+
+  // Split each existing segment in half
+  const newSegments = [];
+  portraitSegments.forEach((seg, i) => {
+    const midTime = (seg.startTime + seg.endTime) / 2;
+    // First half keeps original crop
+    newSegments.push({
+      id: `seg-${newSegments.length}`,
+      startTime: seg.startTime,
+      endTime: midTime,
+      cropX: seg.cropX
+    });
+    // Second half gets alternating crop position
+    const altCrop = seg.cropX <= 0.4 ? 0.7 : seg.cropX >= 0.6 ? 0.3 : (i % 2 === 0 ? 0.7 : 0.3);
+    newSegments.push({
+      id: `seg-${newSegments.length}`,
+      startTime: midTime,
+      endTime: seg.endTime,
+      cropX: altCrop
+    });
+  });
+
+  portraitSegments = newSegments;
+  selectedSegmentIndex = 0;
+  portraitCropX = portraitSegments[0].cropX;
+
+  renderPortraitSegments();
+  updateCropOverlay();
+  updatePortraitUI();
+
+  // Hide button if at 8 segments
+  updateAutoSplitButton();
+
+  showToast(`Split into ${portraitSegments.length} segments`);
 }
 
 function selectSegment(index) {
@@ -2152,52 +3003,49 @@ function selectSegment(index) {
 
 function renderPortraitSegments() {
   const timeline = $('segment-timeline');
-  const timelineWrap = $('segment-timeline-wrap');
-  const timeTicks = $('segment-time-ticks');
+  const grid = $('segment-grid');
   if (!timeline) return;
 
   timeline.innerHTML = '';
 
-  const totalDuration = info.duration || 1;
-  const visibleDuration = totalDuration / portraitZoom;
-  const visibleStart = portraitOffset * totalDuration;
-  const visibleEnd = visibleStart + visibleDuration;
+  // Get trim range - portrait timeline is normalized to this range
+  const trimStart = parseFloat($('trim-start')?.value) || 0;
+  const trimEnd = parseFloat($('trim-end')?.value) || info.duration || 1;
+  const trimDuration = trimEnd - trimStart;
 
-  // Apply zoom transform to timeline
-  // Width must account for the 8px inset on each side (16px total)
-  timeline.style.width = `calc(${portraitZoom * 100}% - ${portraitZoom * 16}px)`;
-  timeline.style.transform = `translateX(${-portraitOffset * 100}%)`;
+  // Render grid lines
+  if (grid) {
+    grid.innerHTML = '';
+    // Determine grid interval based on duration and zoom
+    let minorInterval = trimDuration <= 10 ? 1 : trimDuration <= 30 ? 2 : trimDuration <= 60 ? 5 : 10;
+    let majorInterval = minorInterval * 5;
+    if (portraitZoom >= 4) {
+      minorInterval = Math.max(0.5, minorInterval / 4);
+      majorInterval = minorInterval * 5;
+    } else if (portraitZoom >= 2) {
+      minorInterval = Math.max(0.5, minorInterval / 2);
+      majorInterval = minorInterval * 5;
+    }
 
-  // Render time ticks (zoom-aware)
-  if (timeTicks) {
-    timeTicks.innerHTML = '';
-    // Adjust tick interval based on zoom
-    let tickInterval = totalDuration <= 30 ? 5 : totalDuration <= 120 ? 15 : 30;
-    if (portraitZoom >= 4) tickInterval = Math.max(1, tickInterval / 4);
-    else if (portraitZoom >= 2) tickInterval = Math.max(1, tickInterval / 2);
-
-    for (let t = 0; t <= totalDuration; t += tickInterval) {
-      // Only render ticks in visible range (with some padding)
-      if (t >= visibleStart - tickInterval && t <= visibleEnd + tickInterval) {
-        const tick = document.createElement('span');
-        tick.className = 'segment-tick';
-        // Position relative to zoomed timeline
-        const pos = ((t / totalDuration) - portraitOffset) * portraitZoom * 100;
-        tick.style.left = `${pos}%`;
-        tick.textContent = formatDuration(t);
-        timeTicks.appendChild(tick);
-      }
+    for (let t = 0; t <= trimDuration; t += minorInterval) {
+      const line = document.createElement('div');
+      const isMajor = Math.abs(t % majorInterval) < 0.01 || Math.abs((t % majorInterval) - majorInterval) < 0.01;
+      line.className = 'segment-grid-line' + (isMajor ? ' major' : '');
+      line.style.left = `${(t / trimDuration) * 100}%`;
+      grid.appendChild(line);
     }
   }
 
-  // Render each segment with absolute positioning (zoom-aware)
+  // Render each segment (positioned relative to trim range)
   portraitSegments.forEach((seg, i) => {
-    // Convert to zoomed coordinates
-    const startPos = ((seg.startTime / totalDuration) - portraitOffset) * portraitZoom;
-    const endPos = ((seg.endTime / totalDuration) - portraitOffset) * portraitZoom;
+    // Clamp segment times to trim range
+    const segStart = Math.max(seg.startTime, trimStart);
+    const segEnd = Math.min(seg.endTime, trimEnd);
+    if (segEnd <= segStart) return; // Skip if outside trim range
 
-    // Skip if completely outside visible area
-    if (endPos < -0.1 || startPos > 1.1) return;
+    // Convert to percentage of trim range
+    const startPos = (segStart - trimStart) / trimDuration;
+    const endPos = (segEnd - trimStart) / trimDuration;
 
     const color = SEGMENT_COLORS[i % SEGMENT_COLORS.length];
 
@@ -2282,21 +3130,21 @@ function initSegmentHandles() {
         const x = e.clientX - rect.left - 8;
         const viewportRatio = Math.max(0, Math.min(1, x / innerWidth));
 
-        // Convert viewport position to time, accounting for zoom
-        const duration = info.duration || 1;
-        const visibleDuration = duration / portraitZoom;
-        const visibleStart = portraitOffset * duration;
-        const newTime = visibleStart + viewportRatio * visibleDuration;
+        // Convert viewport position to time (relative to trim range)
+        const trimStart = parseFloat($('trim-start')?.value) || 0;
+        const trimEnd = parseFloat($('trim-end')?.value) || info.duration || 1;
+        const trimDuration = trimEnd - trimStart;
+        const newTime = trimStart + viewportRatio * trimDuration;
 
         if (side === 'start') {
-          // Adjust start time - can't go past end - 0.5s
+          // Adjust start time - can't go past end - 0.5s, can't go before trim start
           const maxStart = seg.endTime - 0.5;
-          seg.startTime = Math.max(0, Math.min(maxStart, newTime));
+          seg.startTime = Math.max(trimStart, Math.min(maxStart, newTime));
           video.currentTime = seg.startTime;
         } else {
-          // Adjust end time - can't go before start + 0.5s
+          // Adjust end time - can't go before start + 0.5s, can't go past trim end
           const minEnd = seg.startTime + 0.5;
-          seg.endTime = Math.min(duration, Math.max(minEnd, newTime));
+          seg.endTime = Math.min(trimEnd, Math.max(minEnd, newTime));
           video.currentTime = seg.endTime;
         }
 
@@ -2328,19 +3176,22 @@ function updatePortraitPlayhead() {
 
   const video = $('videoPreview');
   const currentTime = video.currentTime;
-  const duration = info.duration || 1;
 
-  // Calculate position accounting for zoom and offset
-  const normalizedPos = currentTime / duration;
-  const zoomedPos = (normalizedPos - portraitOffset) * portraitZoom;
+  // Get trim range - playhead is relative to this
+  const trimStart = parseFloat($('trim-start')?.value) || 0;
+  const trimEnd = parseFloat($('trim-end')?.value) || info.duration || 1;
+  const trimDuration = trimEnd - trimStart;
 
-  // Hide playhead if outside visible area
-  if (zoomedPos < 0 || zoomedPos > 1) {
+  // Calculate position relative to trim range
+  const normalizedPos = (currentTime - trimStart) / trimDuration;
+
+  // Hide playhead if outside trim range
+  if (normalizedPos < 0 || normalizedPos > 1) {
     playhead.style.opacity = '0';
   } else {
     playhead.style.opacity = '1';
     // Position aligned with the timeline area (8px inset from edges)
-    playhead.style.left = `calc(8px + (100% - 16px) * ${zoomedPos})`;
+    playhead.style.left = `calc(8px + (100% - 16px) * ${normalizedPos})`;
   }
 
   // Check if we're in a gap - if so, skip to next segment during playback
@@ -2415,12 +3266,43 @@ function updatePortraitUI() {
     else if (pos > 0.66) label = 'Right';
     cropPosEl.textContent = `${label} ${Math.round(pos * 100)}%`;
   }
+
+  // Update auto-split button visibility
+  updateAutoSplitButton();
+}
+
+function updateAutoSplitButton() {
+  const btn = $('portrait-auto-split');
+  if (btn) {
+    btn.style.display = portraitSegments.length >= 8 ? 'none' : '';
+  }
 }
 
 function updateSelectedSegmentCropX(cropX) {
   if (portraitSegments[selectedSegmentIndex]) {
     portraitSegments[selectedSegmentIndex].cropX = cropX;
     updatePortraitUI();
+  }
+}
+
+function updateTransitionUI() {
+  const transition = $('portrait-transition').value;
+  const durationSlider = $('portrait-transition-duration');
+  const durationVal = $('portrait-transition-duration-val');
+  const row = durationSlider?.closest('.portrait-transition-row');
+
+  // Disable duration slider if transition is 'none'
+  if (transition === 'none') {
+    if (durationSlider) durationSlider.disabled = true;
+    if (durationVal) durationVal.style.opacity = '0.4';
+  } else {
+    if (durationSlider) durationSlider.disabled = false;
+    if (durationVal) durationVal.style.opacity = '1';
+  }
+
+  // Update duration label
+  if (durationVal && durationSlider) {
+    durationVal.textContent = durationSlider.value + 's';
   }
 }
 
@@ -2586,6 +3468,10 @@ async function process() {
         return;
       }
       break;
+    case 'extractaudio':
+      opts.audioFormat = $('extract-audio-format').value || 'mp3';
+      opts.audioBitrate = parseInt($('extract-audio-bitrate').value) || 192;
+      break;
     case 'portrait':
       opts.mode = 'crop';
       opts.resolution = 1080;
@@ -2596,6 +3482,9 @@ async function process() {
         endTime: seg.endTime,
         cropX: seg.cropX
       }));
+      // Transition options (only for multi-segment)
+      opts.transition = $('portrait-transition').value || 'none';
+      opts.transitionDuration = parseFloat($('portrait-transition-duration').value) || 0.3;
       break;
     case 'filter':
       // Convert UI values to FFmpeg ranges
@@ -2647,6 +3536,9 @@ async function process() {
 
       // Store output path
       if (res.output) currentFilePath = res.output;
+
+      // Celebrate success!
+      celebrate();
 
       // Handle output based on tool type
       if (activeTool === 'togif') {
@@ -2714,11 +3606,24 @@ async function loadOutputAsSource(filePath) {
       const video = $('videoPreview');
       video.src = '/api/video?t=' + Date.now();
 
+      // Reset frame cache for new video
+      frameCache = [];
+      frameCacheReady = false;
+      video.addEventListener('canplaythrough', () => {
+        if (!frameCacheReady && frameCache.length === 0) {
+          setTimeout(() => buildFrameCache(), 100);
+        }
+      }, { once: true });
+
       // Reset and update trim timeline for new duration
       $('trim-start').value = 0;
       $('trim-end').value = info.duration;
       clearMatchMarkers();
       updateTimeline();
+
+      // Reset portrait state for new video
+      portraitSegmentsInitialized = false;
+      portraitSegments = [];
 
       // Update shrink slider and 60s button (10x max speed limit)
       const shrinkMin = Math.max(1, Math.ceil(info.duration / 10));
@@ -2743,8 +3648,8 @@ async function loadOutputAsSource(filePath) {
       // Update thumbnail aspect ratio
       updateThumbAspectRatio();
 
-      // Update GIF visibility based on duration and show star/glow if newly available
-      const canExportGif = info.duration <= 15;
+      // Update GIF visibility based on duration (max 20s) and show star/glow if newly available
+      const canExportGif = info.duration <= 20;
       $('t-togif').classList.toggle('hidden', !canExportGif);
       if (canExportGif && !window.gifStarDismissed) {
         showGifStar();
@@ -2755,6 +3660,12 @@ async function loadOutputAsSource(filePath) {
       const aspectRatio = info.width / info.height;
       const isAlreadyPortrait = Math.abs(aspectRatio - 9/16) < 0.05;
       $('t-portrait').classList.toggle('hidden', isAlreadyPortrait);
+
+      // Update Extract Audio visibility - only show if video has audio
+      const extractAudioBtn = $('t-extractaudio');
+      if (extractAudioBtn) {
+        extractAudioBtn.classList.toggle('hidden', !info.hasAudio);
+      }
 
       // Select next uncompleted tool, or first available if all done
       if (isMkvFile) {
@@ -2790,6 +3701,36 @@ function showToast(message) {
   toast.textContent = message;
   toast.classList.add('show');
   setTimeout(() => toast.classList.remove('show'), 2000);
+}
+
+/**
+ * Celebrate with confetti burst
+ */
+function celebrate() {
+  if (typeof confetti !== 'function') return;
+
+  // Big burst from center
+  confetti({
+    particleCount: 100,
+    spread: 70,
+    origin: { y: 0.6 }
+  });
+
+  // Smaller side bursts after a delay
+  setTimeout(() => {
+    confetti({
+      particleCount: 50,
+      angle: 60,
+      spread: 55,
+      origin: { x: 0 }
+    });
+    confetti({
+      particleCount: 50,
+      angle: 120,
+      spread: 55,
+      origin: { x: 1 }
+    });
+  }, 200);
 }
 
 function showLoopTooltip() {

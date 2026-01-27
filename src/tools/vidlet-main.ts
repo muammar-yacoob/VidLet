@@ -16,7 +16,7 @@ import { thumb } from './thumb.js';
 import { togif } from './togif.js';
 import { trim, trimAccurate } from './trim.js';
 import { portrait, portraitMultiSegment, type PortraitSegment } from './shorts.js';
-import { addAudio } from './audio.js';
+import { addAudio, extractAudio } from './audio.js';
 import { filter } from './filter.js';
 import { caption } from './caption.js';
 
@@ -74,10 +74,15 @@ interface ToolOptions {
 	cropX?: number;
 	resolution?: number;
 	segments?: PortraitSegment[];
+	transition?: 'none' | 'fade' | 'dissolve';
+	transitionDuration?: number;
 	// Audio options
 	audioPath?: string;
 	audioVolume?: number;
 	audioMix?: boolean;
+	// Extract audio options
+	audioFormat?: 'mp3' | 'aac' | 'wav' | 'flac';
+	audioBitrate?: number;
 	// Filter options
 	filterBrightness?: number;
 	filterContrast?: number;
@@ -218,6 +223,8 @@ async function runTool(input: string, opts: ToolOptions): Promise<ProcessResult>
 						input: actualInput,
 						segments: opts.segments,
 						resolution: opts.resolution || 1080,
+						transition: opts.transition || 'none',
+						transitionDuration: opts.transitionDuration || 0.3,
 					});
 				} else {
 					// Single segment or no segments - use regular portrait
@@ -280,6 +287,17 @@ async function runTool(input: string, opts: ToolOptions): Promise<ProcessResult>
 				break;
 			}
 
+			case 'extractaudio': {
+				logs.push({ type: 'info', message: 'Extracting audio...' });
+				output = await extractAudio({
+					input: actualInput,
+					format: opts.audioFormat ?? 'mp3',
+					bitrate: opts.audioBitrate ?? 192,
+				});
+				logs.push({ type: 'success', message: 'Audio extracted!' });
+				break;
+			}
+
 			default:
 				throw new Error(`Unknown tool: ${toolId}`);
 		}
@@ -309,6 +327,7 @@ async function getVideoInfoForGui(filePath: string): Promise<VideoInfo> {
 		fps: info.fps ?? 30,
 		bitrate: info.bitrate ?? 0,
 		fileSize: stats.size,
+		hasAudio: info.hasAudio,
 	};
 }
 
@@ -326,6 +345,7 @@ export async function runGUI(input: string): Promise<boolean> {
 	const isLandscape = aspectRatio >= 1.7;
 
 	// Load defaults for all tools
+	const appConfig = await getToolConfig('app');
 	const defaults = {
 		compress: await getToolConfig('compress'),
 		togif: await getToolConfig('togif'),
@@ -334,6 +354,8 @@ export async function runGUI(input: string): Promise<boolean> {
 		isMkv: ext === '.mkv',
 		isLandscape,
 		homepage: getHomepage(),
+		hotkeyPreset: appConfig?.hotkeyPreset || 'premiere',
+		cacheThreshold: appConfig?.cacheThreshold || 20,
 	};
 
 	// Track current input for chained operations
@@ -345,7 +367,7 @@ export async function runGUI(input: string): Promise<boolean> {
 		videoInfo,
 		defaults,
 		onProcess: async (opts) => {
-			return runTool(currentInput, opts as ToolOptions);
+			return runTool(currentInput, opts as unknown as ToolOptions);
 		},
 		onLoadVideo: async (data: { filePath: string }) => {
 			try {
@@ -362,6 +384,7 @@ export async function runGUI(input: string): Promise<boolean> {
 				videoInfo.fps = newInfo.fps ?? 30;
 				videoInfo.bitrate = newInfo.bitrate ?? 0;
 				videoInfo.fileSize = stats.size;
+				videoInfo.hasAudio = newInfo.hasAudio;
 				logToFile(`VidLet: Loaded ${videoInfo.fileName} (${videoInfo.width}x${videoInfo.height}, ${videoInfo.duration}s)`);
 				return {
 					success: true,
@@ -372,6 +395,7 @@ export async function runGUI(input: string): Promise<boolean> {
 					duration: videoInfo.duration,
 					fps: videoInfo.fps,
 					fileSize: videoInfo.fileSize,
+					hasAudio: videoInfo.hasAudio,
 				};
 			} catch (err) {
 				logToFile(`VidLet: Failed to load video: ${(err as Error).message}`);

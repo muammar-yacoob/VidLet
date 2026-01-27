@@ -1,17 +1,21 @@
 <html>
 <head>
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
-<title>VidLet</title>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<title>VidLet Loading</title>
 <hta:application
   id="VidLetLoader"
   applicationName="VidLet"
-  border="none"
-  borderStyle="none"
-  caption="no"
+  icon="tv.ico"
+  border="thin"
+  borderStyle="normal"
+  caption="yes"
   innerBorder="no"
   maximizeButton="no"
   minimizeButton="no"
-  showInTaskbar="no"
+  showInTaskbar="yes"
   singleInstance="yes"
   scroll="no"
   contextMenu="no"
@@ -20,70 +24,123 @@
 />
 <style>
   *{margin:0;padding:0}
-  html,body{height:100%;overflow:hidden;background:linear-gradient(180deg,#0a0a0c 0%,#111113 100%);transition:opacity .4s ease-out}
+  html{height:100%;background:#000}
+  body{height:100%;overflow:hidden;background:linear-gradient(180deg,#0a0a0c 0%,#111113 100%);font-family:Segoe UI,sans-serif;color:#e4e4e7;text-align:center;padding:24px;opacity:1;transition:opacity .3s ease-out}
   body.fade-out{opacity:0}
-  body{font-family:Segoe UI,sans-serif;color:#e4e4e7;text-align:center;padding:24px}
-  .logo{width:80px;height:80px;margin-bottom:8px}
+  .logo{width:80px;height:80px;margin-bottom:8px;display:none}
+  .anim{width:100px;height:100px;margin-bottom:4px}
   .title{font-size:28px;font-weight:700;color:#a855f7;margin-bottom:2px}
   .tagline{font-size:10px;color:#c084fc;font-weight:600;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px}
   .desc{font-size:10px;color:#636366;margin-bottom:14px}
-  .loading{font-size:12px;color:#636366;margin-bottom:6px}
-  .dots{margin-bottom:20px}
-  .dot{display:inline-block;width:6px;height:6px;background:#a855f7;border-radius:50%;margin:0 3px}
-  .divider{width:80%;height:1px;background:#222;margin:0 auto 14px auto}
-  .website{font-size:11px;color:#a855f7;text-decoration:none;transition:color .2s}
+  .progress{font-size:14px;color:#a855f7;font-weight:600;margin-bottom:8px;min-height:18px}
+  .progress-bar{width:60%;height:4px;background:#222;border-radius:2px;margin:0 auto;overflow:hidden}
+  .progress-fill{height:100%;background:linear-gradient(90deg,#a855f7,#c084fc);width:0%;transition:width .2s}
+  .website{font-size:11px;color:#a855f7;text-decoration:none;transition:color .2s;margin-top:16px;display:inline-block}
   .website:hover{color:#c084fc}
 </style>
 <script language="javascript">
-  var w = 280, h = 360;
+  var w = 280, h = 320;
   window.resizeTo(w, h);
-  window.moveTo((screen.availWidth - w) / 2, (screen.availHeight - h) / 2);
+  window.moveTo((screen.availWidth - w) / 2, (screen.availHeight - h) / 2.5);
 
-  // Failsafe timeout (15 seconds - only if app never signals ready)
-  setTimeout(function() { window.close(); }, 15000);
+  // Pick a random animation
+  var animations = ['rainbow-cat.gif'];
+  var randomAnim = animations[Math.floor(Math.random() * animations.length)];
+  window.onload = function() {
+    document.getElementById('anim').src = 'animations/' + randomAnim;
+  };
 
-  // Poll for ready signal file
   var fso = new ActiveXObject("Scripting.FileSystemObject");
   var shell = new ActiveXObject("WScript.Shell");
-  var readyFile = shell.ExpandEnvironmentStrings("%TEMP%") + "\\vidlet-ready.tmp";
-  var closing = false;
-  setInterval(function() {
-    if (!closing && fso.FileExists(readyFile)) {
-      closing = true;
-      try { fso.DeleteFile(readyFile); } catch(e) {}
-      document.body.className = 'fade-out';
-      setTimeout(function() { window.close(); }, 400);
-    }
-  }, 200);
+  var tempDir = shell.ExpandEnvironmentStrings("%TEMP%");
+  var readyFile = tempDir + "\\vidlet-ready.tmp";
+  var progressFile = tempDir + "\\vidlet-progress.tmp";
+  var pollTimer = null;
+  var isClosing = false;
+  var mainOpened = false;
+  var mainUrl = "";
+  var cacheThreshold = 20;
 
-  // Animate dots
-  var idx = 0;
-  setInterval(function() {
-    var d1 = document.getElementById('d1');
-    var d2 = document.getElementById('d2');
-    var d3 = document.getElementById('d3');
-    if(d1 && d2 && d3) {
-      d1.style.opacity = 0.3; d2.style.opacity = 0.3; d3.style.opacity = 0.3;
-      if (idx % 3 == 0) d1.style.opacity = 1;
-      if (idx % 3 == 1) d2.style.opacity = 1;
-      if (idx % 3 == 2) d3.style.opacity = 1;
-      idx++;
-    }
+  function closeWindow() {
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = null;
+    try { fso.DeleteFile(readyFile); } catch(e) {}
+    try { fso.DeleteFile(progressFile); } catch(e) {}
+    self.close();
+  }
+
+  function showMainAndClose() {
+    if (isClosing) return;
+    isClosing = true;
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = null;
+    // Move Edge window to center and activate it
+    try {
+      var moveCmd = 'powershell -WindowStyle Hidden -Command "Add-Type -Name W -Namespace W -MemberDefinition \'[DllImport(\\\"user32.dll\\\")] public static extern bool SetWindowPos(IntPtr h,IntPtr a,int x,int y,int w,int h2,uint f);[DllImport(\\\"user32.dll\\\")] public static extern IntPtr FindWindow(string c,string t);[DllImport(\\\"user32.dll\\\")] public static extern bool ShowWindow(IntPtr h,int c);\';$h=[W.W]::FindWindow($null,\\\"VidLet\\\");if($h-ne[IntPtr]::Zero){[W.W]::ShowWindow($h,9);[W.W]::SetWindowPos($h,[IntPtr]::Zero,(' + Math.round((screen.availWidth-480)/2) + '),(' + Math.round((screen.availHeight-400)/2) + '),0,0,0x0001)}"';
+      shell.Run(moveCmd, 0, false);
+    } catch(e) {}
+    try { fso.DeleteFile(readyFile); } catch(e) {}
+    try { fso.DeleteFile(progressFile); } catch(e) {}
+    document.body.className = 'fade-out';
+    setTimeout(closeWindow, 300);
+  }
+
+  function openMainHidden() {
+    if (mainOpened) return;
+    mainOpened = true;
+    try {
+      var f = fso.OpenTextFile(readyFile, 1);
+      mainUrl = f.ReadAll();
+      f.Close();
+      if (mainUrl && mainUrl.length > 0) {
+        // Open Edge off-screen so it loads invisibly
+        var cmd = 'powershell -WindowStyle Hidden -Command "Start-Process msedge -ArgumentList \'--app=' + mainUrl.replace(/'/g, "''") + '\',\'--window-position=-32000,-32000\'"';
+        shell.Run(cmd, 0, false);
+      }
+    } catch(e) {}
+  }
+
+  function checkProgress() {
+    var pct = 0;
+    try {
+      if (fso.FileExists(progressFile)) {
+        var f = fso.OpenTextFile(progressFile, 1);
+        pct = parseInt(f.ReadAll(), 10);
+        f.Close();
+        if (!isNaN(pct)) {
+          document.getElementById('progress').innerText = 'Caching ' + pct + '%';
+          document.getElementById('progress-fill').style.width = pct + '%';
+        }
+      }
+    } catch(e) {}
+    return pct;
+  }
+
+  // Failsafe timeout (30 seconds)
+  setTimeout(showMainAndClose, 30000);
+
+  // Poll for ready signal and progress updates
+  setTimeout(function() {
+    pollTimer = setInterval(function() {
+      if (!mainOpened && fso.FileExists(readyFile)) {
+        openMainHidden();
+      }
+      var pct = checkProgress();
+      if (mainOpened && pct >= cacheThreshold) {
+        showMainAndClose();
+      }
+    }, 100);
   }, 300);
 </script>
 </head>
 <body>
-  <img class="logo" src="../icons/tv.png">
+  <img class="anim" id="anim" src="animations/rainbow-cat.gif">
+  <img class="logo" src="tv.png">
   <div class="title">VidLet</div>
-  <div class="tagline">Compress. Convert. Create.</div>
+  <div class="tagline">Trim &bull; Compose &bull; Publish</div>
   <div class="desc">Lightweight video tools for content creators</div>
-  <div class="loading">Loading your tools...</div>
-  <div class="dots">
-    <div id="d1" class="dot"></div>
-    <div id="d2" class="dot"></div>
-    <div id="d3" class="dot"></div>
-  </div>
-  <div class="divider"></div>
+  <div class="progress" id="progress">Loading...</div>
+  <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:5%"></div></div>
   <a class="website" href="#" onclick="shell.Run('https://vidlet.app');return false">vidlet.app</a>
 </body>
 </html>

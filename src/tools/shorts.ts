@@ -92,18 +92,22 @@ export async function portrait(options: PortraitOptions): Promise<string> {
 	return output;
 }
 
+export type TransitionType = 'none' | 'fade' | 'dissolve';
+
 export interface PortraitMultiSegmentOptions {
 	input: string;
 	output?: string;
 	segments: PortraitSegment[];
 	resolution?: number;
+	transition?: TransitionType;
+	transitionDuration?: number; // in seconds, default 0.3
 }
 
 /**
  * Convert landscape video to portrait with multiple segments having different crop positions
  */
 export async function portraitMultiSegment(options: PortraitMultiSegmentOptions): Promise<string> {
-	const { input, output: customOutput, segments, resolution = 1080 } = options;
+	const { input, output: customOutput, segments, resolution = 1080, transition = 'none', transitionDuration = 0.3 } = options;
 
 	if (!(await checkFFmpeg())) {
 		throw new Error('FFmpeg not found. Please install ffmpeg: sudo apt install ffmpeg');
@@ -132,17 +136,24 @@ export async function portraitMultiSegment(options: PortraitMultiSegmentOptions)
 
 	const output = customOutput ?? getOutputPath(input, '_portrait');
 
+	const useTransitions = transition !== 'none' && segments.length > 1;
+	const td = transitionDuration;
+
 	header('Create Portrait (Multi-Segment)');
 	console.log(`Input:    ${fmt.white(input)}`);
 	console.log(`Size:     ${fmt.white(`${info.width}x${info.height}`)}`);
 	console.log(`Output:   ${fmt.yellow(`${outWidth}x${outHeight}`)} (9:16)`);
 	console.log(`Segments: ${fmt.yellow(String(segments.length))}`);
+	if (useTransitions) {
+		console.log(`Transition: ${fmt.yellow(transition)} (${td}s)`);
+	}
 	separator();
 	console.log(fmt.dim('Processing segments...'));
 
 	// Create temp directory for segments
 	const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vidlet-portrait-'));
 	const segmentFiles: string[] = [];
+	const segmentDurations: number[] = [];
 
 	try {
 		// Process each segment
@@ -151,6 +162,7 @@ export async function portraitMultiSegment(options: PortraitMultiSegmentOptions)
 			const duration = seg.endTime - seg.startTime;
 			const segmentFile = path.join(tempDir, `segment_${i}.mp4`);
 			segmentFiles.push(segmentFile);
+			segmentDurations.push(duration);
 
 			console.log(fmt.dim(`  Segment ${i + 1}/${segments.length}: ${seg.startTime.toFixed(2)}s - ${seg.endTime.toFixed(2)}s (crop: ${(seg.cropX * 100).toFixed(0)}%)`));
 
@@ -185,17 +197,79 @@ export async function portraitMultiSegment(options: PortraitMultiSegmentOptions)
 			await executeFFmpegRaw(args);
 		}
 
-		// Create concat file
-		const concatFile = path.join(tempDir, 'concat.txt');
-		const concatContent = segmentFiles.map((f) => `file '${f.replace(/'/g, "'\\''")}'`).join('\n');
-		fs.writeFileSync(concatFile, concatContent);
+		if (useTransitions) {
+			// Use xfade filter for transitions
+			console.log(fmt.dim(`Applying ${transition} transitions...`));
 
-		console.log(fmt.dim('Concatenating segments...'));
+			// Build input args
+			const inputArgs: string[] = [];
+			for (const f of segmentFiles) {
+				inputArgs.push('-i', f);
+			}
 
-		// Concatenate segments
-		const concatArgs = ['-f', 'concat', '-safe', '0', '-i', concatFile, '-c', 'copy', '-movflags', '+faststart', '-y', output];
+			// Build xfade filter chain for video
+			// [0:v][1:v]xfade=transition=fade:duration=0.3:offset=D0-0.3[v01];
+			// [v01][2:v]xfade=transition=fade:duration=0.3:offset=D0+D1-0.6[v02]; ...
+			const videoFilters: string[] = [];
+			const audioFilters: string[] = [];
+			let cumulativeDuration = 0;
+			let cumulativeTransitions = 0;
 
-		await executeFFmpegRaw(concatArgs);
+			for (let i = 0; i < segmentFiles.length - 1; i++) {
+				cumulativeDuration += segmentDurations[i];
+				const offset = Math.max(0, cumulativeDuration - td - cumulativeTransitions);
+				cumulativeTransitions += td;
+
+				const inputLabel = i === 0 ? `[${i}:v]` : `[v${i - 1}${i}]`;
+				const outputLabel = i === segmentFiles.length - 2 ? '[outv]' : `[v${i}${i + 1}]`;
+
+				videoFilters.push(`${inputLabel}[${i + 1}:v]xfade=transition=${transition}:duration=${td}:offset=${offset.toFixed(3)}${outputLabel}`);
+
+				// Audio crossfade
+				const audioInputLabel = i === 0 ? `[${i}:a]` : `[a${i - 1}${i}]`;
+				const audioOutputLabel = i === segmentFiles.length - 2 ? '[outa]' : `[a${i}${i + 1}]`;
+				audioFilters.push(`${audioInputLabel}[${i + 1}:a]acrossfade=d=${td}${audioOutputLabel}`);
+			}
+
+			const filterComplex = [...videoFilters, ...audioFilters].join(';');
+
+			const xfadeArgs = [
+				...inputArgs,
+				'-filter_complex',
+				filterComplex,
+				'-map',
+				'[outv]',
+				'-map',
+				'[outa]',
+				'-c:v',
+				'libx264',
+				'-preset',
+				'medium',
+				'-crf',
+				'18',
+				'-c:a',
+				'aac',
+				'-b:a',
+				'192k',
+				'-movflags',
+				'+faststart',
+				'-y',
+				output,
+			];
+
+			await executeFFmpegRaw(xfadeArgs);
+		} else {
+			// No transitions - use concat demuxer (faster, no re-encoding)
+			const concatFile = path.join(tempDir, 'concat.txt');
+			const concatContent = segmentFiles.map((f) => `file '${f.replace(/'/g, "'\\''")}'`).join('\n');
+			fs.writeFileSync(concatFile, concatContent);
+
+			console.log(fmt.dim('Concatenating segments...'));
+
+			const concatArgs = ['-f', 'concat', '-safe', '0', '-i', concatFile, '-c', 'copy', '-movflags', '+faststart', '-y', output];
+
+			await executeFFmpegRaw(concatArgs);
+		}
 
 		success(`Output: ${output}`);
 		return output;

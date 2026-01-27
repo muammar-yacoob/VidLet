@@ -9,6 +9,8 @@ import { dirname, join, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { logToFile } from './logger.js';
+import { loadToolsConfig, saveToolsConfig } from './config.js';
+import { cleanupSignalFiles, signalLoadingComplete, updateLoadingProgress } from './loading-window.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -26,60 +28,6 @@ function killFFmpegProcesses(): void {
 	});
 }
 
-/**
- * Signal the loading HTA to close by creating a temp file
- */
-function signalReady(): void {
-	spawn(
-		'powershell.exe',
-		[
-			'-WindowStyle',
-			'Hidden',
-			'-Command',
-			'New-Item -Path $env:TEMP\\vidlet-ready.tmp -ItemType File -Force | Out-Null',
-		],
-		{
-			stdio: 'ignore',
-			windowsHide: true,
-		},
-	);
-}
-
-/**
- * Clean up any stale signal file from previous sessions
- */
-function cleanupSignalFile(): void {
-	spawn(
-		'powershell.exe',
-		[
-			'-WindowStyle',
-			'Hidden',
-			'-Command',
-			'Remove-Item -Path $env:TEMP\\vidlet-ready.tmp -Force -ErrorAction SilentlyContinue',
-		],
-		{
-			stdio: 'ignore',
-			windowsHide: true,
-		},
-	);
-}
-
-/**
- * Open URL in Edge app mode (standalone window without browser UI)
- */
-function openAppWindow(url: string): void {
-	// Clean up any stale signal file first
-	cleanupSignalFile();
-
-	spawn('powershell.exe', ['-WindowStyle', 'Hidden', '-Command', `Start-Process msedge -ArgumentList '--app=${url}'`], {
-		detached: true,
-		stdio: 'ignore',
-		windowsHide: true,
-	}).unref();
-
-	// Note: signalReady is called by frontend via /api/ready when app is actually loaded
-}
-
 export interface VideoInfo {
 	filePath: string;
 	fileName: string;
@@ -89,6 +37,7 @@ export interface VideoInfo {
 	fps: number;
 	bitrate: number;
 	fileSize: number;
+	hasAudio: boolean;
 }
 
 export interface GuiServerOptions {
@@ -143,6 +92,9 @@ export interface GuiServerOptions {
  * Returns a promise that resolves when the window is closed
  */
 export function startGuiServer(options: GuiServerOptions): Promise<boolean> {
+	// Clean up any stale signal file immediately (before HTA can detect it)
+	cleanupSignalFiles();
+
 	return new Promise((resolve) => {
 		const app = express();
 		app.use(express.json({ limit: '100mb' }));
@@ -157,6 +109,14 @@ export function startGuiServer(options: GuiServerOptions): Promise<boolean> {
 
 		let processResult: boolean | null = null;
 		let server: ReturnType<typeof createServer> | null = null;
+
+		// Disable caching for all responses
+		app.use((_req, res, next) => {
+			res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+			res.set('Pragma', 'no-cache');
+			res.set('Expires', '0');
+			next();
+		});
 
 		const guiDir = join(__dirname, 'gui');
 		const iconsDir = join(__dirname, 'icons');
@@ -337,10 +297,43 @@ export function startGuiServer(options: GuiServerOptions): Promise<boolean> {
 			res.json({ success: true });
 		});
 
-		// Signal that the app is ready (closes loading HTA)
-		app.post('/api/ready', (_req, res) => {
-			signalReady();
+		// Update caching progress (displayed in loading HTA)
+		app.post('/api/progress', (req, res) => {
+			const { percent } = req.body;
+			if (typeof percent === 'number') {
+				updateLoadingProgress(percent);
+			}
 			res.json({ ok: true });
+		});
+
+		// Save app settings
+		app.post('/api/save-settings', async (req, res) => {
+			try {
+				const { hotkeyPreset, cacheThreshold } = req.body;
+				const config = await loadToolsConfig();
+				let changed = false;
+
+				if (hotkeyPreset && typeof hotkeyPreset === 'string') {
+					(options.defaults as Record<string, unknown>).hotkeyPreset = hotkeyPreset;
+					config.app = { ...config.app, hotkeyPreset: hotkeyPreset as 'premiere' | 'resolve' | 'capcut' | 'shotcut' | 'descript' | 'camtasia' };
+					changed = true;
+				}
+
+				if (typeof cacheThreshold === 'number' && cacheThreshold >= 10 && cacheThreshold <= 100) {
+					(options.defaults as Record<string, unknown>).cacheThreshold = cacheThreshold;
+					config.app = { ...config.app, cacheThreshold };
+					changed = true;
+				}
+
+				if (changed) {
+					await saveToolsConfig(config);
+					logToFile(`Settings saved: hotkeyPreset=${config.app.hotkeyPreset}, cacheThreshold=${config.app.cacheThreshold}`);
+				}
+				res.json({ success: true });
+			} catch (err) {
+				logToFile(`Failed to save settings: ${(err as Error).message}`);
+				res.json({ success: false, error: (err as Error).message });
+			}
 		});
 
 		function shutdown() {
@@ -360,7 +353,8 @@ export function startGuiServer(options: GuiServerOptions): Promise<boolean> {
 				const port = addr.port;
 				const url = `http://127.0.0.1:${port}/${options.htmlFile}`;
 
-				openAppWindow(url);
+				// Signal loading HTA to open Edge with this URL and close
+				signalLoadingComplete(url);
 
 				// 30 minute timeout for long operations like compression
 				setTimeout(() => {

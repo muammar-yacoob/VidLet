@@ -12,6 +12,15 @@ End If
 command = args(0)
 filePath = args(1)
 
+' Get temp directory and clean up stale signal files BEFORE opening HTA
+tempDir = WshShell.ExpandEnvironmentStrings("%TEMP%")
+readyFile = tempDir & "\vidlet-ready.tmp"
+progressFile = tempDir & "\vidlet-progress.tmp"
+On Error Resume Next
+If fso.FileExists(readyFile) Then fso.DeleteFile readyFile, True
+If fso.FileExists(progressFile) Then fso.DeleteFile progressFile, True
+On Error GoTo 0
+
 ' Get script directory
 scriptDir = fso.GetParentFolderName(WScript.ScriptFullName)
 loadingHta = scriptDir & "\gui\loading.hta"
