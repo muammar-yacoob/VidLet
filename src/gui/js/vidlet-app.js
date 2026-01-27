@@ -70,7 +70,7 @@ const FRAME_CACHE_INTERVAL = 0.25; // Cache a frame every 0.25 seconds
 // Timeline zoom state
 let timelineZoom = 1;
 let timelineOffset = 0; // 0-1, represents the left edge position as fraction of duration
-let autoZoomEnabled = true; // Auto-zoom to marker on hover
+let autoZoomEnabled = false; // Auto-zoom to marker on hover (disabled by default)
 let panToMarker = null; // Function to pan/zoom to current marker (set by initTimelineZoom)
 
 // ============ UNDO/REDO SYSTEM ============
@@ -173,6 +173,8 @@ const HOTKEY_PRESETS = {
     rippleDelete: { key: 'Delete', shift: true },
     selectPrev: { key: 'BracketLeft' },
     selectNext: { key: 'BracketRight' },
+    markIn: { key: 'KeyI' },
+    markOut: { key: 'KeyO' },
   },
   resolve: {
     name: 'DaVinci Resolve',
@@ -181,6 +183,8 @@ const HOTKEY_PRESETS = {
     rippleDelete: { key: 'Backspace', shift: true },
     selectPrev: { key: 'ArrowUp' },
     selectNext: { key: 'ArrowDown' },
+    markIn: { key: 'KeyI' },
+    markOut: { key: 'KeyO' },
   },
   capcut: {
     name: 'CapCut',
@@ -189,6 +193,8 @@ const HOTKEY_PRESETS = {
     rippleDelete: { key: 'Delete' },
     selectPrev: { key: 'ArrowUp' },
     selectNext: { key: 'ArrowDown' },
+    markIn: { key: 'BracketLeft' },
+    markOut: { key: 'BracketRight' },
   },
   shotcut: {
     name: 'Shotcut',
@@ -197,6 +203,8 @@ const HOTKEY_PRESETS = {
     rippleDelete: { key: 'KeyZ' },
     selectPrev: { key: 'BracketLeft' },
     selectNext: { key: 'BracketRight' },
+    markIn: { key: 'KeyI' },
+    markOut: { key: 'KeyO' },
   },
   descript: {
     name: 'Descript',
@@ -205,6 +213,8 @@ const HOTKEY_PRESETS = {
     rippleDelete: { key: 'Backspace' },
     selectPrev: { key: 'BracketLeft', ctrl: true },
     selectNext: { key: 'BracketRight', ctrl: true },
+    markIn: { key: 'KeyI' },
+    markOut: { key: 'KeyO' },
   },
   camtasia: {
     name: 'Camtasia',
@@ -213,6 +223,8 @@ const HOTKEY_PRESETS = {
     rippleDelete: { key: 'Delete', ctrl: true },
     selectPrev: { key: 'PageUp' },
     selectNext: { key: 'PageDown' },
+    markIn: { key: 'KeyI' },
+    markOut: { key: 'KeyO' },
   },
 };
 
@@ -265,9 +277,13 @@ function setHotkeyPreset(preset) {
 /** Update hotkey display in settings */
 function updateHotkeyDisplay() {
   const map = getHotkeyMap();
+  const markInEl = $('hk-markIn');
+  const markOutEl = $('hk-markOut');
   const splitEl = $('hk-split');
   const deleteEl = $('hk-delete');
   const rippleEl = $('hk-ripple');
+  if (markInEl) markInEl.innerHTML = `<b>${formatHotkey(map.markIn)}</b> Set In`;
+  if (markOutEl) markOutEl.innerHTML = `<b>${formatHotkey(map.markOut)}</b> Set Out`;
   if (splitEl) splitEl.innerHTML = `<b>${formatHotkey(map.split)}</b> Split`;
   if (deleteEl) deleteEl.innerHTML = `<b>${formatHotkey(map.delete)}</b> Delete`;
   if (rippleEl) rippleEl.innerHTML = `<b>${formatHotkey(map.rippleDelete)}</b> Ripple Del`;
@@ -371,8 +387,6 @@ async function init() {
   $('compress-bitrate').value = defaultPresets.medium.bitrate;
   updateEstimates();
 
-  if (window.lucide) lucide.createIcons();
-
   // Prevent page zoom except on video player
   initPageZoomLock();
 
@@ -391,16 +405,17 @@ async function init() {
 }
 
 /**
- * Signal that app is ready - waits for video frame, frame cache, and paint cycle
+ * Signal that app is ready - only signals when frame cache reaches 30%
+ * The loading HTA waits for this signal before closing
  */
 function signalAppReady() {
   const video = $('videoPreview');
   let signaled = false;
 
+  // Send the ready signal to close the loading HTA
   const doSignal = () => {
     if (signaled) return;
     signaled = true;
-    // Wait for paint cycle then signal
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         postJson('/api/ready', {});
@@ -408,8 +423,8 @@ function signalAppReady() {
     });
   };
 
-  // Wait for video to have at least one frame, then start caching
-  const startCachingAndSignal = () => {
+  // Show progress UI and start caching
+  const startCaching = () => {
     // Show progress bar in main app
     const progressEl = $('cache-progress');
     if (progressEl) {
@@ -419,31 +434,60 @@ function signalAppReady() {
       $('cache-progress-pct').textContent = '0%';
     }
 
-    // Start frame cache - send progress to loading window, signal when 30% cached
+    // If already cached, signal immediately
+    if (frameCacheReady && frameCache.length > 0) {
+      postJson('/api/progress', { percent: 100 });
+      doSignal();
+      return;
+    }
+
+    // Start frame cache in background
+    // Progress is sent to loading HTA, signal at 30%
     buildFrameCache((pct) => {
-      // Send progress to loading HTA
+      // Always send progress to loading HTA
       postJson('/api/progress', { percent: pct });
-      if (pct >= 30) doSignal();
-    }).then(doSignal);
+      // Signal ready when 30% cached (loading HTA will close)
+      if (pct >= 30) {
+        doSignal();
+      }
+    });
   };
 
-  const checkVideo = () => {
-    if (video.readyState >= 2) {
-      startCachingAndSignal();
+  // Wait for video to be ready before starting cache
+  const waitForVideo = () => {
+    if (video && video.readyState >= 2 && video.duration > 0) {
+      startCaching();
+    } else if (video) {
+      // Send initial progress to show loading HTA we're working
+      postJson('/api/progress', { percent: 0 });
+      video.addEventListener('canplay', () => {
+        if (video.duration > 0) {
+          startCaching();
+        } else {
+          // No valid duration, signal anyway after delay
+          setTimeout(doSignal, 2000);
+        }
+      }, { once: true });
     } else {
-      video.addEventListener('canplay', () => startCachingAndSignal(), { once: true });
+      // No video element, signal after delay
+      setTimeout(doSignal, 2000);
     }
   };
 
-  // Wait for window load event (all resources loaded)
+  // Start once DOM is ready
   if (document.readyState === 'complete') {
-    checkVideo();
+    waitForVideo();
   } else {
-    window.addEventListener('load', checkVideo, { once: true });
+    window.addEventListener('load', waitForVideo, { once: true });
   }
 
-  // Fallback timeout in case something fails (longer for caching)
-  setTimeout(doSignal, 30000);
+  // Fallback: if nothing works after 30 seconds, signal anyway
+  setTimeout(() => {
+    if (!signaled) {
+      console.warn('Fallback signal triggered - caching may have failed');
+      doSignal();
+    }
+  }, 30000);
 }
 
 function updateFileDisplay() {
@@ -578,7 +622,7 @@ function updatePlayerHotkeyHint() {
   if (activeTool === 'portrait') {
     toolHints = ` | ${formatHotkey(hotkeys.split)}: Split | ${formatHotkey(hotkeys.delete)}: Del`;
   } else if (activeTool === 'trim') {
-    toolHints = ' | I: Set In | O: Set Out';
+    toolHints = ` | ${formatHotkey(hotkeys.markIn)}: Set In | ${formatHotkey(hotkeys.markOut)}: Set Out`;
   }
 
   hint.textContent = baseHints + toolHints;
@@ -1015,8 +1059,22 @@ function updatePlayhead() {
  */
 async function buildFrameCache(onProgress) {
   const mainVideo = $('videoPreview');
-  if (!mainVideo || !mainVideo.duration) return;
-  if (frameCacheReady || frameCache.length > 0) return; // Already caching or cached
+
+  // Send initial progress immediately
+  if (onProgress) onProgress(0);
+
+  // Validate video is ready
+  if (!mainVideo || !mainVideo.duration || mainVideo.duration <= 0) {
+    console.warn('buildFrameCache: Video not ready or no duration');
+    if (onProgress) onProgress(100); // Signal complete to close loading window
+    return;
+  }
+
+  // Don't cache twice
+  if (frameCacheReady || frameCache.length > 0) {
+    if (onProgress) onProgress(100);
+    return;
+  }
 
   // Create hidden video element for background caching
   const cacheVideo = document.createElement('video');
@@ -1049,6 +1107,9 @@ async function buildFrameCache(onProgress) {
   const progressPct = $('cache-progress-pct');
   if (progressEl) progressEl.style.display = 'flex';
 
+  // Track last reported progress to avoid redundant updates
+  let lastReportedPct = 0;
+
   for (let i = 0; i <= frameCount; i++) {
     const time = Math.min(i * FRAME_CACHE_INTERVAL, duration);
 
@@ -1068,16 +1129,22 @@ async function buildFrameCache(onProgress) {
       cacheVideo.currentTime = time;
     });
 
-    // Update progress bar (less frequently to avoid UI spam)
-    if (i % 4 === 0) {
-      const pct = Math.round((i / frameCount) * 100);
+    // Calculate progress percentage
+    const pct = Math.round((i / frameCount) * 100);
+
+    // Update UI every 2 frames or at key thresholds (10%, 20%, 30%, etc.)
+    const isKeyThreshold = pct >= lastReportedPct + 10;
+    if (i % 2 === 0 || isKeyThreshold) {
       if (progressFill) progressFill.style.width = `${pct}%`;
       if (progressPct) progressPct.textContent = `${pct}%`;
-      if (onProgress) onProgress(pct);
+      if (onProgress && pct > lastReportedPct) {
+        onProgress(pct);
+        lastReportedPct = pct;
+      }
     }
 
     // Yield to allow UI updates
-    if (i % 8 === 0) {
+    if (i % 4 === 0) {
       await new Promise(r => setTimeout(r, 0));
     }
   }
@@ -1087,7 +1154,10 @@ async function buildFrameCache(onProgress) {
   frameCacheReady = true;
   if (progressEl) progressEl.style.display = 'none';
 
-  log(`Frame cache ready: ${frameCache.length} frames`);
+  // Signal 100% complete
+  if (onProgress) onProgress(100);
+
+  console.log(`Frame cache ready: ${frameCache.length} frames`);
 }
 
 /**
@@ -2919,52 +2989,49 @@ function selectSegment(index) {
 
 function renderPortraitSegments() {
   const timeline = $('segment-timeline');
-  const timelineWrap = $('segment-timeline-wrap');
-  const timeTicks = $('segment-time-ticks');
+  const grid = $('segment-grid');
   if (!timeline) return;
 
   timeline.innerHTML = '';
 
-  const totalDuration = info.duration || 1;
-  const visibleDuration = totalDuration / portraitZoom;
-  const visibleStart = portraitOffset * totalDuration;
-  const visibleEnd = visibleStart + visibleDuration;
+  // Get trim range - portrait timeline is normalized to this range
+  const trimStart = parseFloat($('trim-start')?.value) || 0;
+  const trimEnd = parseFloat($('trim-end')?.value) || info.duration || 1;
+  const trimDuration = trimEnd - trimStart;
 
-  // Apply zoom transform to timeline
-  // Width must account for the 8px inset on each side (16px total)
-  timeline.style.width = `calc(${portraitZoom * 100}% - ${portraitZoom * 16}px)`;
-  timeline.style.transform = `translateX(${-portraitOffset * 100}%)`;
+  // Render grid lines
+  if (grid) {
+    grid.innerHTML = '';
+    // Determine grid interval based on duration and zoom
+    let minorInterval = trimDuration <= 10 ? 1 : trimDuration <= 30 ? 2 : trimDuration <= 60 ? 5 : 10;
+    let majorInterval = minorInterval * 5;
+    if (portraitZoom >= 4) {
+      minorInterval = Math.max(0.5, minorInterval / 4);
+      majorInterval = minorInterval * 5;
+    } else if (portraitZoom >= 2) {
+      minorInterval = Math.max(0.5, minorInterval / 2);
+      majorInterval = minorInterval * 5;
+    }
 
-  // Render time ticks (zoom-aware)
-  if (timeTicks) {
-    timeTicks.innerHTML = '';
-    // Adjust tick interval based on zoom
-    let tickInterval = totalDuration <= 30 ? 5 : totalDuration <= 120 ? 15 : 30;
-    if (portraitZoom >= 4) tickInterval = Math.max(1, tickInterval / 4);
-    else if (portraitZoom >= 2) tickInterval = Math.max(1, tickInterval / 2);
-
-    for (let t = 0; t <= totalDuration; t += tickInterval) {
-      // Only render ticks in visible range (with some padding)
-      if (t >= visibleStart - tickInterval && t <= visibleEnd + tickInterval) {
-        const tick = document.createElement('span');
-        tick.className = 'segment-tick';
-        // Position relative to zoomed timeline
-        const pos = ((t / totalDuration) - portraitOffset) * portraitZoom * 100;
-        tick.style.left = `${pos}%`;
-        tick.textContent = formatDuration(t);
-        timeTicks.appendChild(tick);
-      }
+    for (let t = 0; t <= trimDuration; t += minorInterval) {
+      const line = document.createElement('div');
+      const isMajor = Math.abs(t % majorInterval) < 0.01 || Math.abs((t % majorInterval) - majorInterval) < 0.01;
+      line.className = 'segment-grid-line' + (isMajor ? ' major' : '');
+      line.style.left = `${(t / trimDuration) * 100}%`;
+      grid.appendChild(line);
     }
   }
 
-  // Render each segment with absolute positioning (zoom-aware)
+  // Render each segment (positioned relative to trim range)
   portraitSegments.forEach((seg, i) => {
-    // Convert to zoomed coordinates
-    const startPos = ((seg.startTime / totalDuration) - portraitOffset) * portraitZoom;
-    const endPos = ((seg.endTime / totalDuration) - portraitOffset) * portraitZoom;
+    // Clamp segment times to trim range
+    const segStart = Math.max(seg.startTime, trimStart);
+    const segEnd = Math.min(seg.endTime, trimEnd);
+    if (segEnd <= segStart) return; // Skip if outside trim range
 
-    // Skip if completely outside visible area
-    if (endPos < -0.1 || startPos > 1.1) return;
+    // Convert to percentage of trim range
+    const startPos = (segStart - trimStart) / trimDuration;
+    const endPos = (segEnd - trimStart) / trimDuration;
 
     const color = SEGMENT_COLORS[i % SEGMENT_COLORS.length];
 
@@ -3049,21 +3116,21 @@ function initSegmentHandles() {
         const x = e.clientX - rect.left - 8;
         const viewportRatio = Math.max(0, Math.min(1, x / innerWidth));
 
-        // Convert viewport position to time, accounting for zoom
-        const duration = info.duration || 1;
-        const visibleDuration = duration / portraitZoom;
-        const visibleStart = portraitOffset * duration;
-        const newTime = visibleStart + viewportRatio * visibleDuration;
+        // Convert viewport position to time (relative to trim range)
+        const trimStart = parseFloat($('trim-start')?.value) || 0;
+        const trimEnd = parseFloat($('trim-end')?.value) || info.duration || 1;
+        const trimDuration = trimEnd - trimStart;
+        const newTime = trimStart + viewportRatio * trimDuration;
 
         if (side === 'start') {
-          // Adjust start time - can't go past end - 0.5s
+          // Adjust start time - can't go past end - 0.5s, can't go before trim start
           const maxStart = seg.endTime - 0.5;
-          seg.startTime = Math.max(0, Math.min(maxStart, newTime));
+          seg.startTime = Math.max(trimStart, Math.min(maxStart, newTime));
           video.currentTime = seg.startTime;
         } else {
-          // Adjust end time - can't go before start + 0.5s
+          // Adjust end time - can't go before start + 0.5s, can't go past trim end
           const minEnd = seg.startTime + 0.5;
-          seg.endTime = Math.min(duration, Math.max(minEnd, newTime));
+          seg.endTime = Math.min(trimEnd, Math.max(minEnd, newTime));
           video.currentTime = seg.endTime;
         }
 
@@ -3095,19 +3162,22 @@ function updatePortraitPlayhead() {
 
   const video = $('videoPreview');
   const currentTime = video.currentTime;
-  const duration = info.duration || 1;
 
-  // Calculate position accounting for zoom and offset
-  const normalizedPos = currentTime / duration;
-  const zoomedPos = (normalizedPos - portraitOffset) * portraitZoom;
+  // Get trim range - playhead is relative to this
+  const trimStart = parseFloat($('trim-start')?.value) || 0;
+  const trimEnd = parseFloat($('trim-end')?.value) || info.duration || 1;
+  const trimDuration = trimEnd - trimStart;
 
-  // Hide playhead if outside visible area
-  if (zoomedPos < 0 || zoomedPos > 1) {
+  // Calculate position relative to trim range
+  const normalizedPos = (currentTime - trimStart) / trimDuration;
+
+  // Hide playhead if outside trim range
+  if (normalizedPos < 0 || normalizedPos > 1) {
     playhead.style.opacity = '0';
   } else {
     playhead.style.opacity = '1';
     // Position aligned with the timeline area (8px inset from edges)
-    playhead.style.left = `calc(8px + (100% - 16px) * ${zoomedPos})`;
+    playhead.style.left = `calc(8px + (100% - 16px) * ${normalizedPos})`;
   }
 
   // Check if we're in a gap - if so, skip to next segment during playback

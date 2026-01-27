@@ -163,6 +163,14 @@ export function startGuiServer(options: GuiServerOptions): Promise<boolean> {
 		let processResult: boolean | null = null;
 		let server: ReturnType<typeof createServer> | null = null;
 
+		// Disable caching for all responses
+		app.use((_req, res, next) => {
+			res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+			res.set('Pragma', 'no-cache');
+			res.set('Expires', '0');
+			next();
+		});
+
 		const guiDir = join(__dirname, 'gui');
 		const iconsDir = join(__dirname, 'icons');
 		app.use(express.static(guiDir));
@@ -346,9 +354,20 @@ export function startGuiServer(options: GuiServerOptions): Promise<boolean> {
 		app.post('/api/progress', (req, res) => {
 			const { percent } = req.body;
 			if (typeof percent === 'number') {
-				// Write progress to temp file for HTA to read
-				const progressFile = join(os.tmpdir(), 'vidlet-progress.tmp');
-				fs.writeFileSync(progressFile, String(Math.round(percent)));
+				// Write progress to Windows temp file for HTA to read (must use PowerShell for Windows path)
+				spawn(
+					'powershell.exe',
+					[
+						'-WindowStyle',
+						'Hidden',
+						'-Command',
+						`Set-Content -Path $env:TEMP\\vidlet-progress.tmp -Value '${Math.round(percent)}' -Force`,
+					],
+					{
+						stdio: 'ignore',
+						windowsHide: true,
+					},
+				);
 			}
 			res.json({ ok: true });
 		});

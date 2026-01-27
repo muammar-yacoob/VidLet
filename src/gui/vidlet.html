@@ -6,7 +6,6 @@
   <title>VidLet</title>
   <link rel="stylesheet" href="/css/vidlet.css">
   <link rel="icon" href="/favicon.ico">
-  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
   <script src="https://unpkg.com/@dotlottie/player-component@2.7.12/dist/dotlottie-player.mjs" type="module"></script>
 </head>
 <body>
@@ -26,7 +25,7 @@
             Donate
           </a>
           <a href="#" id="homepageLink" class="hd-link" onclick="openHomepage();return false">vidlet.app</a>
-          <button class="icon-btn" onclick="openSettings()" title="Settings"><i data-lucide="settings"></i></button>
+          <button class="icon-btn" onclick="openSettings()" title="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></button>
         </div>
       </div>
       <div class="hd-meta">
@@ -292,15 +291,17 @@
               </div>
             </div>
             <div class="segment-timeline-wrap" id="segment-timeline-wrap">
+              <div class="segment-grid" id="segment-grid"></div>
               <div class="segment-timeline-base" id="segment-timeline-base"></div>
               <div class="segment-timeline" id="segment-timeline"></div>
               <div class="segment-playhead" id="segment-playhead"></div>
-              <div class="segment-time-ticks" id="segment-time-ticks"></div>
             </div>
             <div class="portrait-hint">
+              <span class="hint-trim">Using trimmed range</span>
+              <span class="hint-sep">•</span>
               <span class="hint-drag">Drag edges to adjust</span>
               <span class="hint-sep">•</span>
-              <span class="hint-gap">Gaps = cut from output</span>
+              <span class="hint-gap">Gaps = cut</span>
             </div>
             <div class="portrait-transition-row">
               <label>Transition</label>
@@ -507,7 +508,14 @@
       <button class="btn btn-p" id="processBtn" onclick="process()" disabled>Process</button>
     </div>
 
-    <div class="ld" id="loading"><dotlottie-player class="lottie-loader" src="/bouncing-fruits.lottie" background="transparent" speed="1" loop autoplay></dotlottie-player><span>Processing...</span></div>
+    <div class="ld" id="loading">
+      <dotlottie-player class="lottie-loader" src="/bouncing-fruits.lottie" background="transparent" speed="1" loop autoplay></dotlottie-player>
+      <span id="processing-label">Processing...</span>
+      <div class="process-progress" id="process-progress">
+        <div class="process-progress-fill" id="process-progress-fill"></div>
+      </div>
+      <span class="process-pct" id="process-pct"></span>
+    </div>
     <div class="dn" id="done">
       <h4>Done!</h4>
       <p id="output"></p>
@@ -596,6 +604,8 @@
             <span><b>←→</b> Seek</span>
             <span><b>J/K/L</b> Speed</span>
             <span><b>M</b> Mute</span>
+            <span id="hk-markIn"><b>I</b> Set In</span>
+            <span id="hk-markOut"><b>O</b> Set Out</span>
             <span id="hk-split"><b>Ctrl+K</b> Split</span>
             <span id="hk-delete"><b>Del</b> Delete</span>
             <span id="hk-ripple"><b>Shift+Del</b> Ripple Del</span>

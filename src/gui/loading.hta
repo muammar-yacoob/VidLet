@@ -1,6 +1,9 @@
 <html>
 <head>
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>VidLet</title>
 <hta:application
   id="VidLetLoader"
@@ -20,9 +23,9 @@
 />
 <style>
   *{margin:0;padding:0}
-  html,body{height:100%;overflow:hidden;background:linear-gradient(180deg,#0a0a0c 0%,#111113 100%);transition:opacity .4s ease-out}
+  html{height:100%;background:#000}
+  body{height:100%;overflow:hidden;background:linear-gradient(180deg,#0a0a0c 0%,#111113 100%);font-family:Segoe UI,sans-serif;color:#e4e4e7;text-align:center;padding:24px;opacity:1;transition:opacity .3s ease-out}
   body.fade-out{opacity:0}
-  body{font-family:Segoe UI,sans-serif;color:#e4e4e7;text-align:center;padding:24px}
   .logo{width:80px;height:80px;margin-bottom:8px}
   .title{font-size:28px;font-weight:700;color:#a855f7;margin-bottom:2px}
   .tagline{font-size:10px;color:#c084fc;font-weight:600;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px}
@@ -40,46 +43,69 @@
   window.resizeTo(w, h);
   window.moveTo((screen.availWidth - w) / 2, (screen.availHeight - h) / 2);
 
-  // Failsafe timeout (30 seconds - only if app never signals ready)
-  setTimeout(function() { window.close(); }, 30000);
-
   var fso = new ActiveXObject("Scripting.FileSystemObject");
   var shell = new ActiveXObject("WScript.Shell");
   var tempDir = shell.ExpandEnvironmentStrings("%TEMP%");
   var readyFile = tempDir + "\\vidlet-ready.tmp";
   var progressFile = tempDir + "\\vidlet-progress.tmp";
-  var closing = false;
+  var pollTimer = null;
   var lastProgress = -1;
+  var progressReceived = false;
 
-  // Poll for progress and ready signal
-  setInterval(function() {
-    if (closing) return;
+  function closeWindow() {
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = null;
+    try { fso.DeleteFile(readyFile); } catch(e) {}
+    try { fso.DeleteFile(progressFile); } catch(e) {}
+    self.close();
+  }
 
-    // Check for progress updates
-    if (fso.FileExists(progressFile)) {
-      try {
-        var f = fso.OpenTextFile(progressFile, 1);
-        var pct = parseInt(f.ReadAll(), 10) || 0;
-        f.Close();
-        if (pct !== lastProgress) {
-          lastProgress = pct;
-          var progEl = document.getElementById('progress');
-          var fillEl = document.getElementById('progress-fill');
-          if (progEl) progEl.innerText = 'Caching frames... ' + pct + '%';
-          if (fillEl) fillEl.style.width = pct + '%';
-        }
-      } catch(e) {}
-    }
+  function fadeAndClose() {
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = null;
+    try { fso.DeleteFile(readyFile); } catch(e) {}
+    try { fso.DeleteFile(progressFile); } catch(e) {}
+    document.body.className = 'fade-out';
+    setTimeout(closeWindow, 300);
+  }
 
-    // Check for ready signal
-    if (fso.FileExists(readyFile)) {
-      closing = true;
-      try { fso.DeleteFile(readyFile); } catch(e) {}
-      try { fso.DeleteFile(progressFile); } catch(e) {}
-      document.body.className = 'fade-out';
-      setTimeout(function() { window.close(); }, 400);
-    }
-  }, 100);
+  // Failsafe timeout (45 seconds for long videos)
+  setTimeout(closeWindow, 45000);
+
+  // Start polling after a brief delay to allow cleanup and initialization
+  setTimeout(function() {
+    pollTimer = setInterval(function() {
+      // Check for ready signal FIRST (higher priority)
+      if (fso.FileExists(readyFile)) {
+        fadeAndClose();
+        return;
+      }
+
+      // Check for progress updates
+      if (fso.FileExists(progressFile)) {
+        try {
+          var f = fso.OpenTextFile(progressFile, 1);
+          var content = f.ReadAll();
+          f.Close();
+          var pct = parseInt(content, 10);
+          if (!isNaN(pct) && pct !== lastProgress) {
+            lastProgress = pct;
+            progressReceived = true;
+            var progEl = document.getElementById('progress');
+            var fillEl = document.getElementById('progress-fill');
+            if (progEl) {
+              if (pct === 0) {
+                progEl.innerText = 'Preparing video...';
+              } else {
+                progEl.innerText = 'Caching frames... ' + pct + '%';
+              }
+            }
+            if (fillEl) fillEl.style.width = pct + '%';
+          }
+        } catch(e) {}
+      }
+    }, 100);
+  }, 500); // 500ms delay before starting to poll
 </script>
 </head>
 <body>
