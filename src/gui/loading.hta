@@ -8,9 +8,10 @@
 <hta:application
   id="VidLetLoader"
   applicationName="VidLet"
-  border="none"
-  borderStyle="none"
-  caption="no"
+  icon="../icons/tv.ico"
+  border="thin"
+  borderStyle="normal"
+  caption="yes"
   innerBorder="no"
   maximizeButton="no"
   minimizeButton="no"
@@ -26,22 +27,20 @@
   html{height:100%;background:#000}
   body{height:100%;overflow:hidden;background:linear-gradient(180deg,#0a0a0c 0%,#111113 100%);font-family:Segoe UI,sans-serif;color:#e4e4e7;text-align:center;padding:24px;opacity:1;transition:opacity .3s ease-out}
   body.fade-out{opacity:0}
-  .logo{width:80px;height:px;margin-bottom:8px}
+  .logo{width:80px;height:80px;margin-bottom:8px}
   .title{font-size:28px;font-weight:700;color:#a855f7;margin-bottom:2px}
   .tagline{font-size:10px;color:#c084fc;font-weight:600;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px}
   .desc{font-size:10px;color:#636366;margin-bottom:14px}
-  .loading{font-size:12px;color:#636366;margin-bottom:6px}
-  .progress{font-size:14px;color:#a855f7;font-weight:600;margin-bottom:6px;min-height:18px}
-  .progress-bar{width:60%;height:4px;background:#222;border-radius:2px;margin:0 auto 16px auto;overflow:hidden}
+  .progress{font-size:14px;color:#a855f7;font-weight:600;margin-bottom:8px;min-height:18px}
+  .progress-bar{width:60%;height:4px;background:#222;border-radius:2px;margin:0 auto;overflow:hidden}
   .progress-fill{height:100%;background:linear-gradient(90deg,#a855f7,#c084fc);width:0%;transition:width .2s}
-  .divider{width:80%;height:1px;background:#222;margin:0 auto 14px auto}
-  .website{font-size:11px;color:#a855f7;text-decoration:none;transition:color .2s}
+  .website{font-size:11px;color:#a855f7;text-decoration:none;transition:color .2s;margin-top:16px;display:inline-block}
   .website:hover{color:#c084fc}
 </style>
 <script language="javascript">
-  var w = 280, h = 340;
+  var w = 280, h = 320;
   window.resizeTo(w, h);
-  window.moveTo((screen.availWidth - w) / 2, (screen.availHeight - h) / 2);
+  window.moveTo((screen.availWidth - w) / 2, (screen.availHeight - h) / 2.5);
 
   var fso = new ActiveXObject("Scripting.FileSystemObject");
   var shell = new ActiveXObject("WScript.Shell");
@@ -49,16 +48,13 @@
   var readyFile = tempDir + "\\vidlet-ready.tmp";
   var progressFile = tempDir + "\\vidlet-progress.tmp";
   var pollTimer = null;
-  var focusTimer = null;
-  var lastProgress = -1;
-  var progressReceived = false;
   var isClosing = false;
+  var mainOpened = false;
+  var cacheThreshold = 20; // Default threshold
 
   function closeWindow() {
     if (pollTimer) clearInterval(pollTimer);
-    if (focusTimer) clearInterval(focusTimer);
     pollTimer = null;
-    focusTimer = null;
     try { fso.DeleteFile(readyFile); } catch(e) {}
     try { fso.DeleteFile(progressFile); } catch(e) {}
     self.close();
@@ -68,71 +64,69 @@
     if (isClosing) return;
     isClosing = true;
     if (pollTimer) clearInterval(pollTimer);
-    if (focusTimer) clearInterval(focusTimer);
     pollTimer = null;
-    focusTimer = null;
     try { fso.DeleteFile(readyFile); } catch(e) {}
     try { fso.DeleteFile(progressFile); } catch(e) {}
     document.body.className = 'fade-out';
     setTimeout(closeWindow, 300);
   }
 
-  // Keep window on top by periodically activating it
-  focusTimer = setInterval(function() {
-    if (!isClosing) {
-      try {
-        shell.AppActivate("VidLet Loading");
-      } catch(e) {}
-    }
-  }, 200);
+  function openMain() {
+    if (mainOpened) return;
+    mainOpened = true;
+    // Read URL from ready file and open Edge
+    try {
+      var f = fso.OpenTextFile(readyFile, 1);
+      var url = f.ReadAll();
+      f.Close();
+      if (url && url.length > 0) {
+        shell.Run('msedge --app="' + url + '"', 1, false);
+      }
+    } catch(e) {}
+  }
 
-  // Failsafe timeout (45 seconds for long videos)
-  setTimeout(closeWindow, 45000);
+  function checkProgress() {
+    var pct = 0;
+    try {
+      if (fso.FileExists(progressFile)) {
+        var f = fso.OpenTextFile(progressFile, 1);
+        pct = parseInt(f.ReadAll(), 10);
+        f.Close();
+        if (!isNaN(pct)) {
+          document.getElementById('progress').innerText = 'Caching ' + pct + '%';
+          document.getElementById('progress-fill').style.width = pct + '%';
+        }
+      }
+    } catch(e) {}
+    return pct;
+  }
 
-  // Start polling after a brief delay to allow cleanup and initialization
+  // Failsafe timeout (30 seconds)
+  setTimeout(fadeAndClose, 30000);
+
+  // Poll for ready signal and progress updates
   setTimeout(function() {
     pollTimer = setInterval(function() {
-      // Check for ready signal FIRST (higher priority)
-      if (fso.FileExists(readyFile)) {
-        fadeAndClose();
-        return;
+      // Check if server is ready and open main window
+      if (!mainOpened && fso.FileExists(readyFile)) {
+        openMain();
       }
-
-      // Check for progress updates
-      if (fso.FileExists(progressFile)) {
-        try {
-          var f = fso.OpenTextFile(progressFile, 1);
-          var content = f.ReadAll();
-          f.Close();
-          var pct = parseInt(content, 10);
-          if (!isNaN(pct) && pct !== lastProgress) {
-            lastProgress = pct;
-            progressReceived = true;
-            var progEl = document.getElementById('progress');
-            var fillEl = document.getElementById('progress-fill');
-            if (progEl) {
-              if (pct === 0) {
-                progEl.innerText = 'Preparing video...';
-              } else {
-                progEl.innerText = 'Caching frames... ' + pct + '%';
-              }
-            }
-            if (fillEl) fillEl.style.width = pct + '%';
-          }
-        } catch(e) {}
+      // Check progress and close when threshold reached
+      var pct = checkProgress();
+      if (mainOpened && pct >= cacheThreshold) {
+        fadeAndClose();
       }
     }, 100);
-  }, 500); // 500ms delay before starting to poll
+  }, 300);
 </script>
 </head>
 <body>
   <img class="logo" src="../icons/tv.png">
   <div class="title">VidLet</div>
-  <div class="tagline">Trim • Compose • Publish</div>
+  <div class="tagline">Trim &bull; Compose &bull; Publish</div>
   <div class="desc">Lightweight video tools for content creators</div>
   <div class="progress" id="progress"></div>
   <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
-  <div class="divider"></div>
   <a class="website" href="#" onclick="shell.Run('https://vidlet.app');return false">vidlet.app</a>
 </body>
 </html>

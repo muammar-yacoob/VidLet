@@ -10,12 +10,7 @@ import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { logToFile } from './logger.js';
 import { loadToolsConfig, saveToolsConfig } from './config.js';
-import {
-	cleanupSignalFiles,
-	signalLoadingComplete,
-	updateLoadingProgress,
-	openMainWindow,
-} from './loading-window.js';
+import { cleanupSignalFiles, signalLoadingComplete, updateLoadingProgress } from './loading-window.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -311,12 +306,6 @@ export function startGuiServer(options: GuiServerOptions): Promise<boolean> {
 			res.json({ ok: true });
 		});
 
-		// Signal that the app is ready (closes loading HTA)
-		app.post('/api/ready', (_req, res) => {
-			signalLoadingComplete();
-			res.json({ ok: true });
-		});
-
 		// Save app settings
 		app.post('/api/save-settings', async (req, res) => {
 			try {
@@ -364,7 +353,8 @@ export function startGuiServer(options: GuiServerOptions): Promise<boolean> {
 				const port = addr.port;
 				const url = `http://127.0.0.1:${port}/${options.htmlFile}`;
 
-				openMainWindow(url);
+				// Signal loading HTA to open Edge with this URL and close
+				signalLoadingComplete(url);
 
 				// 30 minute timeout for long operations like compression
 				setTimeout(() => {

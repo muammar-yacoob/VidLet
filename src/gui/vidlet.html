@@ -609,17 +609,13 @@
         </div>
         <div class="modal-section" style="border-bottom:none;padding-bottom:4px">
           <div class="modal-section-title" style="margin-bottom:4px">Current Hotkeys</div>
-          <div class="hotkey-compact" id="hotkeyDisplay">
-            <span><b>Space</b> Play</span>
-            <span><b>←→</b> Seek</span>
-            <span><b>J/K/L</b> Speed</span>
-            <span><b>M</b> Mute</span>
-            <span id="hk-markIn"><b>I</b> Set In</span>
-            <span id="hk-markOut"><b>O</b> Set Out</span>
-            <span id="hk-split"><b>Ctrl+K</b> Split</span>
-            <span id="hk-delete"><b>Del</b> Delete</span>
-            <span id="hk-ripple"><b>Shift+Del</b> Ripple Del</span>
-          </div>
+          <table class="hotkey-table" id="hotkeyDisplay">
+            <tr><td>Space</td><td>Play</td><td>←→</td><td>Seek</td></tr>
+            <tr><td>J/K/L</td><td>Speed</td><td>M</td><td>Mute</td></tr>
+            <tr><td id="hk-markIn">I</td><td>Set In</td><td id="hk-markOut">O</td><td>Set Out</td></tr>
+            <tr><td id="hk-split">Ctrl+K</td><td>Split</td><td id="hk-delete">Del</td><td>Delete</td></tr>
+            <tr><td id="hk-ripple">Shift+Del</td><td>Ripple</td><td></td><td></td></tr>
+          </table>
         </div>
       </div>
     </div>

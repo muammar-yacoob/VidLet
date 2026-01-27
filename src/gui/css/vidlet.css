@@ -420,6 +420,10 @@ video::-webkit-media-controls-panel{display:none!important}
 .seg-btns button.active{background:var(--acc);border-color:var(--acc);color:#fff}
 .hotkey-compact{display:flex;flex-wrap:wrap;gap:6px 12px;font-size:10px;color:var(--txt3)}
 .hotkey-compact b{color:var(--acc);font-weight:500;margin-right:2px}
+.hotkey-table{width:100%;border-collapse:collapse;font-size:10px;color:var(--txt3)}
+.hotkey-table td{padding:2px 0}
+.hotkey-table td:nth-child(odd){color:var(--acc);font-weight:500;width:60px}
+.hotkey-table td:nth-child(even){padding-right:12px}
 
 /* Adjust Tool */
 .adjust-panel{display:flex;flex-direction:column;gap:10px}

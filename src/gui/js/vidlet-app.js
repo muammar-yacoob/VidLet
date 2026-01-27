@@ -283,11 +283,11 @@ function updateHotkeyDisplay() {
   const splitEl = $('hk-split');
   const deleteEl = $('hk-delete');
   const rippleEl = $('hk-ripple');
-  if (markInEl) markInEl.innerHTML = `<b>${formatHotkey(map.markIn)}</b> Set In`;
-  if (markOutEl) markOutEl.innerHTML = `<b>${formatHotkey(map.markOut)}</b> Set Out`;
-  if (splitEl) splitEl.innerHTML = `<b>${formatHotkey(map.split)}</b> Split`;
-  if (deleteEl) deleteEl.innerHTML = `<b>${formatHotkey(map.delete)}</b> Delete`;
-  if (rippleEl) rippleEl.innerHTML = `<b>${formatHotkey(map.rippleDelete)}</b> Ripple Del`;
+  if (markInEl) markInEl.textContent = formatHotkey(map.markIn);
+  if (markOutEl) markOutEl.textContent = formatHotkey(map.markOut);
+  if (splitEl) splitEl.textContent = formatHotkey(map.split);
+  if (deleteEl) deleteEl.textContent = formatHotkey(map.delete);
+  if (rippleEl) rippleEl.textContent = formatHotkey(map.rippleDelete);
 }
 
 // Quality presets
@@ -411,20 +411,22 @@ async function init() {
 }
 
 /**
- * Signal that app is ready - only signals when frame cache reaches 30%
- * The loading HTA waits for this signal before closing
+ * Start frame caching and show progress in loading HTA and main window
+ * Loading HTA closes when cache threshold is reached
  */
 function signalAppReady() {
   const video = $('videoPreview');
   let signaled = false;
 
-  // Send the ready signal to close the loading HTA
+  // Signal loading HTA to open main window
   const doSignal = () => {
     if (signaled) return;
     signaled = true;
+    // Small delay to ensure Edge window is ready
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        postJson('/api/ready', {});
+        // Signal is now handled by writing to temp file via /api/progress
+        // The ready file is written server-side, we just need to reach threshold
       });
     });
   };
@@ -442,20 +444,16 @@ function signalAppReady() {
 
     // If already cached, signal immediately
     if (frameCacheReady && frameCache.length > 0) {
-      postJson('/api/progress', { percent: 100 });
+      VidLet.postJson('/api/progress', { percent: 100 });
       doSignal();
       return;
     }
 
     // Start frame cache in background
-    // Progress is sent to loading HTA, signal when threshold reached
+    // Progress is sent to loading HTA
     buildFrameCache((pct) => {
-      // Always send progress to loading HTA
-      postJson('/api/progress', { percent: pct });
-      // Signal ready when cache threshold reached (loading HTA will close)
-      if (pct >= cacheThreshold) {
-        doSignal();
-      }
+      // Send progress to loading HTA
+      VidLet.postJson('/api/progress', { percent: pct });
     });
   };
 
@@ -465,18 +463,12 @@ function signalAppReady() {
       startCaching();
     } else if (video) {
       // Send initial progress to show loading HTA we're working
-      postJson('/api/progress', { percent: 0 });
+      VidLet.postJson('/api/progress', { percent: 0 });
       video.addEventListener('canplay', () => {
         if (video.duration > 0) {
           startCaching();
-        } else {
-          // No valid duration, signal anyway after delay
-          setTimeout(doSignal, 2000);
         }
       }, { once: true });
-    } else {
-      // No video element, signal after delay
-      setTimeout(doSignal, 2000);
     }
   };
 
@@ -486,14 +478,6 @@ function signalAppReady() {
   } else {
     window.addEventListener('load', waitForVideo, { once: true });
   }
-
-  // Fallback: if nothing works after 30 seconds, signal anyway
-  setTimeout(() => {
-    if (!signaled) {
-      console.warn('Fallback signal triggered - caching may have failed');
-      doSignal();
-    }
-  }, 30000);
 }
 
 function updateFileDisplay() {
