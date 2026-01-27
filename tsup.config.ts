@@ -22,6 +22,13 @@ export default defineConfig({
 		// Copy icons
 		cpSync('src/icons', 'dist/icons', { recursive: true });
 
+		// Copy icon and logo to gui folder for HTA
+		cpSync('src/icons/tv.ico', 'dist/gui/tv.ico');
+		cpSync('src/icons/tv.png', 'dist/gui/tv.png');
+
+		// Copy animations to gui folder for HTA
+		cpSync('src/animations', 'dist/gui/animations', { recursive: true });
+
 		// Copy launcher script
 		cpSync('src/launcher.vbs', 'dist/launcher.vbs');
 	},

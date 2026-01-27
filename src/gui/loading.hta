@@ -8,6 +8,7 @@
 <hta:application
   id="VidLetLoader"
   applicationName="VidLet"
+  icon="tv.ico"
   border="thin"
   borderStyle="normal"
   caption="yes"
@@ -26,7 +27,8 @@
   html{height:100%;background:#000}
   body{height:100%;overflow:hidden;background:linear-gradient(180deg,#0a0a0c 0%,#111113 100%);font-family:Segoe UI,sans-serif;color:#e4e4e7;text-align:center;padding:24px;opacity:1;transition:opacity .3s ease-out}
   body.fade-out{opacity:0}
-  .logo{width:80px;height:80px;margin-bottom:8px}
+  .logo{width:80px;height:80px;margin-bottom:8px;display:none}
+  .anim{width:100px;height:100px;margin-bottom:4px}
   .title{font-size:28px;font-weight:700;color:#a855f7;margin-bottom:2px}
   .tagline{font-size:10px;color:#c084fc;font-weight:600;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px}
   .desc{font-size:10px;color:#636366;margin-bottom:14px}
@@ -41,6 +43,13 @@
   window.resizeTo(w, h);
   window.moveTo((screen.availWidth - w) / 2, (screen.availHeight - h) / 2.5);
 
+  // Pick a random animation
+  var animations = ['rainbow-cat.gif'];
+  var randomAnim = animations[Math.floor(Math.random() * animations.length)];
+  window.onload = function() {
+    document.getElementById('anim').src = 'animations/' + randomAnim;
+  };
+
   var fso = new ActiveXObject("Scripting.FileSystemObject");
   var shell = new ActiveXObject("WScript.Shell");
   var tempDir = shell.ExpandEnvironmentStrings("%TEMP%");
@@ -50,16 +59,7 @@
   var isClosing = false;
   var mainOpened = false;
   var mainUrl = "";
-  var cacheThreshold = 20; // Default threshold
-
-  // Set icon dynamically using absolute path
-  try {
-    var scriptPath = unescape(document.location.pathname).replace(/\//g, "\\");
-    if (scriptPath.charAt(0) === "\\") scriptPath = scriptPath.substring(1);
-    var scriptDir = scriptPath.substring(0, scriptPath.lastIndexOf("\\"));
-    var iconPath = scriptDir + "\\..\\icons\\tv.ico";
-    VidLetLoader.icon = iconPath;
-  } catch(e) {}
+  var cacheThreshold = 20;
 
   function closeWindow() {
     if (pollTimer) clearInterval(pollTimer);
@@ -74,32 +74,27 @@
     isClosing = true;
     if (pollTimer) clearInterval(pollTimer);
     pollTimer = null;
-    // Restore the minimized Edge window using PowerShell
+    // Move Edge window to center and activate it
     try {
-      var restoreCmd = 'powershell -WindowStyle Hidden -Command "$w = Get-Process msedge -ErrorAction SilentlyContinue | Where-Object {$_.MainWindowTitle -like \'*VidLet*\'}; if($w){[void][System.Reflection.Assembly]::LoadWithPartialName(\'Microsoft.VisualBasic\');[Microsoft.VisualBasic.Interaction]::AppActivate($w.Id)}"';
-      shell.Run(restoreCmd, 0, false);
+      var moveCmd = 'powershell -WindowStyle Hidden -Command "Add-Type -Name W -Namespace W -MemberDefinition \'[DllImport(\\\"user32.dll\\\")] public static extern bool SetWindowPos(IntPtr h,IntPtr a,int x,int y,int w,int h2,uint f);[DllImport(\\\"user32.dll\\\")] public static extern IntPtr FindWindow(string c,string t);[DllImport(\\\"user32.dll\\\")] public static extern bool ShowWindow(IntPtr h,int c);\';$h=[W.W]::FindWindow($null,\\\"VidLet\\\");if($h-ne[IntPtr]::Zero){[W.W]::ShowWindow($h,9);[W.W]::SetWindowPos($h,[IntPtr]::Zero,(' + Math.round((screen.availWidth-480)/2) + '),(' + Math.round((screen.availHeight-400)/2) + '),0,0,0x0001)}"';
+      shell.Run(moveCmd, 0, false);
     } catch(e) {}
-    // Fallback: simple AppActivate
-    setTimeout(function() {
-      try { shell.AppActivate('VidLet'); } catch(e) {}
-    }, 100);
     try { fso.DeleteFile(readyFile); } catch(e) {}
     try { fso.DeleteFile(progressFile); } catch(e) {}
     document.body.className = 'fade-out';
     setTimeout(closeWindow, 300);
   }
 
-  function openMainMinimized() {
+  function openMainHidden() {
     if (mainOpened) return;
     mainOpened = true;
-    // Read URL and open Edge minimized
     try {
       var f = fso.OpenTextFile(readyFile, 1);
       mainUrl = f.ReadAll();
       f.Close();
       if (mainUrl && mainUrl.length > 0) {
-        // Use PowerShell to start Edge minimized (more reliable)
-        var cmd = 'powershell -WindowStyle Hidden -Command "Start-Process msedge -ArgumentList \'--app=' + mainUrl.replace(/'/g, "''") + '\' -WindowStyle Minimized"';
+        // Open Edge off-screen so it loads invisibly
+        var cmd = 'powershell -WindowStyle Hidden -Command "Start-Process msedge -ArgumentList \'--app=' + mainUrl.replace(/'/g, "''") + '\',\'--window-position=-32000,-32000\'"';
         shell.Run(cmd, 0, false);
       }
     } catch(e) {}
@@ -127,11 +122,9 @@
   // Poll for ready signal and progress updates
   setTimeout(function() {
     pollTimer = setInterval(function() {
-      // Check if server is ready and open main window minimized
       if (!mainOpened && fso.FileExists(readyFile)) {
-        openMainMinimized();
+        openMainHidden();
       }
-      // Check progress and show main window when threshold reached
       var pct = checkProgress();
       if (mainOpened && pct >= cacheThreshold) {
         showMainAndClose();
@@ -141,7 +134,8 @@
 </script>
 </head>
 <body>
-  <img class="logo" src="../icons/tv.png">
+  <img class="anim" id="anim" src="animations/rainbow-cat.gif">
+  <img class="logo" src="tv.png">
   <div class="title">VidLet</div>
   <div class="tagline">Trim &bull; Compose &bull; Publish</div>
   <div class="desc">Lightweight video tools for content creators</div>

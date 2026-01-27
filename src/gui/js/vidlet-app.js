@@ -741,6 +741,7 @@ async function extractAudio() {
     $('loading').classList.remove('on');
 
     if (res.success) {
+      celebrate();
       $('done').classList.add('on');
       $('output').textContent = res.output || 'Audio extracted!';
     } else {
@@ -3536,6 +3537,9 @@ async function process() {
       // Store output path
       if (res.output) currentFilePath = res.output;
 
+      // Celebrate success!
+      celebrate();
+
       // Handle output based on tool type
       if (activeTool === 'togif') {
         // GIF - show done modal with continue (but don't reload GIF as source)
@@ -3697,6 +3701,36 @@ function showToast(message) {
   toast.textContent = message;
   toast.classList.add('show');
   setTimeout(() => toast.classList.remove('show'), 2000);
+}
+
+/**
+ * Celebrate with confetti burst
+ */
+function celebrate() {
+  if (typeof confetti !== 'function') return;
+
+  // Big burst from center
+  confetti({
+    particleCount: 100,
+    spread: 70,
+    origin: { y: 0.6 }
+  });
+
+  // Smaller side bursts after a delay
+  setTimeout(() => {
+    confetti({
+      particleCount: 50,
+      angle: 60,
+      spread: 55,
+      origin: { x: 0 }
+    });
+    confetti({
+      particleCount: 50,
+      angle: 120,
+      spread: 55,
+      origin: { x: 1 }
+    });
+  }, 200);
 }
 
 function showLoopTooltip() {
