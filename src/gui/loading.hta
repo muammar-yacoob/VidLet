@@ -8,7 +8,6 @@
 <hta:application
   id="VidLetLoader"
   applicationName="VidLet"
-  icon="../icons/tv.ico"
   border="thin"
   borderStyle="normal"
   caption="yes"
@@ -50,7 +49,17 @@
   var pollTimer = null;
   var isClosing = false;
   var mainOpened = false;
+  var mainUrl = "";
   var cacheThreshold = 20; // Default threshold
+
+  // Set icon dynamically using absolute path
+  try {
+    var scriptPath = unescape(document.location.pathname).replace(/\//g, "\\");
+    if (scriptPath.charAt(0) === "\\") scriptPath = scriptPath.substring(1);
+    var scriptDir = scriptPath.substring(0, scriptPath.lastIndexOf("\\"));
+    var iconPath = scriptDir + "\\..\\icons\\tv.ico";
+    VidLetLoader.icon = iconPath;
+  } catch(e) {}
 
   function closeWindow() {
     if (pollTimer) clearInterval(pollTimer);
@@ -60,27 +69,38 @@
     self.close();
   }
 
-  function fadeAndClose() {
+  function showMainAndClose() {
     if (isClosing) return;
     isClosing = true;
     if (pollTimer) clearInterval(pollTimer);
     pollTimer = null;
+    // Restore the minimized Edge window using PowerShell
+    try {
+      var restoreCmd = 'powershell -WindowStyle Hidden -Command "$w = Get-Process msedge -ErrorAction SilentlyContinue | Where-Object {$_.MainWindowTitle -like \'*VidLet*\'}; if($w){[void][System.Reflection.Assembly]::LoadWithPartialName(\'Microsoft.VisualBasic\');[Microsoft.VisualBasic.Interaction]::AppActivate($w.Id)}"';
+      shell.Run(restoreCmd, 0, false);
+    } catch(e) {}
+    // Fallback: simple AppActivate
+    setTimeout(function() {
+      try { shell.AppActivate('VidLet'); } catch(e) {}
+    }, 100);
     try { fso.DeleteFile(readyFile); } catch(e) {}
     try { fso.DeleteFile(progressFile); } catch(e) {}
     document.body.className = 'fade-out';
     setTimeout(closeWindow, 300);
   }
 
-  function openMain() {
+  function openMainMinimized() {
     if (mainOpened) return;
     mainOpened = true;
-    // Read URL from ready file and open Edge
+    // Read URL and open Edge minimized
     try {
       var f = fso.OpenTextFile(readyFile, 1);
-      var url = f.ReadAll();
+      mainUrl = f.ReadAll();
       f.Close();
-      if (url && url.length > 0) {
-        shell.Run('msedge --app="' + url + '"', 1, false);
+      if (mainUrl && mainUrl.length > 0) {
+        // Use PowerShell to start Edge minimized (more reliable)
+        var cmd = 'powershell -WindowStyle Hidden -Command "Start-Process msedge -ArgumentList \'--app=' + mainUrl.replace(/'/g, "''") + '\' -WindowStyle Minimized"';
+        shell.Run(cmd, 0, false);
       }
     } catch(e) {}
   }
@@ -102,19 +122,19 @@
   }
 
   // Failsafe timeout (30 seconds)
-  setTimeout(fadeAndClose, 30000);
+  setTimeout(showMainAndClose, 30000);
 
   // Poll for ready signal and progress updates
   setTimeout(function() {
     pollTimer = setInterval(function() {
-      // Check if server is ready and open main window
+      // Check if server is ready and open main window minimized
       if (!mainOpened && fso.FileExists(readyFile)) {
-        openMain();
+        openMainMinimized();
       }
-      // Check progress and close when threshold reached
+      // Check progress and show main window when threshold reached
       var pct = checkProgress();
       if (mainOpened && pct >= cacheThreshold) {
-        fadeAndClose();
+        showMainAndClose();
       }
     }, 100);
   }, 300);
@@ -125,8 +145,8 @@
   <div class="title">VidLet</div>
   <div class="tagline">Trim &bull; Compose &bull; Publish</div>
   <div class="desc">Lightweight video tools for content creators</div>
-  <div class="progress" id="progress"></div>
-  <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+  <div class="progress" id="progress">Loading...</div>
+  <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:5%"></div></div>
   <a class="website" href="#" onclick="shell.Run('https://vidlet.app');return false">vidlet.app</a>
 </body>
 </html>
