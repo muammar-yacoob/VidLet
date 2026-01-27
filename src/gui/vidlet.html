@@ -80,6 +80,10 @@
           </div>
         </div>
         <div class="export-section">
+          <div class="tool export-tool" id="t-extractaudio" onclick="openExtractAudioModal()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+            <span>Extract Audio</span>
+          </div>
           <div class="tool export-tool" id="t-togif" onclick="hideGifStar(); selectTool('togif')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
             <span>Export as GIF</span>
@@ -91,6 +95,9 @@
         <div class="preview-container" id="previewContainer">
           <div class="preview-wrap" id="previewWrap">
             <video id="videoPreview" muted></video>
+            <div class="scrub-overlay" id="scrub-overlay" style="display:none">
+              <img id="scrub-frame" alt="">
+            </div>
             <div class="player-bar" id="playerBar">
               <div class="player-row">
                 <div class="player-seek" id="playerSeek">
@@ -118,9 +125,17 @@
                   <span class="speed-val" id="speedVal" onclick="resetSpeed()">1x</span>
                   <button class="speed-adj" onclick="adjustSpeed(0.5)">+</button>
                 </div>
+                <div class="undo-controls">
+                  <button class="player-btn" id="undo-btn" onclick="undo()" disabled title="Undo (Ctrl+Z)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>
+                  </button>
+                  <button class="player-btn" id="redo-btn" onclick="redo()" disabled title="Redo (Ctrl+Y)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13"/></svg>
+                  </button>
+                </div>
               </div>
             </div>
-            <div class="hotkey-hint">Space: Play | ←→: 5s | Alt+←→: Frame | M: Mute</div>
+            <div class="hotkey-hint" id="playerHotkeyHint">Space: Play | ←→: 5s | Alt+←→: Frame | M: Mute</div>
             <div class="caption-overlay hidden" id="captionOverlay">
               <div class="caption-text" id="captionOverlayText">Sample caption text</div>
             </div>
@@ -198,7 +213,7 @@
               <span class="hint-text">
                 <span class="hint-item">Under 60s → Find Loop</span>
                 <span class="hint-sep">•</span>
-                <span class="hint-item">Under 15s → Export GIF</span>
+                <span class="hint-item">Under 20s → Export GIF</span>
               </span>
             </div>
           </div>
@@ -263,11 +278,15 @@
                 </div>
               </div>
               <div class="portrait-actions">
+                <button type="button" class="portrait-btn" id="portrait-auto-split" onclick="autoSplitSegments()" title="Auto-split into even segments">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+                  Auto Split
+                </button>
                 <button type="button" class="portrait-btn primary" id="portrait-split-btn" onclick="splitPortraitSegment()" title="Split at playhead (Ctrl+K)">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="2" x2="12" y2="22"/><polyline points="8 6 12 2 16 6"/><polyline points="8 18 12 22 16 18"/></svg>
                   Split Here
                 </button>
-                <button type="button" class="portrait-btn danger" id="portrait-delete-btn" onclick="deleteSelectedSegment()" disabled title="Delete selected segment">
+                <button type="button" class="portrait-btn danger" id="portrait-delete-btn" onclick="deleteSelectedSegment(false)" disabled title="Delete segment (keeps gap)">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                 </button>
               </div>
@@ -282,6 +301,16 @@
               <span class="hint-drag">Drag edges to adjust</span>
               <span class="hint-sep">•</span>
               <span class="hint-gap">Gaps = cut from output</span>
+            </div>
+            <div class="portrait-transition-row">
+              <label>Transition</label>
+              <select id="portrait-transition" onchange="updateTransitionUI()">
+                <option value="none">Cut</option>
+                <option value="fade" selected>Fade</option>
+                <option value="dissolve">Dissolve</option>
+              </select>
+              <input type="range" id="portrait-transition-duration" min="0.1" max="1.0" step="0.1" value="0.3" oninput="updateTransitionUI()">
+              <span id="portrait-transition-duration-val">0.3s</span>
             </div>
           </div>
 
@@ -453,7 +482,7 @@
               <span class="hint-text">
                 <span id="hint-loop" class="hint-item">Under 60s → Find Loop</span>
                 <span class="hint-sep">•</span>
-                <span id="hint-gif" class="hint-item">Under 15s → Export GIF</span>
+                <span id="hint-gif" class="hint-item">Under 20s → Export GIF</span>
               </span>
             </div>
           </div>
@@ -462,6 +491,18 @@
     </div>
 
     <div class="ft" id="btns">
+      <div class="cache-progress" id="cache-progress" style="display:none">
+        <div class="cache-progress-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83"/></svg>
+        </div>
+        <div class="cache-progress-content">
+          <div class="cache-progress-label" id="cache-progress-label">Caching frames...</div>
+          <div class="cache-progress-bar">
+            <div class="cache-progress-fill" id="cache-progress-fill"></div>
+          </div>
+        </div>
+        <div class="cache-progress-pct" id="cache-progress-pct">0%</div>
+      </div>
       <button class="btn btn-g" onclick="VidLet.cancel()">Cancel</button>
       <button class="btn btn-p" id="processBtn" onclick="process()" disabled>Process</button>
     </div>
@@ -535,14 +576,29 @@
             </div>
           </div>
         </div>
+        <div class="modal-section">
+          <div class="modal-section-title">Hotkey Style</div>
+          <div class="modal-row">
+            <select id="settingsHotkeyPreset" onchange="setHotkeyPreset(this.value)">
+              <option value="premiere">Adobe Premiere</option>
+              <option value="resolve">DaVinci Resolve</option>
+              <option value="capcut">CapCut</option>
+              <option value="shotcut">Shotcut</option>
+              <option value="descript">Descript</option>
+              <option value="camtasia">Camtasia</option>
+            </select>
+          </div>
+        </div>
         <div class="modal-section" style="border-bottom:none;padding-bottom:4px">
-          <div class="modal-section-title" style="margin-bottom:4px">Hotkeys</div>
-          <div class="hotkey-compact">
+          <div class="modal-section-title" style="margin-bottom:4px">Current Hotkeys</div>
+          <div class="hotkey-compact" id="hotkeyDisplay">
             <span><b>Space</b> Play</span>
-            <span><b>←→</b> 5s</span>
-            <span><b>Alt+←→</b> Frame</span>
+            <span><b>←→</b> Seek</span>
+            <span><b>J/K/L</b> Speed</span>
             <span><b>M</b> Mute</span>
-            <span><b>Ctrl+K</b> Split</span>
+            <span id="hk-split"><b>Ctrl+K</b> Split</span>
+            <span id="hk-delete"><b>Del</b> Delete</span>
+            <span id="hk-ripple"><b>Shift+Del</b> Ripple Del</span>
           </div>
         </div>
       </div>
@@ -559,6 +615,41 @@
           <button class="btn btn-g" onclick="closeConfirmModal(false)">Cancel</button>
           <button class="btn btn-p" id="confirmOkBtn" onclick="closeConfirmModal(true)">OK</button>
         </div>
+      </div>
+    </div>
+
+    <div class="modal-overlay" id="extractAudioModal" onclick="if(event.target===this)closeExtractAudioModal()">
+      <div class="modal" style="width:240px">
+        <div class="modal-header">
+          <h3>Extract Audio</h3>
+          <button class="modal-close" onclick="closeExtractAudioModal()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <div class="modal-section">
+          <div class="modal-row">
+            <label>Format</label>
+            <div class="seg-btns" id="audio-format-btns">
+              <button type="button" class="seg-btn active" data-val="mp3" onclick="setAudioFormat('mp3')">MP3</button>
+              <button type="button" class="seg-btn" data-val="aac" onclick="setAudioFormat('aac')">AAC</button>
+              <button type="button" class="seg-btn" data-val="wav" onclick="setAudioFormat('wav')">WAV</button>
+              <button type="button" class="seg-btn" data-val="flac" onclick="setAudioFormat('flac')">FLAC</button>
+            </div>
+          </div>
+          <div class="modal-row" id="audio-bitrate-row">
+            <label>Bitrate</label>
+            <div class="seg-btns" id="audio-bitrate-btns">
+              <button type="button" class="seg-btn" data-val="128" onclick="setAudioBitrate(128)">128k</button>
+              <button type="button" class="seg-btn active" data-val="192" onclick="setAudioBitrate(192)">192k</button>
+              <button type="button" class="seg-btn" data-val="320" onclick="setAudioBitrate(320)">320k</button>
+            </div>
+          </div>
+        </div>
+        <div class="modal-section" style="border-bottom:none;padding:12px">
+          <button class="btn btn-p" style="width:100%" onclick="extractAudio()">Extract</button>
+        </div>
+        <input type="hidden" id="extract-audio-format" value="mp3">
+        <input type="hidden" id="extract-audio-bitrate" value="192">
       </div>
     </div>
   </div>

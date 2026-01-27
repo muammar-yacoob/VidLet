@@ -1,7 +1,7 @@
 /**
  * GUI Server - Serves HTML interface and handles API calls for video processing
  */
-import { exec, spawn } from 'node:child_process';
+import { exec, spawn, spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import { createServer } from 'node:http';
 import * as os from 'node:os';
@@ -9,6 +9,7 @@ import { dirname, join, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { logToFile } from './logger.js';
+import { loadToolsConfig, saveToolsConfig } from './config.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -46,16 +47,16 @@ function signalReady(): void {
 }
 
 /**
- * Clean up any stale signal file from previous sessions
+ * Clean up any stale signal/progress files from previous sessions (synchronous to ensure completion)
  */
 function cleanupSignalFile(): void {
-	spawn(
+	spawnSync(
 		'powershell.exe',
 		[
 			'-WindowStyle',
 			'Hidden',
 			'-Command',
-			'Remove-Item -Path $env:TEMP\\vidlet-ready.tmp -Force -ErrorAction SilentlyContinue',
+			'Remove-Item -Path $env:TEMP\\vidlet-ready.tmp,$env:TEMP\\vidlet-progress.tmp -Force -ErrorAction SilentlyContinue',
 		],
 		{
 			stdio: 'ignore',
@@ -89,6 +90,7 @@ export interface VideoInfo {
 	fps: number;
 	bitrate: number;
 	fileSize: number;
+	hasAudio: boolean;
 }
 
 export interface GuiServerOptions {
@@ -143,6 +145,9 @@ export interface GuiServerOptions {
  * Returns a promise that resolves when the window is closed
  */
 export function startGuiServer(options: GuiServerOptions): Promise<boolean> {
+	// Clean up any stale signal file immediately (before HTA can detect it)
+	cleanupSignalFile();
+
 	return new Promise((resolve) => {
 		const app = express();
 		app.use(express.json({ limit: '100mb' }));
@@ -337,10 +342,41 @@ export function startGuiServer(options: GuiServerOptions): Promise<boolean> {
 			res.json({ success: true });
 		});
 
+		// Update caching progress (displayed in loading HTA)
+		app.post('/api/progress', (req, res) => {
+			const { percent } = req.body;
+			if (typeof percent === 'number') {
+				// Write progress to temp file for HTA to read
+				const progressFile = join(os.tmpdir(), 'vidlet-progress.tmp');
+				fs.writeFileSync(progressFile, String(Math.round(percent)));
+			}
+			res.json({ ok: true });
+		});
+
 		// Signal that the app is ready (closes loading HTA)
 		app.post('/api/ready', (_req, res) => {
 			signalReady();
 			res.json({ ok: true });
+		});
+
+		// Save app settings
+		app.post('/api/save-settings', async (req, res) => {
+			try {
+				const { hotkeyPreset } = req.body;
+				if (hotkeyPreset && typeof hotkeyPreset === 'string') {
+					// Update in-memory defaults
+					(options.defaults as Record<string, unknown>).hotkeyPreset = hotkeyPreset;
+					// Persist to config file
+					const config = await loadToolsConfig();
+					config.app = { ...config.app, hotkeyPreset: hotkeyPreset as 'premiere' | 'resolve' | 'capcut' | 'shotcut' | 'descript' | 'camtasia' };
+					await saveToolsConfig(config);
+					logToFile(`Settings saved: hotkeyPreset=${hotkeyPreset}`);
+				}
+				res.json({ success: true });
+			} catch (err) {
+				logToFile(`Failed to save settings: ${(err as Error).message}`);
+				res.json({ success: false, error: (err as Error).message });
+			}
 		});
 
 		function shutdown() {

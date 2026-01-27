@@ -43,6 +43,21 @@ export const Mkv2Mp4ConfigSchema = z.object({
 
 export const ThumbConfigSchema = z.object({});
 
+// Hotkey preset options
+export const HotkeyPresetSchema = z.enum([
+  'premiere',   // Adobe Premiere Pro
+  'resolve',    // DaVinci Resolve
+  'capcut',     // CapCut
+  'shotcut',    // Shotcut
+  'descript',   // Descript
+  'camtasia',   // Camtasia
+]).default('premiere');
+
+// App settings schema (non-tool settings)
+export const AppSettingsSchema = z.object({
+  hotkeyPreset: HotkeyPresetSchema.default('premiere'),
+});
+
 // Combined config schema
 export const ToolsConfigSchema = z.object({
   compress: CompressConfigSchema.default({}),
@@ -51,6 +66,7 @@ export const ToolsConfigSchema = z.object({
   shrink: ShrinkConfigSchema.default({}),
   mkv2mp4: Mkv2Mp4ConfigSchema.default({}),
   thumb: ThumbConfigSchema.default({}),
+  app: AppSettingsSchema.default({}),
 });
 
 // Types
@@ -70,6 +86,7 @@ const DEFAULT_CONFIG: ToolsConfig = {
   shrink: { targetDuration: 59.5 },
   mkv2mp4: { copyStreams: true, crf: 23 },
   thumb: {},
+  app: { hotkeyPreset: 'premiere' },
 };
 
 /**

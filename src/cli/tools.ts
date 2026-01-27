@@ -1,3 +1,4 @@
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { getToolConfig as getToolSettings } from '../lib/config.js';
 import { getVideoInfo } from '../lib/ffmpeg.js';
@@ -38,6 +39,7 @@ export interface Tool {
  */
 async function getVideoInfoForGui(filePath: string): Promise<VideoInfo> {
 	const info = await getVideoInfo(filePath);
+	const stats = fs.statSync(filePath);
 	return {
 		filePath,
 		fileName: path.basename(filePath),
@@ -45,6 +47,9 @@ async function getVideoInfoForGui(filePath: string): Promise<VideoInfo> {
 		height: info.height,
 		duration: info.duration,
 		fps: info.fps ?? 30,
+		bitrate: info.bitrate ?? 0,
+		fileSize: stats.size,
+		hasAudio: info.hasAudio,
 	};
 }
 
