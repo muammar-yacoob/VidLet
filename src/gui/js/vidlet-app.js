@@ -15,6 +15,15 @@ let skipReloadOnContinue = false;
 let mkvFastCopy = true;
 let portraitCropX = 0.5;
 let audioMix = true;
+
+// Portrait segment state
+let portraitSegments = []; // [{id, startTime, endTime, cropX}]
+let selectedSegmentIndex = 0;
+const SEGMENT_COLORS = ['#a855f7', '#22c55e', '#3b82f6', '#f59e0b', '#ec4889'];
+
+// Portrait timeline zoom state
+let portraitZoom = 1;
+let portraitOffset = 0; // 0-1, left edge position as fraction of duration
 let audioVolume = 50;
 let audioPreviewLoaded = false;
 
@@ -62,12 +71,15 @@ async function init() {
   }
 
   // Initialize sliders
+  // Shrink slider: min is duration/10 (10x max speed), max is full duration
+  const shrinkMin = Math.max(1, Math.ceil(res.duration / 10));
+  $('shrink-duration').min = shrinkMin;
   $('shrink-duration').max = Math.floor(res.duration);
-  $('shrink-duration').value = Math.min(60, Math.floor(res.duration));
+  $('shrink-duration').value = Math.min(60, Math.max(shrinkMin, Math.floor(res.duration)));
   updateShrinkLabel();
 
-  // Hide 60s button if video <= 60s
-  const show60s = res.duration > 60;
+  // Hide 60s button if video <= 60s or if 60s is below min (10x limit)
+  const show60s = res.duration > 60 && 60 >= shrinkMin;
   $('shrink-60-btn').classList.toggle('hidden', !show60s);
   $('shrink-marker-60').classList.toggle('hidden', !show60s);
 
@@ -129,6 +141,9 @@ async function init() {
   updateEstimates();
 
   if (window.lucide) lucide.createIcons();
+
+  // Prevent page zoom except on video player
+  initPageZoomLock();
 
   // Select first tool (mkv2mp4 for MKV files, otherwise first available)
   if (isMkvFile) {
@@ -263,6 +278,7 @@ function selectTool(id) {
 
     if (id === 'portrait') {
       $('cropOverlay').classList.add('active');
+      initPortraitSegments();
       updateCropOverlay();
     }
 
@@ -435,7 +451,10 @@ function updateEstimates() {
 
   const targetDuration = parseFloat($('shrink-duration').value) || 60;
   const speedMultiplier = (duration / targetDuration).toFixed(1);
-  $('shrink-estimate').textContent = `Speed: ${speedMultiplier}x faster`;
+  const isAtLimit = parseFloat(speedMultiplier) >= 9.9;
+  $('shrink-estimate').textContent = isAtLimit
+    ? `Speed: ${speedMultiplier}x (max)`
+    : `Speed: ${speedMultiplier}x faster`;
 }
 
 function setCompressQuality(level) {
@@ -1419,6 +1438,10 @@ function initPlayerControls() {
     updateTimeDisplay();
     updatePlayhead();
     updateThumbFrameTime();
+    // Update portrait segment playhead
+    if (activeTool === 'portrait') {
+      updatePortraitPlayhead();
+    }
     // Seamless loop in trim mode
     if (activeTool === 'trim' && !video.paused) {
       const trimEnd = parseFloat($('trim-end').value) || video.duration;
@@ -1430,9 +1453,13 @@ function initPlayerControls() {
   });
   video.addEventListener('loadedmetadata', updateTimeDisplay);
 
-  seek.addEventListener('click', (e) => {
+  // Seek bar scrubbing support
+  let isSeeking = false;
+  let wasPlayingBeforeSeek = false;
+
+  function seekToPosition(e) {
     const rect = seek.getBoundingClientRect();
-    const pct = (e.clientX - rect.left) / rect.width;
+    const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
     // In trim mode, seek within selection range
     if (activeTool === 'trim') {
       const trimStart = parseFloat($('trim-start').value) || 0;
@@ -1440,6 +1467,27 @@ function initPlayerControls() {
       video.currentTime = trimStart + pct * (trimEnd - trimStart);
     } else {
       video.currentTime = pct * video.duration;
+    }
+  }
+
+  seek.addEventListener('mousedown', (e) => {
+    isSeeking = true;
+    wasPlayingBeforeSeek = !video.paused;
+    video.pause();
+    seekToPosition(e);
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!isSeeking) return;
+    seekToPosition(e);
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!isSeeking) return;
+    isSeeking = false;
+    if (wasPlayingBeforeSeek) {
+      video.play();
     }
   });
 
@@ -1453,6 +1501,15 @@ function initPlayerControls() {
 
   document.addEventListener('keydown', (e) => {
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+    // Ctrl+K / Cmd+K = Split segment (Adobe Premiere shortcut)
+    if ((e.ctrlKey || e.metaKey) && e.code === 'KeyK') {
+      if (activeTool === 'portrait') {
+        e.preventDefault();
+        splitPortraitSegment();
+        return;
+      }
+    }
 
     // Alt+Arrow = frame-by-frame (1/fps), normal Arrow = 5s
     const frameStep = 1 / (info.fps || 30);
@@ -1940,6 +1997,7 @@ function initCropOverlay() {
     const rect = video.getBoundingClientRect();
     const x = e.clientX - rect.left;
     portraitCropX = Math.max(0.1, Math.min(0.9, x / rect.width));
+    updateSelectedSegmentCropX(portraitCropX);
     updateCropOverlay();
   }
 
@@ -1975,6 +2033,502 @@ function updateCropOverlay() {
   $('cropRight').style.right = (wrapRect.width - offsetX - videoRect.width) + 'px';
   $('cropWindow').style.left = cropLeft + 'px';
   $('cropWindow').style.width = cropWidth + 'px';
+
+  // Update crop window border color to match selected segment
+  if (portraitSegments.length > 0 && selectedSegmentIndex < portraitSegments.length) {
+    const segColor = SEGMENT_COLORS[selectedSegmentIndex % SEGMENT_COLORS.length];
+    $('cropWindow').style.borderColor = segColor;
+    document.querySelectorAll('.crop-handle').forEach(h => h.style.background = segColor);
+  }
+}
+
+// ============ PORTRAIT SEGMENTS ============
+
+function initPortraitSegments() {
+  // Reset zoom state
+  portraitZoom = 1;
+  portraitOffset = 0;
+  $('segment-timeline-wrap')?.classList.remove('zoomed');
+
+  // Create default segment covering entire video
+  portraitSegments = [{
+    id: 'seg_' + Date.now(),
+    startTime: 0,
+    endTime: info.duration || 10,
+    cropX: 0.5
+  }];
+  selectedSegmentIndex = 0;
+  portraitCropX = 0.5;
+  renderPortraitSegments();
+  updatePortraitUI();
+
+  // Initialize timeline zoom (only once)
+  initPortraitTimelineZoom();
+}
+
+function splitPortraitSegment() {
+  const video = $('videoPreview');
+  const currentTime = video.currentTime;
+
+  // Find which segment contains the current time
+  const segmentIndex = portraitSegments.findIndex(s => currentTime >= s.startTime && currentTime < s.endTime);
+  if (segmentIndex === -1) return;
+
+  const segment = portraitSegments[segmentIndex];
+
+  // Don't split if too close to edges (minimum 0.5s segments)
+  if (currentTime - segment.startTime < 0.5 || segment.endTime - currentTime < 0.5) {
+    showToast('Segment too small to split');
+    return;
+  }
+
+  // Create new segment from split point to end
+  const newSegment = {
+    id: 'seg_' + Date.now(),
+    startTime: currentTime,
+    endTime: segment.endTime,
+    cropX: segment.cropX // Inherit crop position
+  };
+
+  // Trim original segment
+  segment.endTime = currentTime;
+
+  // Insert new segment after the current one
+  portraitSegments.splice(segmentIndex + 1, 0, newSegment);
+
+  // Select the new segment
+  selectedSegmentIndex = segmentIndex + 1;
+  portraitCropX = newSegment.cropX;
+
+  renderPortraitSegments();
+  updatePortraitUI();
+  updateCropOverlay();
+}
+
+function deleteSelectedSegment() {
+  if (portraitSegments.length <= 1) return;
+
+  const deleted = portraitSegments.splice(selectedSegmentIndex, 1)[0];
+
+  // Merge with previous or next segment
+  if (selectedSegmentIndex > 0) {
+    // Merge with previous
+    portraitSegments[selectedSegmentIndex - 1].endTime = deleted.endTime;
+    selectedSegmentIndex--;
+  } else if (portraitSegments.length > 0) {
+    // Merge with next
+    portraitSegments[0].startTime = deleted.startTime;
+  }
+
+  // Update cropX to selected segment
+  if (portraitSegments[selectedSegmentIndex]) {
+    portraitCropX = portraitSegments[selectedSegmentIndex].cropX;
+  }
+
+  renderPortraitSegments();
+  updatePortraitUI();
+  updateCropOverlay();
+}
+
+function selectSegment(index) {
+  if (index < 0 || index >= portraitSegments.length) return;
+
+  selectedSegmentIndex = index;
+  portraitCropX = portraitSegments[index].cropX;
+
+  // Pause and seek video precisely to segment start
+  const video = $('videoPreview');
+  video.pause();
+  // Use a small timeout to ensure seek happens after pause
+  setTimeout(() => {
+    video.currentTime = portraitSegments[index].startTime;
+  }, 10);
+
+  renderPortraitSegments();
+  updatePortraitUI();
+  updateCropOverlay();
+  updatePortraitPlayhead();
+}
+
+function renderPortraitSegments() {
+  const timeline = $('segment-timeline');
+  const timelineWrap = $('segment-timeline-wrap');
+  const timeTicks = $('segment-time-ticks');
+  if (!timeline) return;
+
+  timeline.innerHTML = '';
+
+  const totalDuration = info.duration || 1;
+  const visibleDuration = totalDuration / portraitZoom;
+  const visibleStart = portraitOffset * totalDuration;
+  const visibleEnd = visibleStart + visibleDuration;
+
+  // Apply zoom transform to timeline
+  // Width must account for the 8px inset on each side (16px total)
+  timeline.style.width = `calc(${portraitZoom * 100}% - ${portraitZoom * 16}px)`;
+  timeline.style.transform = `translateX(${-portraitOffset * 100}%)`;
+
+  // Render time ticks (zoom-aware)
+  if (timeTicks) {
+    timeTicks.innerHTML = '';
+    // Adjust tick interval based on zoom
+    let tickInterval = totalDuration <= 30 ? 5 : totalDuration <= 120 ? 15 : 30;
+    if (portraitZoom >= 4) tickInterval = Math.max(1, tickInterval / 4);
+    else if (portraitZoom >= 2) tickInterval = Math.max(1, tickInterval / 2);
+
+    for (let t = 0; t <= totalDuration; t += tickInterval) {
+      // Only render ticks in visible range (with some padding)
+      if (t >= visibleStart - tickInterval && t <= visibleEnd + tickInterval) {
+        const tick = document.createElement('span');
+        tick.className = 'segment-tick';
+        // Position relative to zoomed timeline
+        const pos = ((t / totalDuration) - portraitOffset) * portraitZoom * 100;
+        tick.style.left = `${pos}%`;
+        tick.textContent = formatDuration(t);
+        timeTicks.appendChild(tick);
+      }
+    }
+  }
+
+  // Render each segment with absolute positioning (zoom-aware)
+  portraitSegments.forEach((seg, i) => {
+    // Convert to zoomed coordinates
+    const startPos = ((seg.startTime / totalDuration) - portraitOffset) * portraitZoom;
+    const endPos = ((seg.endTime / totalDuration) - portraitOffset) * portraitZoom;
+
+    // Skip if completely outside visible area
+    if (endPos < -0.1 || startPos > 1.1) return;
+
+    const color = SEGMENT_COLORS[i % SEGMENT_COLORS.length];
+
+    const el = document.createElement('div');
+    el.className = 'portrait-segment' + (i === selectedSegmentIndex ? ' selected' : '');
+    el.style.left = `${startPos * 100}%`;
+    el.style.width = `${(endPos - startPos) * 100}%`;
+    el.style.background = `linear-gradient(135deg, ${color}, ${adjustColor(color, -20)})`;
+    el.dataset.index = i;
+
+    // Add segment number label
+    const label = document.createElement('span');
+    label.className = 'segment-label';
+    label.textContent = i + 1;
+    el.appendChild(label);
+
+    // Add resize handles
+    const handleLeft = document.createElement('div');
+    handleLeft.className = 'segment-handle segment-handle-left';
+    handleLeft.dataset.segment = i;
+    handleLeft.dataset.side = 'start';
+    el.appendChild(handleLeft);
+
+    const handleRight = document.createElement('div');
+    handleRight.className = 'segment-handle segment-handle-right';
+    handleRight.dataset.segment = i;
+    handleRight.dataset.side = 'end';
+    el.appendChild(handleRight);
+
+    el.onclick = (e) => {
+      e.stopPropagation();
+      if (!e.target.classList.contains('segment-handle')) {
+        selectSegment(i);
+      }
+    };
+
+    timeline.appendChild(el);
+  });
+
+  initSegmentHandles();
+}
+
+// Helper to darken/lighten a hex color
+function adjustColor(hex, amount) {
+  const num = parseInt(hex.replace('#', ''), 16);
+  const r = Math.max(0, Math.min(255, (num >> 16) + amount));
+  const g = Math.max(0, Math.min(255, ((num >> 8) & 0x00FF) + amount));
+  const b = Math.max(0, Math.min(255, (num & 0x0000FF) + amount));
+  return `#${(1 << 24 | r << 16 | g << 8 | b).toString(16).slice(1)}`;
+}
+
+function initSegmentHandles() {
+  const handles = document.querySelectorAll('.segment-handle');
+
+  handles.forEach(handle => {
+    handle.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const segmentIndex = parseInt(handle.dataset.segment);
+      const side = handle.dataset.side; // 'start' or 'end'
+      const seg = portraitSegments[segmentIndex];
+      if (!seg) return;
+
+      const video = $('videoPreview');
+      const wasPlaying = !video.paused;
+
+      // Pause video and seek to the edge being adjusted
+      video.pause();
+      video.currentTime = side === 'start' ? seg.startTime : seg.endTime;
+
+      // Select this segment
+      selectedSegmentIndex = segmentIndex;
+      portraitCropX = seg.cropX;
+      updateCropOverlay();
+
+      const onMove = (e) => {
+        const timelineWrap = $('segment-timeline-wrap');
+        const rect = timelineWrap.getBoundingClientRect();
+        // Account for 8px padding on each side
+        const innerWidth = rect.width - 16;
+        const x = e.clientX - rect.left - 8;
+        const viewportRatio = Math.max(0, Math.min(1, x / innerWidth));
+
+        // Convert viewport position to time, accounting for zoom
+        const duration = info.duration || 1;
+        const visibleDuration = duration / portraitZoom;
+        const visibleStart = portraitOffset * duration;
+        const newTime = visibleStart + viewportRatio * visibleDuration;
+
+        if (side === 'start') {
+          // Adjust start time - can't go past end - 0.5s
+          const maxStart = seg.endTime - 0.5;
+          seg.startTime = Math.max(0, Math.min(maxStart, newTime));
+          video.currentTime = seg.startTime;
+        } else {
+          // Adjust end time - can't go before start + 0.5s
+          const minEnd = seg.startTime + 0.5;
+          seg.endTime = Math.min(duration, Math.max(minEnd, newTime));
+          video.currentTime = seg.endTime;
+        }
+
+        renderPortraitSegments();
+        updatePortraitUI();
+        updatePortraitPlayhead();
+      };
+
+      const onUp = () => {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        // Sort segments by start time after adjustment
+        portraitSegments.sort((a, b) => a.startTime - b.startTime);
+        // Update selected index after sort
+        selectedSegmentIndex = portraitSegments.indexOf(seg);
+        renderPortraitSegments();
+      };
+
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+  });
+}
+
+function updatePortraitPlayhead() {
+  const playhead = $('segment-playhead');
+  const timeline = $('segment-timeline');
+  if (!playhead || !timeline || activeTool !== 'portrait') return;
+
+  const video = $('videoPreview');
+  const currentTime = video.currentTime;
+  const duration = info.duration || 1;
+
+  // Calculate position accounting for zoom and offset
+  const normalizedPos = currentTime / duration;
+  const zoomedPos = (normalizedPos - portraitOffset) * portraitZoom;
+
+  // Hide playhead if outside visible area
+  if (zoomedPos < 0 || zoomedPos > 1) {
+    playhead.style.opacity = '0';
+  } else {
+    playhead.style.opacity = '1';
+    // Position aligned with the timeline area (8px inset from edges)
+    playhead.style.left = `calc(8px + (100% - 16px) * ${zoomedPos})`;
+  }
+
+  // Check if we're in a gap - if so, skip to next segment during playback
+  if (!video.paused) {
+    const inSegment = portraitSegments.some(s => currentTime >= s.startTime && currentTime < s.endTime);
+    if (!inSegment) {
+      // Find the next segment to jump to
+      const sortedSegments = [...portraitSegments].sort((a, b) => a.startTime - b.startTime);
+      const nextSegment = sortedSegments.find(s => s.startTime > currentTime);
+      if (nextSegment) {
+        video.currentTime = nextSegment.startTime;
+        return;
+      } else {
+        // No more segments, loop back to first segment
+        if (sortedSegments.length > 0) {
+          video.currentTime = sortedSegments[0].startTime;
+          return;
+        }
+      }
+    }
+  }
+
+  // Auto-select segment based on playhead position
+  const segIndex = portraitSegments.findIndex(s => currentTime >= s.startTime && currentTime < s.endTime);
+  if (segIndex !== -1 && segIndex !== selectedSegmentIndex) {
+    selectedSegmentIndex = segIndex;
+    portraitCropX = portraitSegments[segIndex].cropX;
+    renderPortraitSegments();
+    updatePortraitUI();
+    updateCropOverlay();
+  }
+}
+
+function updatePortraitUI() {
+  // Update segment count
+  const countEl = $('portrait-segment-count');
+  if (countEl) {
+    countEl.textContent = portraitSegments.length;
+  }
+
+  // Update output duration (sum of segments, not including gaps)
+  const durationEl = $('portrait-total-duration');
+  if (durationEl) {
+    const outputDuration = portraitSegments.reduce((sum, s) => sum + (s.endTime - s.startTime), 0);
+    const totalDuration = info.duration || 1;
+    const gapDuration = totalDuration - outputDuration;
+
+    if (gapDuration > 0.5) {
+      // Show output duration with cut indicator
+      durationEl.textContent = formatDuration(outputDuration);
+      durationEl.style.color = 'var(--warn)';
+      durationEl.title = `${formatDuration(gapDuration)} will be cut`;
+    } else {
+      durationEl.textContent = formatDuration(outputDuration);
+      durationEl.style.color = '';
+      durationEl.title = '';
+    }
+  }
+
+  // Update delete button state
+  const deleteBtn = $('portrait-delete-btn');
+  if (deleteBtn) {
+    deleteBtn.disabled = portraitSegments.length <= 1;
+  }
+
+  // Update crop position label for current segment
+  const cropPosEl = $('portrait-crop-position');
+  if (cropPosEl) {
+    const pos = portraitCropX;
+    let label = 'Center';
+    if (pos < 0.33) label = 'Left';
+    else if (pos > 0.66) label = 'Right';
+    cropPosEl.textContent = `${label} ${Math.round(pos * 100)}%`;
+  }
+}
+
+function updateSelectedSegmentCropX(cropX) {
+  if (portraitSegments[selectedSegmentIndex]) {
+    portraitSegments[selectedSegmentIndex].cropX = cropX;
+    updatePortraitUI();
+  }
+}
+
+function initPortraitTimelineZoom() {
+  const timelineWrap = $('segment-timeline-wrap');
+  const timeline = $('segment-timeline');
+  if (!timelineWrap || !timeline) return;
+
+  let isPanning = false;
+  let panStartX = 0;
+  let panStartOffset = 0;
+
+  // Wheel zoom
+  timelineWrap.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const rect = timeline.getBoundingClientRect();
+    const duration = info.duration || 1;
+
+    // Get cursor position as fraction of viewport (0-1)
+    const cursorViewportPct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+
+    // Convert cursor position to time position (accounting for current zoom/offset)
+    const visibleDuration = duration / portraitZoom;
+    const visibleStart = portraitOffset * duration;
+    const cursorTime = visibleStart + cursorViewportPct * visibleDuration;
+    const cursorPosition = cursorTime / duration;
+
+    // Zoom in/out
+    const delta = e.deltaY > 0 ? -0.25 : 0.25;
+    portraitZoom = Math.max(1, Math.min(8, portraitZoom + delta * portraitZoom));
+
+    if (portraitZoom <= 1.01) {
+      portraitZoom = 1;
+      portraitOffset = 0;
+      timelineWrap.classList.remove('zoomed');
+    } else {
+      // Adjust offset to keep cursor position stable
+      const visibleAfter = 1 / portraitZoom;
+      portraitOffset = Math.max(0, Math.min(1 - visibleAfter, cursorPosition - cursorViewportPct * visibleAfter));
+      timelineWrap.classList.add('zoomed');
+    }
+
+    renderPortraitSegments();
+    updatePortraitPlayhead();
+  }, { passive: false });
+
+  // Pan with drag when zoomed
+  timelineWrap.addEventListener('mousedown', (e) => {
+    if (e.target.classList.contains('segment-handle') || e.target.classList.contains('portrait-segment')) return;
+    if (portraitZoom > 1) {
+      e.preventDefault();
+      isPanning = true;
+      panStartX = e.clientX;
+      panStartOffset = portraitOffset;
+      timelineWrap.classList.add('panning');
+    }
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!isPanning) return;
+    const rect = timelineWrap.getBoundingClientRect();
+    const dx = (e.clientX - panStartX) / rect.width;
+    const visibleFraction = 1 / portraitZoom;
+    portraitOffset = Math.max(0, Math.min(1 - visibleFraction, panStartOffset - dx * visibleFraction));
+    renderPortraitSegments();
+    updatePortraitPlayhead();
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (isPanning) {
+      isPanning = false;
+      timelineWrap.classList.remove('panning');
+    }
+  });
+}
+
+// ============ PAGE ZOOM LOCK ============
+
+function initPageZoomLock() {
+  // Prevent ctrl+wheel zoom on page except video player
+  document.addEventListener('wheel', (e) => {
+    if (e.ctrlKey) {
+      // Allow zoom only on video preview
+      const isOnVideo = e.target.closest('#previewWrap') || e.target.closest('#videoPreview');
+      if (!isOnVideo) {
+        e.preventDefault();
+      }
+    }
+  }, { passive: false });
+
+  // Prevent ctrl+plus/minus zoom
+  document.addEventListener('keydown', (e) => {
+    if (e.ctrlKey && (e.key === '+' || e.key === '-' || e.key === '=' || e.key === '0')) {
+      e.preventDefault();
+    }
+  });
+
+  // Prevent pinch zoom on touch devices
+  document.addEventListener('touchstart', (e) => {
+    if (e.touches.length > 1) {
+      const isOnVideo = e.target.closest('#previewWrap') || e.target.closest('#videoPreview');
+      if (!isOnVideo) {
+        e.preventDefault();
+      }
+    }
+  }, { passive: false });
 }
 
 // ============ PROCESS ============
@@ -2034,8 +2588,14 @@ async function process() {
       break;
     case 'portrait':
       opts.mode = 'crop';
-      opts.cropX = portraitCropX;
       opts.resolution = 1080;
+      // Send segments array for multi-segment processing
+      opts.segments = portraitSegments.map(seg => ({
+        id: seg.id,
+        startTime: seg.startTime,
+        endTime: seg.endTime,
+        cropX: seg.cropX
+      }));
       break;
     case 'filter':
       // Convert UI values to FFmpeg ranges
@@ -2160,11 +2720,13 @@ async function loadOutputAsSource(filePath) {
       clearMatchMarkers();
       updateTimeline();
 
-      // Update shrink slider and 60s button
+      // Update shrink slider and 60s button (10x max speed limit)
+      const shrinkMin = Math.max(1, Math.ceil(info.duration / 10));
+      $('shrink-duration').min = shrinkMin;
       $('shrink-duration').max = Math.floor(info.duration);
-      $('shrink-duration').value = Math.min(60, Math.floor(info.duration));
+      $('shrink-duration').value = Math.min(60, Math.max(shrinkMin, Math.floor(info.duration)));
       updateShrinkLabel();
-      const show60s = info.duration > 60;
+      const show60s = info.duration > 60 && 60 >= shrinkMin;
       $('shrink-60-btn').classList.toggle('hidden', !show60s);
       $('shrink-marker-60').classList.toggle('hidden', !show60s);
 

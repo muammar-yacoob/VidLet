@@ -15,7 +15,7 @@ import { shrink } from './shrink.js';
 import { thumb } from './thumb.js';
 import { togif } from './togif.js';
 import { trim, trimAccurate } from './trim.js';
-import { portrait } from './shorts.js';
+import { portrait, portraitMultiSegment, type PortraitSegment } from './shorts.js';
 import { addAudio } from './audio.js';
 import { filter } from './filter.js';
 import { caption } from './caption.js';
@@ -73,6 +73,7 @@ interface ToolOptions {
 	mode?: 'crop' | 'blur';
 	cropX?: number;
 	resolution?: number;
+	segments?: PortraitSegment[];
 	// Audio options
 	audioPath?: string;
 	audioVolume?: number;
@@ -211,12 +212,23 @@ async function runTool(input: string, opts: ToolOptions): Promise<ProcessResult>
 
 			case 'portrait': {
 				logs.push({ type: 'info', message: 'Creating portrait version...' });
-				output = await portrait({
-					input: actualInput,
-					mode: opts.mode || 'crop',
-					cropX: opts.cropX ?? 0.5,
-					resolution: opts.resolution || 1080,
-				});
+				// Use multi-segment processing if segments are provided with more than one segment
+				if (opts.segments && opts.segments.length > 1) {
+					output = await portraitMultiSegment({
+						input: actualInput,
+						segments: opts.segments,
+						resolution: opts.resolution || 1080,
+					});
+				} else {
+					// Single segment or no segments - use regular portrait
+					const cropX = opts.segments?.[0]?.cropX ?? opts.cropX ?? 0.5;
+					output = await portrait({
+						input: actualInput,
+						mode: opts.mode || 'crop',
+						cropX,
+						resolution: opts.resolution || 1080,
+					});
+				}
 				logs.push({ type: 'success', message: 'Portrait created!' });
 				break;
 			}

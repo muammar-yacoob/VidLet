@@ -190,6 +190,40 @@ export async function executeFFmpegMultiInput(
 }
 
 /**
+ * Execute ffmpeg with raw arguments (no automatic input/output handling)
+ */
+export async function executeFFmpegRaw(args: string[]): Promise<void> {
+  const ffmpegArgs = ['-nostdin', '-loglevel', 'error', ...args];
+
+  logToFile(`FFmpeg raw command: ffmpeg ${ffmpegArgs.join(' ')}`);
+
+  try {
+    const result = await execa('ffmpeg', ffmpegArgs, {
+      reject: false,
+      timeout: 30 * 60 * 1000, // 30 minute timeout
+    });
+
+    logToFile(`FFmpeg completed with exit code: ${result.exitCode}`);
+
+    if (result.exitCode !== 0) {
+      const errorMsg = result.stderr?.trim() || `Exit code ${result.exitCode}`;
+      logToFile(`FFmpeg error: ${errorMsg}`);
+      const err = new Error(`FFmpeg failed: ${errorMsg}`);
+      (err as any).isFFmpegError = true;
+      throw err;
+    }
+
+    logToFile('FFmpeg raw command completed successfully');
+  } catch (error) {
+    // Don't double-wrap FFmpeg errors
+    if ((error as any).isFFmpegError) throw error;
+    const execaError = error as ExecaError;
+    logToFile(`FFmpeg exception: ${execaError.message}`);
+    throw new Error(`FFmpeg failed: ${execaError.message}`);
+  }
+}
+
+/**
  * Extract frames from video
  */
 export async function extractFrames(

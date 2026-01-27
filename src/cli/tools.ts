@@ -10,6 +10,7 @@ import { thumb } from '../tools/thumb.js';
 import { togif } from '../tools/togif.js';
 import { trim, trimAccurate } from '../tools/trim.js';
 import { portrait } from '../tools/shorts.js';
+import { extractAudio } from '../tools/audio.js';
 import * as vidletMain from '../tools/vidlet-main.js';
 
 /**
@@ -106,6 +107,13 @@ export const toolConfigs: ToolConfig[] = [
 		icon: 'tv.ico',
 		extensions: ['.mp4', '.mkv', '.avi', '.mov', '.webm'],
 		description: 'Convert landscape video to 9:16 portrait',
+	},
+	{
+		id: 'extractaudio',
+		name: 'Extract Audio',
+		icon: 'tv.ico',
+		extensions: ['.mp4', '.mkv', '.avi', '.mov', '.webm'],
+		description: 'Extract audio track from video',
 	},
 ];
 
@@ -397,6 +405,17 @@ export const tools: Tool[] = [
 				mode: (options.mode as 'crop' | 'blur') || 'crop',
 				cropX: options.cropX as number | undefined,
 				resolution: options.resolution as number | undefined,
+			});
+		},
+	},
+	{
+		config: toolConfigs[8],
+		run: async (input, options) => {
+			return extractAudio({
+				input,
+				output: options.output as string | undefined,
+				format: options.format as 'mp3' | 'aac' | 'wav' | 'flac' | 'ogg' | undefined,
+				bitrate: options.bitrate as number | undefined,
 			});
 		},
 	},

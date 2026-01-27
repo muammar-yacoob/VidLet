@@ -2,6 +2,7 @@
 <html data-vidlet data-width="480" data-height="400">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>VidLet</title>
   <link rel="stylesheet" href="/css/vidlet.css">
   <link rel="icon" href="/favicon.ico">
@@ -246,7 +247,42 @@
           </div>
 
           <div class="opts" id="opts-portrait">
-            <div class="opts-row" style="justify-content:center"><span style="font-size:11px;color:var(--txt2)">Drag to select 9:16 crop area</span></div>
+            <div class="portrait-header">
+              <div class="portrait-stats">
+                <div class="portrait-stat">
+                  <span class="stat-label">Segments</span>
+                  <span class="stat-value" id="portrait-segment-count">1</span>
+                </div>
+                <div class="portrait-stat">
+                  <span class="stat-label">Output</span>
+                  <span class="stat-value" id="portrait-total-duration">0.0s</span>
+                </div>
+                <div class="portrait-stat">
+                  <span class="stat-label">Crop</span>
+                  <span class="stat-value" id="portrait-crop-position">Center</span>
+                </div>
+              </div>
+              <div class="portrait-actions">
+                <button type="button" class="portrait-btn primary" id="portrait-split-btn" onclick="splitPortraitSegment()" title="Split at playhead (Ctrl+K)">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="2" x2="12" y2="22"/><polyline points="8 6 12 2 16 6"/><polyline points="8 18 12 22 16 18"/></svg>
+                  Split Here
+                </button>
+                <button type="button" class="portrait-btn danger" id="portrait-delete-btn" onclick="deleteSelectedSegment()" disabled title="Delete selected segment">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                </button>
+              </div>
+            </div>
+            <div class="segment-timeline-wrap" id="segment-timeline-wrap">
+              <div class="segment-timeline-base" id="segment-timeline-base"></div>
+              <div class="segment-timeline" id="segment-timeline"></div>
+              <div class="segment-playhead" id="segment-playhead"></div>
+              <div class="segment-time-ticks" id="segment-time-ticks"></div>
+            </div>
+            <div class="portrait-hint">
+              <span class="hint-drag">Drag edges to adjust</span>
+              <span class="hint-sep">•</span>
+              <span class="hint-gap">Gaps = cut from output</span>
+            </div>
           </div>
 
           <div class="opts" id="opts-filter">
@@ -506,6 +542,7 @@
             <span><b>←→</b> 5s</span>
             <span><b>Alt+←→</b> Frame</span>
             <span><b>M</b> Mute</span>
+            <span><b>Ctrl+K</b> Split</span>
           </div>
         </div>
       </div>
