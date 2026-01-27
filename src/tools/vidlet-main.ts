@@ -355,6 +355,7 @@ export async function runGUI(input: string): Promise<boolean> {
 		isLandscape,
 		homepage: getHomepage(),
 		hotkeyPreset: appConfig?.hotkeyPreset || 'premiere',
+		cacheThreshold: appConfig?.cacheThreshold || 20,
 	};
 
 	// Track current input for chained operations

@@ -1,7 +1,7 @@
 /**
  * GUI Server - Serves HTML interface and handles API calls for video processing
  */
-import { exec, spawn, spawnSync } from 'node:child_process';
+import { exec, spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import { createServer } from 'node:http';
 import * as os from 'node:os';
@@ -10,6 +10,12 @@ import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { logToFile } from './logger.js';
 import { loadToolsConfig, saveToolsConfig } from './config.js';
+import {
+	cleanupSignalFiles,
+	signalLoadingComplete,
+	updateLoadingProgress,
+	openMainWindow,
+} from './loading-window.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -25,60 +31,6 @@ function killFFmpegProcesses(): void {
 			logToFile('Killed FFmpeg processes on shutdown');
 		}
 	});
-}
-
-/**
- * Signal the loading HTA to close by creating a temp file
- */
-function signalReady(): void {
-	spawn(
-		'powershell.exe',
-		[
-			'-WindowStyle',
-			'Hidden',
-			'-Command',
-			'New-Item -Path $env:TEMP\\vidlet-ready.tmp -ItemType File -Force | Out-Null',
-		],
-		{
-			stdio: 'ignore',
-			windowsHide: true,
-		},
-	);
-}
-
-/**
- * Clean up any stale signal/progress files from previous sessions (synchronous to ensure completion)
- */
-function cleanupSignalFile(): void {
-	spawnSync(
-		'powershell.exe',
-		[
-			'-WindowStyle',
-			'Hidden',
-			'-Command',
-			'Remove-Item -Path $env:TEMP\\vidlet-ready.tmp,$env:TEMP\\vidlet-progress.tmp -Force -ErrorAction SilentlyContinue',
-		],
-		{
-			stdio: 'ignore',
-			windowsHide: true,
-		},
-	);
-}
-
-/**
- * Open URL in Edge app mode (standalone window without browser UI)
- */
-function openAppWindow(url: string): void {
-	// Clean up any stale signal file first
-	cleanupSignalFile();
-
-	spawn('powershell.exe', ['-WindowStyle', 'Hidden', '-Command', `Start-Process msedge -ArgumentList '--app=${url}'`], {
-		detached: true,
-		stdio: 'ignore',
-		windowsHide: true,
-	}).unref();
-
-	// Note: signalReady is called by frontend via /api/ready when app is actually loaded
 }
 
 export interface VideoInfo {
@@ -146,7 +98,7 @@ export interface GuiServerOptions {
  */
 export function startGuiServer(options: GuiServerOptions): Promise<boolean> {
 	// Clean up any stale signal file immediately (before HTA can detect it)
-	cleanupSignalFile();
+	cleanupSignalFiles();
 
 	return new Promise((resolve) => {
 		const app = express();
@@ -354,42 +306,39 @@ export function startGuiServer(options: GuiServerOptions): Promise<boolean> {
 		app.post('/api/progress', (req, res) => {
 			const { percent } = req.body;
 			if (typeof percent === 'number') {
-				// Write progress to Windows temp file for HTA to read (must use PowerShell for Windows path)
-				spawn(
-					'powershell.exe',
-					[
-						'-WindowStyle',
-						'Hidden',
-						'-Command',
-						`Set-Content -Path $env:TEMP\\vidlet-progress.tmp -Value '${Math.round(percent)}' -Force`,
-					],
-					{
-						stdio: 'ignore',
-						windowsHide: true,
-					},
-				);
+				updateLoadingProgress(percent);
 			}
 			res.json({ ok: true });
 		});
 
 		// Signal that the app is ready (closes loading HTA)
 		app.post('/api/ready', (_req, res) => {
-			signalReady();
+			signalLoadingComplete();
 			res.json({ ok: true });
 		});
 
 		// Save app settings
 		app.post('/api/save-settings', async (req, res) => {
 			try {
-				const { hotkeyPreset } = req.body;
+				const { hotkeyPreset, cacheThreshold } = req.body;
+				const config = await loadToolsConfig();
+				let changed = false;
+
 				if (hotkeyPreset && typeof hotkeyPreset === 'string') {
-					// Update in-memory defaults
 					(options.defaults as Record<string, unknown>).hotkeyPreset = hotkeyPreset;
-					// Persist to config file
-					const config = await loadToolsConfig();
 					config.app = { ...config.app, hotkeyPreset: hotkeyPreset as 'premiere' | 'resolve' | 'capcut' | 'shotcut' | 'descript' | 'camtasia' };
+					changed = true;
+				}
+
+				if (typeof cacheThreshold === 'number' && cacheThreshold >= 10 && cacheThreshold <= 100) {
+					(options.defaults as Record<string, unknown>).cacheThreshold = cacheThreshold;
+					config.app = { ...config.app, cacheThreshold };
+					changed = true;
+				}
+
+				if (changed) {
 					await saveToolsConfig(config);
-					logToFile(`Settings saved: hotkeyPreset=${hotkeyPreset}`);
+					logToFile(`Settings saved: hotkeyPreset=${config.app.hotkeyPreset}, cacheThreshold=${config.app.cacheThreshold}`);
 				}
 				res.json({ success: true });
 			} catch (err) {
@@ -415,7 +364,7 @@ export function startGuiServer(options: GuiServerOptions): Promise<boolean> {
 				const port = addr.port;
 				const url = `http://127.0.0.1:${port}/${options.htmlFile}`;
 
-				openAppWindow(url);
+				openMainWindow(url);
 
 				// 30 minute timeout for long operations like compression
 				setTimeout(() => {

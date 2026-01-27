@@ -165,6 +165,7 @@ function updateUndoButtons() {
 
 // Hotkey presets - maps action names to key bindings
 let currentHotkeyPreset = 'premiere';
+let cacheThreshold = 20; // Percentage of frames to cache before closing loading window
 const HOTKEY_PRESETS = {
   premiere: {
     name: 'Adobe Premiere',
@@ -347,6 +348,11 @@ async function init() {
     updateHotkeyDisplay();
   }
 
+  // Load cache threshold
+  if (typeof res.defaults?.cacheThreshold === 'number') {
+    cacheThreshold = res.defaults.cacheThreshold;
+  }
+
   // Handle MKV files - show converter, disable other tools
   isMkvFile = res.defaults?.isMkv || false;
   $('t-mkv2mp4').classList.toggle('hidden', !isMkvFile);
@@ -442,12 +448,12 @@ function signalAppReady() {
     }
 
     // Start frame cache in background
-    // Progress is sent to loading HTA, signal at 30%
+    // Progress is sent to loading HTA, signal when threshold reached
     buildFrameCache((pct) => {
       // Always send progress to loading HTA
       postJson('/api/progress', { percent: pct });
-      // Signal ready when 30% cached (loading HTA will close)
-      if (pct >= 30) {
+      // Signal ready when cache threshold reached (loading HTA will close)
+      if (pct >= cacheThreshold) {
         doSignal();
       }
     });
@@ -653,7 +659,23 @@ function openSettings() {
   if (hotkeySelect) hotkeySelect.value = currentHotkeyPreset;
   updateHotkeyDisplay();
 
+  // Cache threshold
+  const cacheSlider = $('settingsCacheThreshold');
+  if (cacheSlider) {
+    cacheSlider.value = cacheThreshold;
+    updateCacheThresholdLabel();
+  }
+
   $('settingsModal').classList.add('on');
+}
+
+/** Update cache threshold label */
+function updateCacheThresholdLabel() {
+  const slider = $('settingsCacheThreshold');
+  const label = $('cacheThresholdVal');
+  if (slider && label) {
+    label.textContent = slider.value + '%';
+  }
 }
 
 function closeSettings() {
@@ -680,6 +702,12 @@ function closeSettings() {
   const trimMode = getSegVal('settingsTrimMode');
   $('trim-accurate').value = trimMode === 'accurate' ? 'true' : 'false';
 
+  // Cache threshold
+  const cacheSlider = $('settingsCacheThreshold');
+  if (cacheSlider) {
+    cacheThreshold = parseInt(cacheSlider.value, 10) || 20;
+  }
+
   // Update all estimates
   updateEstimates();
   updateCompressLabels();
@@ -695,6 +723,7 @@ async function saveSettings() {
   try {
     await postJson('/api/save-settings', {
       hotkeyPreset: currentHotkeyPreset,
+      cacheThreshold: cacheThreshold,
     });
   } catch (err) {
     console.warn('Failed to save settings:', err);

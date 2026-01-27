@@ -4,7 +4,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<title>VidLet</title>
+<title>VidLet Loading</title>
 <hta:application
   id="VidLetLoader"
   applicationName="VidLet"
@@ -14,7 +14,7 @@
   innerBorder="no"
   maximizeButton="no"
   minimizeButton="no"
-  showInTaskbar="no"
+  showInTaskbar="yes"
   singleInstance="yes"
   scroll="no"
   contextMenu="no"
@@ -26,7 +26,7 @@
   html{height:100%;background:#000}
   body{height:100%;overflow:hidden;background:linear-gradient(180deg,#0a0a0c 0%,#111113 100%);font-family:Segoe UI,sans-serif;color:#e4e4e7;text-align:center;padding:24px;opacity:1;transition:opacity .3s ease-out}
   body.fade-out{opacity:0}
-  .logo{width:80px;height:80px;margin-bottom:8px}
+  .logo{width:80px;height:px;margin-bottom:8px}
   .title{font-size:28px;font-weight:700;color:#a855f7;margin-bottom:2px}
   .tagline{font-size:10px;color:#c084fc;font-weight:600;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px}
   .desc{font-size:10px;color:#636366;margin-bottom:14px}
@@ -49,25 +49,42 @@
   var readyFile = tempDir + "\\vidlet-ready.tmp";
   var progressFile = tempDir + "\\vidlet-progress.tmp";
   var pollTimer = null;
+  var focusTimer = null;
   var lastProgress = -1;
   var progressReceived = false;
+  var isClosing = false;
 
   function closeWindow() {
     if (pollTimer) clearInterval(pollTimer);
+    if (focusTimer) clearInterval(focusTimer);
     pollTimer = null;
+    focusTimer = null;
     try { fso.DeleteFile(readyFile); } catch(e) {}
     try { fso.DeleteFile(progressFile); } catch(e) {}
     self.close();
   }
 
   function fadeAndClose() {
+    if (isClosing) return;
+    isClosing = true;
     if (pollTimer) clearInterval(pollTimer);
+    if (focusTimer) clearInterval(focusTimer);
     pollTimer = null;
+    focusTimer = null;
     try { fso.DeleteFile(readyFile); } catch(e) {}
     try { fso.DeleteFile(progressFile); } catch(e) {}
     document.body.className = 'fade-out';
     setTimeout(closeWindow, 300);
   }
+
+  // Keep window on top by periodically activating it
+  focusTimer = setInterval(function() {
+    if (!isClosing) {
+      try {
+        shell.AppActivate("VidLet Loading");
+      } catch(e) {}
+    }
+  }, 200);
 
   // Failsafe timeout (45 seconds for long videos)
   setTimeout(closeWindow, 45000);
@@ -111,9 +128,8 @@
 <body>
   <img class="logo" src="../icons/tv.png">
   <div class="title">VidLet</div>
-  <div class="tagline">Compress. Convert. Create.</div>
+  <div class="tagline">Trim • Compose • Publish</div>
   <div class="desc">Lightweight video tools for content creators</div>
-  <div class="loading">Loading your tools...</div>
   <div class="progress" id="progress"></div>
   <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
   <div class="divider"></div>
