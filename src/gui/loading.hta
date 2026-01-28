@@ -82,123 +82,79 @@
     } catch(e) {}
   }
 
-  // Clear previous log and start fresh
+  // Clear previous log
   try { fso.DeleteFile(logFile); } catch(e) {}
   log("=== HTA STARTED ===");
-  log("tempDir: " + tempDir);
-  log("readyFile: " + readyFile);
-  log("HTA window positioned at center");
 
   function closeHTA() {
-    log("closeHTA() - calling self.close()");
+    log("closeHTA()");
     if (pollTimer) clearInterval(pollTimer);
     pollTimer = null;
+    try { fso.DeleteFile(readyFile); } catch(e) {}
     self.close();
   }
 
-  function launchEdgeAndClose(url) {
-    log("launchEdgeAndClose() called with URL: " + url);
-    if (isClosing) {
-      log("Already closing, ignoring");
-      return;
-    }
+  function openEdgeAndClose(url) {
+    log("openEdgeAndClose() URL: " + url);
+    if (isClosing) return;
     isClosing = true;
     if (pollTimer) clearInterval(pollTimer);
     pollTimer = null;
-
-    // Clean up ready file
     try { fso.DeleteFile(readyFile); } catch(e) {}
-    log("Deleted ready file");
 
-    // Start fade out
-    log("Starting fade out animation");
+    // Fade out
     document.body.className = 'fade-out';
 
-    // After fade completes, close HTA then open Edge
     setTimeout(function() {
-      log("Fade complete");
-
-      // Calculate centered position for Edge window
+      log("Fade complete, opening Edge");
+      // Calculate centered position
       var edgeW = 480, edgeH = 400;
       var x = Math.round((screen.availWidth - edgeW) / 2);
       var y = Math.round((screen.availHeight - edgeH) / 2);
-      log("Edge position will be: " + x + "," + y);
 
-      // Write VBS launcher that waits for HTA to close, then opens Edge
-      var vbsPath = tempDir + "\\vidlet-launch.vbs";
-      var vbsLogPath = tempDir + "\\vidlet-launch.log";
-      try {
-        var f = fso.CreateTextFile(vbsPath, true);
-        // VBS logs its actions for debugging
-        f.WriteLine('Set fso = CreateObject("Scripting.FileSystemObject")');
-        f.WriteLine('Set logFile = fso.OpenTextFile("' + vbsLogPath + '", 8, True)');
-        f.WriteLine('logFile.WriteLine Now & " | VBS started, waiting 500ms for HTA to close"');
-        f.WriteLine('WScript.Sleep 500');
-        f.WriteLine('logFile.WriteLine Now & " | Opening Edge at position ' + x + ',' + y + '"');
-        f.WriteLine('CreateObject("WScript.Shell").Run "msedge --app=' + url + ' --window-position=' + x + ',' + y + '", 1, False');
-        f.WriteLine('logFile.WriteLine Now & " | Edge launched"');
-        f.WriteLine('logFile.Close');
-        f.WriteLine('WScript.Sleep 200');
-        f.WriteLine('fso.DeleteFile WScript.ScriptFullName');
-        f.Close();
-        log("Wrote VBS launcher: " + vbsPath);
-      } catch(e) {
-        log("ERROR writing VBS: " + e.message);
-      }
+      // Open Edge directly
+      shell.Run('msedge --app=' + url + ' --window-position=' + x + ',' + y, 1, false);
+      log("Edge launched");
 
-      // Run VBS in background (hidden)
-      log("Running VBS launcher");
-      shell.Run('wscript "' + vbsPath + '"', 0, false);
-
-      // Now close the HTA - VBS will wait and then open Edge
-      log("Closing HTA now (VBS will open Edge after 500ms)");
-      closeHTA();
-    }, 350);
+      // Close HTA after brief delay
+      setTimeout(closeHTA, 100);
+    }, 300);
   }
 
   function animateProgress() {
-    // Fake progress animation while waiting
-    animProgress += 2;
-    if (animProgress > 90) animProgress = 90;
+    animProgress += 3;
+    if (animProgress > 95) animProgress = 95;
     document.getElementById('progress-fill').style.width = animProgress + '%';
   }
 
-  // Failsafe timeout (30 seconds)
-  log("Setting up failsafe timeout (30s)");
+  // Failsafe timeout
   setTimeout(function() {
     if (!isClosing) {
-      log("FAILSAFE TIMEOUT triggered - closing without Edge");
+      log("FAILSAFE TIMEOUT");
       closeHTA();
     }
   }, 30000);
 
   // Poll for ready signal
-  log("Starting poll timer in 200ms");
   setTimeout(function() {
-    log("Poll timer started - checking for ready file every 100ms");
+    log("Poll started");
     pollTimer = setInterval(function() {
-      // Animate progress bar
       animateProgress();
-
-      // Check for ready file
       if (fso.FileExists(readyFile)) {
-        log("Ready file detected!");
+        log("Ready file found");
         try {
           var f = fso.OpenTextFile(readyFile, 1);
           var url = f.ReadAll();
           f.Close();
-          log("URL from ready file: " + url);
           if (url && url.length > 0) {
-            launchEdgeAndClose(url);
-          } else {
-            log("ERROR: URL is empty");
+            openEdgeAndClose(url);
           }
         } catch(e) {
-          log("ERROR reading ready file: " + e.message);
+          log("ERROR: " + e.message);
         }
       }
-    }, 100);
-  }, 200);
+    }, 80);
+  }, 100);
 </script>
 </head>
 <body>

@@ -135,7 +135,7 @@
                 </div>
               </div>
             </div>
-            <div class="hotkey-hint" id="playerHotkeyHint">Space: Play | ←→: 5s | Alt+←→: Frame | M: Mute</div>
+            <div class="hotkey-hint" id="playerHotkeyHint">Space: Play | ←→: 1s | Alt+←→: Frame | M: Mute</div>
             <div class="caption-overlay hidden" id="captionOverlay">
               <div class="caption-text" id="captionOverlayText">Sample caption text</div>
             </div>
@@ -601,9 +601,9 @@
         <div class="modal-section">
           <div class="modal-section-title">Loading</div>
           <div class="modal-row">
-            <label>Initial Cache</label>
-            <input type="range" class="modal-slider" id="settingsCacheThreshold" min="10" max="50" step="5" value="20" oninput="updateCacheThresholdLabel()">
-            <span class="slider-val" id="cacheThresholdVal">20%</span>
+            <label>Frame Skip</label>
+            <input type="range" class="modal-slider" id="settingsFrameSkip" min="2" max="6" step="1" value="3" oninput="updateFrameSkipLabel()">
+            <span class="slider-val" id="frameSkipVal">3</span>
           </div>
         </div>
         <div class="modal-section" style="border-bottom:none;padding-bottom:4px">

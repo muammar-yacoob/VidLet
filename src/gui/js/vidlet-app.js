@@ -66,7 +66,7 @@ let frameCacheCanvas = null;
 let frameCacheCtx = null;
 let frameCacheReady = false;
 let frameCachePhase2Done = false;
-const PHASE1_FRAME_SKIP = 3;  // Phase 1: Cache every 3rd frame (soft caching)
+let phase1FrameSkip = 3;  // Phase 1: Cache every Nth frame (configurable in settings)
 // Phase 2: Fill in remaining frames after main window loads
 
 // Timeline zoom state
@@ -167,7 +167,7 @@ function updateUndoButtons() {
 
 // Hotkey presets - maps action names to key bindings
 let currentHotkeyPreset = 'premiere';
-let cacheThreshold = 20; // Percentage of frames to cache before closing loading window
+// cacheThreshold removed - now using phase1FrameSkip for initial cache granularity
 const HOTKEY_PRESETS = {
   premiere: {
     name: 'Adobe Premiere',
@@ -350,9 +350,9 @@ async function init() {
     updateHotkeyDisplay();
   }
 
-  // Load cache threshold
-  if (typeof res.defaults?.cacheThreshold === 'number') {
-    cacheThreshold = res.defaults.cacheThreshold;
+  // Load frame skip setting
+  if (typeof res.defaults?.frameSkip === 'number') {
+    phase1FrameSkip = res.defaults.frameSkip;
   }
 
   // Handle MKV files - show converter, disable other tools
@@ -605,7 +605,7 @@ function updatePlayerHotkeyHint() {
   if (!hint) return;
 
   // Base hints (always shown)
-  const baseHints = 'Space: Play | ←→: 5s | Alt+←→: Frame | M: Mute';
+  const baseHints = 'Space: Play | ←→: 1s | Alt+←→: Frame | M: Mute';
 
   // Tool-specific hints
   let toolHints = '';
@@ -645,22 +645,22 @@ function openSettings() {
   if (hotkeySelect) hotkeySelect.value = currentHotkeyPreset;
   updateHotkeyDisplay();
 
-  // Cache threshold
-  const cacheSlider = $('settingsCacheThreshold');
-  if (cacheSlider) {
-    cacheSlider.value = cacheThreshold;
-    updateCacheThresholdLabel();
+  // Frame skip setting
+  const frameSkipSlider = $('settingsFrameSkip');
+  if (frameSkipSlider) {
+    frameSkipSlider.value = phase1FrameSkip;
+    updateFrameSkipLabel();
   }
 
   $('settingsModal').classList.add('on');
 }
 
-/** Update cache threshold label */
-function updateCacheThresholdLabel() {
-  const slider = $('settingsCacheThreshold');
-  const label = $('cacheThresholdVal');
+/** Update frame skip label */
+function updateFrameSkipLabel() {
+  const slider = $('settingsFrameSkip');
+  const label = $('frameSkipVal');
   if (slider && label) {
-    label.textContent = slider.value + '%';
+    label.textContent = slider.value;
   }
 }
 
@@ -688,10 +688,10 @@ function closeSettings() {
   const trimMode = getSegVal('settingsTrimMode');
   $('trim-accurate').value = trimMode === 'accurate' ? 'true' : 'false';
 
-  // Cache threshold
-  const cacheSlider = $('settingsCacheThreshold');
-  if (cacheSlider) {
-    cacheThreshold = parseInt(cacheSlider.value, 10) || 20;
+  // Frame skip setting
+  const frameSkipSlider = $('settingsFrameSkip');
+  if (frameSkipSlider) {
+    phase1FrameSkip = parseInt(frameSkipSlider.value, 10) || 3;
   }
 
   // Update all estimates
@@ -709,7 +709,7 @@ async function saveSettings() {
   try {
     await postJson('/api/save-settings', {
       hotkeyPreset: currentHotkeyPreset,
-      cacheThreshold: cacheThreshold,
+      frameSkip: phase1FrameSkip,
     });
   } catch (err) {
     console.warn('Failed to save settings:', err);
@@ -1099,10 +1099,10 @@ async function buildFrameCache(onProgress) {
   // Get video FPS (default to 30 if not available)
   const fps = info.fps || 30;
   const frameInterval = 1 / fps;
-  // Phase 1: Cache every Nth frame (soft caching)
-  const phase1Interval = frameInterval * PHASE1_FRAME_SKIP;
+  // Phase 1: Cache every Nth frame (configurable via settings)
+  const phase1Interval = frameInterval * phase1FrameSkip;
 
-  console.log(`Phase 1 caching: every ${PHASE1_FRAME_SKIP} frames (${phase1Interval.toFixed(3)}s interval) at ${fps} fps`);
+  console.log(`Phase 1 caching: every ${phase1FrameSkip} frames (${phase1Interval.toFixed(3)}s interval) at ${fps} fps`);
 
   // Create hidden video element for background caching
   const cacheVideo = document.createElement('video');
@@ -1243,6 +1243,12 @@ async function buildFrameCachePhase2() {
 
   console.log(`Phase 2: Filling ${timesToCache.length} remaining frames at ${fps} fps`);
 
+  // Show progress on video preview (subtle bottom border)
+  const previewWrap = $('previewWrap');
+  if (previewWrap && timesToCache.length > 0) {
+    previewWrap.classList.add('caching-phase2');
+  }
+
   // Cache missing frames in background (lower priority)
   for (let i = 0; i < timesToCache.length; i++) {
     const time = timesToCache[i];
@@ -1261,6 +1267,12 @@ async function buildFrameCachePhase2() {
       cacheVideo.currentTime = time;
     });
 
+    // Update progress bar on video preview
+    if (previewWrap && i % 5 === 0) {
+      const pct = Math.round((i / timesToCache.length) * 100);
+      previewWrap.style.setProperty('--cache-progress', `${pct}%`);
+    }
+
     // Yield frequently to keep UI responsive (Phase 2 runs in background)
     if (i % 3 === 0) {
       await new Promise(r => setTimeout(r, 5));
@@ -1273,6 +1285,14 @@ async function buildFrameCachePhase2() {
   // Cleanup
   cacheVideo.remove();
   frameCachePhase2Done = true;
+
+  // Remove progress indicator
+  if (previewWrap) {
+    previewWrap.style.setProperty('--cache-progress', '100%');
+    setTimeout(() => {
+      previewWrap.classList.remove('caching-phase2');
+    }, 500);
+  }
 
   console.log(`Phase 2 complete: ${frameCache.length} total frames cached`);
 }
@@ -2147,20 +2167,19 @@ function initPlayerControls() {
   function seekToPosition(e) {
     const time = getTimeFromPosition(e);
 
-    // Show cached frame instantly during scrubbing
+    // Update playhead position and time display immediately
+    const pct = (time / info.duration) * 100;
+    $('timeline-playhead').style.left = pct + '%';
+    updateTimeDisplay(time);
+
+    // Show cached frame instantly during scrubbing (no video seek for smooth performance)
     if (frameCacheReady && isSeeking) {
       showScrubFrame(time);
-      // Update playhead position immediately
-      const pct = (time / info.duration) * 100;
-      $('timeline-playhead').style.left = pct + '%';
-      updateTimeDisplay(time);
-    }
-
-    // Throttle actual video seeks for performance
-    const now = performance.now();
-    if (now - lastScrubTime > 50) { // Seek at most every 50ms
+      // Store for final seek on mouseup
+      lastScrubTime = time;
+    } else {
+      // No cache available, seek video directly (will be janky)
       video.currentTime = time;
-      lastScrubTime = now;
     }
   }
 
@@ -2194,6 +2213,24 @@ function initPlayerControls() {
     video.volume = vol;
     video.muted = false;
     updateVolumeUI();
+  });
+
+  // Fine mode indicator: yellow playhead when Alt is held
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Alt') {
+      const playhead = $('timeline-playhead');
+      const range = $('timeline-range');
+      if (playhead) playhead.classList.add('fine-mode');
+      if (range) range.classList.add('fine-mode');
+    }
+  });
+  document.addEventListener('keyup', (e) => {
+    if (e.key === 'Alt') {
+      const playhead = $('timeline-playhead');
+      const range = $('timeline-range');
+      if (playhead) playhead.classList.remove('fine-mode');
+      if (range) range.classList.remove('fine-mode');
+    }
   });
 
   document.addEventListener('keydown', (e) => {
@@ -2269,7 +2306,7 @@ function initPlayerControls() {
     // Navigation steps
     const video = $('videoPreview');
     const frameStep = 1 / (info.fps || 30);
-    const shortSeek = e.altKey ? frameStep : 5;  // Alt = frame, normal = 5s
+    const shortSeek = e.altKey ? frameStep : 1;  // Alt = frame, normal = 1s
     const longSeek = e.shiftKey ? 30 : 10;       // Shift = 30s, normal = 10s
 
     // Global playback & navigation hotkeys
@@ -2281,7 +2318,7 @@ function initPlayerControls() {
       case 'KeyK': if (!e.ctrlKey && !e.metaKey) resetSpeed(); break;
       case 'KeyL': adjustSpeed(0.5); break;
 
-      // Navigation: Arrow keys (Alt = frame, normal = 5s)
+      // Navigation: Arrow keys (Alt = frame, normal = 1s)
       case 'ArrowLeft':
         e.preventDefault();
         // Pause for frame-accurate seeking when Alt is held

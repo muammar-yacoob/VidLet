@@ -297,7 +297,7 @@ export function startGuiServer(options: GuiServerOptions): Promise<boolean> {
 			res.json({ success: true });
 		});
 
-		// Update caching progress (for future use)
+		// Update caching progress (logged for debugging)
 		app.post('/api/progress', (req, res) => {
 			const { percent } = req.body;
 			if (typeof percent === 'number') {
@@ -309,7 +309,7 @@ export function startGuiServer(options: GuiServerOptions): Promise<boolean> {
 		// Save app settings
 		app.post('/api/save-settings', async (req, res) => {
 			try {
-				const { hotkeyPreset, cacheThreshold } = req.body;
+				const { hotkeyPreset, frameSkip } = req.body;
 				const config = await loadToolsConfig();
 				let changed = false;
 
@@ -319,15 +319,15 @@ export function startGuiServer(options: GuiServerOptions): Promise<boolean> {
 					changed = true;
 				}
 
-				if (typeof cacheThreshold === 'number' && cacheThreshold >= 10 && cacheThreshold <= 100) {
-					(options.defaults as Record<string, unknown>).cacheThreshold = cacheThreshold;
-					config.app = { ...config.app, cacheThreshold };
+				if (typeof frameSkip === 'number' && frameSkip >= 2 && frameSkip <= 6) {
+					(options.defaults as Record<string, unknown>).frameSkip = frameSkip;
+					config.app = { ...config.app, frameSkip };
 					changed = true;
 				}
 
 				if (changed) {
 					await saveToolsConfig(config);
-					logToFile(`Settings saved: hotkeyPreset=${config.app.hotkeyPreset}, cacheThreshold=${config.app.cacheThreshold}`);
+					logToFile(`Settings saved: hotkeyPreset=${config.app.hotkeyPreset}, frameSkip=${config.app.frameSkip}`);
 				}
 				res.json({ success: true });
 			} catch (err) {
@@ -354,8 +354,10 @@ export function startGuiServer(options: GuiServerOptions): Promise<boolean> {
 				const url = `http://127.0.0.1:${port}/${options.htmlFile}`;
 
 				logToFile(`Server ready at ${url}`);
-				// Signal loading HTA to close and open Edge
+
+				// Signal HTA to close and open Edge
 				signalLoadingComplete(url);
+				logToFile('Signaled HTA to open Edge');
 
 				// 30 minute timeout for long operations like compression
 				setTimeout(() => {

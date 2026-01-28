@@ -57,6 +57,8 @@ body{background:var(--bg);color:var(--txt);font:12px/1.4 system-ui,-apple-system
 /* Video Preview */
 .preview-container{display:flex;flex-direction:column;height:280px;min-height:120px;flex-shrink:0;background:var(--bg2)}
 .preview-wrap{position:relative;flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;min-height:0;background:#000}
+.preview-wrap::after{content:'';position:absolute;bottom:0;left:0;height:2px;background:var(--acc);width:0;transition:width .3s ease-out;opacity:0.7;z-index:10}
+.preview-wrap.caching-phase2::after{width:var(--cache-progress,0%)}
 #videoPreview{max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;display:block;transform-origin:center center;transition:transform 0.1s ease-out}
 .preview-wrap.zoomed #videoPreview{cursor:grab}
 .preview-wrap.zoomed.panning #videoPreview{cursor:grabbing}
@@ -201,7 +203,9 @@ video::-webkit-media-controls-panel{display:none!important}
 .timeline-handle.timeline-end::before,.timeline-handle.timeline-end::after{right:0;border-radius:0 3px 3px 0}
 .timeline-handle:hover,.timeline-handle.dragging{background:linear-gradient(180deg,#7c3aed,#6d28d9);box-shadow:0 0 0 1px rgba(168,85,247,0.6),0 0 12px rgba(139,92,246,0.4),0 2px 8px rgba(0,0,0,0.4)}
 .timeline-handle:hover::before,.timeline-handle:hover::after,.timeline-handle.dragging::before,.timeline-handle.dragging::after{background:linear-gradient(180deg,#7c3aed,#6d28d9)}
-.timeline-playhead{position:absolute;top:4px;bottom:4px;width:2px;background:#fff;border-radius:1px;pointer-events:none;z-index:8;box-shadow:0 0 4px rgba(255,255,255,0.8)}
+.timeline-playhead{position:absolute;top:4px;bottom:4px;width:2px;background:#fff;border-radius:1px;pointer-events:none;z-index:8;box-shadow:0 0 4px rgba(255,255,255,0.8);transition:background .15s,box-shadow .15s,width .15s}
+.timeline-playhead.fine-mode{width:3px;background:#fbbf24;box-shadow:0 0 8px rgba(251,191,36,0.9)}
+.timeline-range.fine-mode{background:linear-gradient(90deg,rgba(251,191,36,0.7),rgba(252,211,77,0.7))}
 #match-markers{position:absolute;top:8px;bottom:8px;left:0;right:0;pointer-events:none;z-index:6}
 .match-marker{position:absolute;top:0;bottom:0;width:3px;border-radius:0;pointer-events:auto;cursor:pointer;transition:all .15s}
 .match-marker:hover{transform:scaleX(2);filter:brightness(1.1)}

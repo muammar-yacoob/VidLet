@@ -56,7 +56,7 @@ export const HotkeyPresetSchema = z.enum([
 // App settings schema (non-tool settings)
 export const AppSettingsSchema = z.object({
   hotkeyPreset: HotkeyPresetSchema.default('premiere'),
-  cacheThreshold: z.number().min(10).max(100).default(20),
+  frameSkip: z.number().min(2).max(6).default(3),
 });
 
 // Combined config schema
@@ -87,7 +87,7 @@ const DEFAULT_CONFIG: ToolsConfig = {
   shrink: { targetDuration: 59.5 },
   mkv2mp4: { copyStreams: true, crf: 23 },
   thumb: {},
-  app: { hotkeyPreset: 'premiere', cacheThreshold: 20 },
+  app: { hotkeyPreset: 'premiere', frameSkip: 3 },
 };
 
 /**
