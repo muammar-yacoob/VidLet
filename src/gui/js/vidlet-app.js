@@ -65,7 +65,9 @@ let frameCache = [];        // Array of {time, imageData}
 let frameCacheCanvas = null;
 let frameCacheCtx = null;
 let frameCacheReady = false;
-const FRAME_CACHE_INTERVAL = 0.25; // Cache a frame every 0.25 seconds
+let frameCachePhase2Done = false;
+const PHASE1_FRAME_SKIP = 3;  // Phase 1: Cache every 3rd frame (soft caching)
+// Phase 2: Fill in remaining frames after main window loads
 
 // Timeline zoom state
 let timelineZoom = 1;
@@ -1080,15 +1082,27 @@ async function buildFrameCache(onProgress) {
   // Validate video is ready
   if (!mainVideo || !mainVideo.duration || mainVideo.duration <= 0) {
     console.warn('buildFrameCache: Video not ready or no duration');
-    if (onProgress) onProgress(100); // Signal complete to close loading window
-    return;
-  }
-
-  // Don't cache twice
-  if (frameCacheReady || frameCache.length > 0) {
     if (onProgress) onProgress(100);
     return;
   }
+
+  // Don't run phase 1 twice
+  if (frameCacheReady || frameCache.length > 0) {
+    if (onProgress) onProgress(100);
+    // Start phase 2 if not done yet
+    if (!frameCachePhase2Done) {
+      setTimeout(() => buildFrameCachePhase2(), 500);
+    }
+    return;
+  }
+
+  // Get video FPS (default to 30 if not available)
+  const fps = info.fps || 30;
+  const frameInterval = 1 / fps;
+  // Phase 1: Cache every Nth frame (soft caching)
+  const phase1Interval = frameInterval * PHASE1_FRAME_SKIP;
+
+  console.log(`Phase 1 caching: every ${PHASE1_FRAME_SKIP} frames (${phase1Interval.toFixed(3)}s interval) at ${fps} fps`);
 
   // Create hidden video element for background caching
   const cacheVideo = document.createElement('video');
@@ -1113,19 +1127,20 @@ async function buildFrameCache(onProgress) {
 
   frameCache = [];
   const duration = cacheVideo.duration;
-  const frameCount = Math.ceil(duration / FRAME_CACHE_INTERVAL);
+  const frameCount = Math.ceil(duration / phase1Interval);
 
   // Show caching progress
   const progressEl = $('cache-progress');
   const progressFill = $('cache-progress-fill');
   const progressPct = $('cache-progress-pct');
   if (progressEl) progressEl.style.display = 'flex';
+  if ($('cache-progress-label')) $('cache-progress-label').textContent = 'Caching frames...';
 
   // Track last reported progress to avoid redundant updates
   let lastReportedPct = 0;
 
   for (let i = 0; i <= frameCount; i++) {
-    const time = Math.min(i * FRAME_CACHE_INTERVAL, duration);
+    const time = Math.min(i * phase1Interval, duration);
 
     await new Promise(resolve => {
       const onSeeked = () => {
@@ -1146,9 +1161,8 @@ async function buildFrameCache(onProgress) {
     // Calculate progress percentage
     const pct = Math.round((i / frameCount) * 100);
 
-    // Update UI every 2 frames or at key thresholds (10%, 20%, 30%, etc.)
-    const isKeyThreshold = pct >= lastReportedPct + 10;
-    if (i % 2 === 0 || isKeyThreshold) {
+    // Update UI every few frames
+    if (i % 3 === 0 || pct >= lastReportedPct + 10) {
       if (progressFill) progressFill.style.width = `${pct}%`;
       if (progressPct) progressPct.textContent = `${pct}%`;
       if (onProgress && pct > lastReportedPct) {
@@ -1158,12 +1172,12 @@ async function buildFrameCache(onProgress) {
     }
 
     // Yield to allow UI updates
-    if (i % 4 === 0) {
+    if (i % 5 === 0) {
       await new Promise(r => setTimeout(r, 0));
     }
   }
 
-  // Cleanup
+  // Cleanup phase 1
   cacheVideo.remove();
   frameCacheReady = true;
   if (progressEl) progressEl.style.display = 'none';
@@ -1171,7 +1185,96 @@ async function buildFrameCache(onProgress) {
   // Signal 100% complete
   if (onProgress) onProgress(100);
 
-  console.log(`Frame cache ready: ${frameCache.length} frames`);
+  console.log(`Phase 1 cache ready: ${frameCache.length} frames (every ${PHASE1_FRAME_SKIP} frames)`);
+
+  // Start phase 2 after a short delay (fills in gaps for smoother scrubbing)
+  setTimeout(() => buildFrameCachePhase2(), 1000);
+}
+
+/**
+ * Phase 2: Fill in gaps between initial frames for smoother scrubbing
+ * Caches the remaining frames that weren't cached in Phase 1
+ * Runs in background after main window is visible
+ */
+async function buildFrameCachePhase2() {
+  if (frameCachePhase2Done) return;
+  if (!frameCacheReady || frameCache.length === 0) return;
+
+  const mainVideo = $('videoPreview');
+  if (!mainVideo || !mainVideo.duration) return;
+
+  const duration = mainVideo.duration;
+  const fps = info.fps || 30;
+  const frameInterval = 1 / fps;
+
+  // Create hidden video element for background caching
+  const cacheVideo = document.createElement('video');
+  cacheVideo.src = mainVideo.src;
+  cacheVideo.muted = true;
+  cacheVideo.preload = 'auto';
+  cacheVideo.style.display = 'none';
+  document.body.appendChild(cacheVideo);
+
+  await new Promise(resolve => {
+    cacheVideo.addEventListener('loadeddata', resolve, { once: true });
+    cacheVideo.load();
+  });
+
+  // Ensure canvas exists
+  if (!frameCacheCanvas || !frameCacheCtx) {
+    frameCacheCanvas = document.createElement('canvas');
+    const scale = 0.5;
+    frameCacheCanvas.width = cacheVideo.videoWidth * scale;
+    frameCacheCanvas.height = cacheVideo.videoHeight * scale;
+    frameCacheCtx = frameCacheCanvas.getContext('2d', { willReadFrequently: true });
+  }
+
+  // Build set of existing times for quick lookup (rounded to ms precision)
+  const existingTimes = new Set(frameCache.map(f => Math.round(f.time * 1000)));
+
+  // Calculate which frames need to be filled in (every frame not in Phase 1)
+  const timesToCache = [];
+  for (let t = 0; t <= duration; t += frameInterval) {
+    const roundedTime = Math.round(t * 1000);
+    if (!existingTimes.has(roundedTime)) {
+      timesToCache.push(Math.min(t, duration));
+    }
+  }
+
+  console.log(`Phase 2: Filling ${timesToCache.length} remaining frames at ${fps} fps`);
+
+  // Cache missing frames in background (lower priority)
+  for (let i = 0; i < timesToCache.length; i++) {
+    const time = timesToCache[i];
+
+    await new Promise(resolve => {
+      const onSeeked = () => {
+        cacheVideo.removeEventListener('seeked', onSeeked);
+        frameCacheCtx.drawImage(cacheVideo, 0, 0, frameCacheCanvas.width, frameCacheCanvas.height);
+        frameCache.push({
+          time,
+          dataUrl: frameCacheCanvas.toDataURL('image/jpeg', 0.7)
+        });
+        resolve();
+      };
+      cacheVideo.addEventListener('seeked', onSeeked);
+      cacheVideo.currentTime = time;
+    });
+
+    // Yield frequently to keep UI responsive (Phase 2 runs in background)
+    if (i % 3 === 0) {
+      await new Promise(r => setTimeout(r, 5));
+    }
+  }
+
+  // Sort frameCache by time for binary search
+  frameCache.sort((a, b) => a.time - b.time);
+
+  // Cleanup
+  cacheVideo.remove();
+  frameCachePhase2Done = true;
+
+  console.log(`Phase 2 complete: ${frameCache.length} total frames cached`);
 }
 
 /**
@@ -2164,6 +2267,7 @@ function initPlayerControls() {
     }
 
     // Navigation steps
+    const video = $('videoPreview');
     const frameStep = 1 / (info.fps || 30);
     const shortSeek = e.altKey ? frameStep : 5;  // Alt = frame, normal = 5s
     const longSeek = e.shiftKey ? 30 : 10;       // Shift = 30s, normal = 10s
@@ -2180,10 +2284,14 @@ function initPlayerControls() {
       // Navigation: Arrow keys (Alt = frame, normal = 5s)
       case 'ArrowLeft':
         e.preventDefault();
+        // Pause for frame-accurate seeking when Alt is held
+        if (e.altKey && !video.paused) video.pause();
         video.currentTime = Math.max(0, video.currentTime - shortSeek);
         break;
       case 'ArrowRight':
         e.preventDefault();
+        // Pause for frame-accurate seeking when Alt is held
+        if (e.altKey && !video.paused) video.pause();
         video.currentTime = Math.min(video.duration, video.currentTime + shortSeek);
         break;
 
@@ -3609,6 +3717,7 @@ async function loadOutputAsSource(filePath) {
       // Reset frame cache for new video
       frameCache = [];
       frameCacheReady = false;
+      frameCachePhase2Done = false;
       video.addEventListener('canplaythrough', () => {
         if (!frameCacheReady && frameCache.length === 0) {
           setTimeout(() => buildFrameCache(), 100);

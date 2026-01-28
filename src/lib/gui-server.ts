@@ -297,11 +297,11 @@ export function startGuiServer(options: GuiServerOptions): Promise<boolean> {
 			res.json({ success: true });
 		});
 
-		// Update caching progress (displayed in loading HTA)
+		// Update caching progress (for future use)
 		app.post('/api/progress', (req, res) => {
 			const { percent } = req.body;
 			if (typeof percent === 'number') {
-				updateLoadingProgress(percent);
+				logToFile(`Caching progress: ${percent}%`);
 			}
 			res.json({ ok: true });
 		});
@@ -353,7 +353,8 @@ export function startGuiServer(options: GuiServerOptions): Promise<boolean> {
 				const port = addr.port;
 				const url = `http://127.0.0.1:${port}/${options.htmlFile}`;
 
-				// Signal loading HTA to open Edge with this URL and close
+				logToFile(`Server ready at ${url}`);
+				// Signal loading HTA to close and open Edge
 				signalLoadingComplete(url);
 
 				// 30 minute timeout for long operations like compression

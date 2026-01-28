@@ -399,6 +399,10 @@ video::-webkit-media-controls-panel{display:none!important}
 .modal-row select{flex:1;background:var(--bg2);border:1px solid var(--brd);border-radius:4px;padding:6px 8px;color:var(--txt);font-size:11px;cursor:pointer}
 .modal-row select:hover{border-color:var(--acc)}
 .modal-row select:focus{outline:none;border-color:var(--acc)}
+.modal-slider{flex:1;height:4px;background:var(--bg3);border-radius:2px;-webkit-appearance:none;cursor:pointer}
+.modal-slider::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;background:var(--acc);border-radius:50%;cursor:pointer;box-shadow:0 0 4px rgba(168,85,247,0.4)}
+.modal-slider::-webkit-slider-thumb:hover{background:var(--acc2);box-shadow:0 0 8px rgba(168,85,247,0.6)}
+.modal-slider:focus{outline:none}
 .modal-section{margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--brd)}
 .modal-section:last-child{margin-bottom:0;padding-bottom:0;border-bottom:none}
 .modal-section-title{font-size:10px;color:var(--txt3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px}

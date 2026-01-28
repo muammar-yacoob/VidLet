@@ -601,11 +601,9 @@
         <div class="modal-section">
           <div class="modal-section-title">Loading</div>
           <div class="modal-row">
-            <label>Cache before open</label>
-            <div class="slider-row" style="flex:1">
-              <input type="range" id="settingsCacheThreshold" min="10" max="50" step="5" value="20" oninput="updateCacheThresholdLabel()">
-              <span class="slider-val" id="cacheThresholdVal">20%</span>
-            </div>
+            <label>Initial Cache</label>
+            <input type="range" class="modal-slider" id="settingsCacheThreshold" min="10" max="50" step="5" value="20" oninput="updateCacheThresholdLabel()">
+            <span class="slider-val" id="cacheThresholdVal">20%</span>
           </div>
         </div>
         <div class="modal-section" style="border-bottom:none;padding-bottom:4px">
