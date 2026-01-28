@@ -9,9 +9,10 @@
  * 5. Edge window appears (only one window visible at a time)
  */
 
-import { execSync } from 'node:child_process';
+import { execSync, spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { logToFile } from './logger.js';
 
 // Cache Windows temp directory
 let cachedTempDir: string | null = null;
@@ -97,15 +98,44 @@ export function updateLoadingProgress(percent: number): void {
 }
 
 /**
- * Signal the loading HTA to open the main window and close
- * Writes the URL to the ready file so HTA can open Edge
+ * Signal the loading HTA to close and open Edge
+ * Launches Edge first via PowerShell (properly focused), then signals HTA to close
  * @param url - The URL for Edge to open
  */
 export function signalLoadingComplete(url: string): void {
 	const readyFile = getReadyFilePath();
 	try {
-		fs.writeFileSync(readyFile, url, 'utf-8');
+		// Launch Edge via PowerShell with proper focus
+		// Calculate centered position (assume 1920x1080 if we can't detect)
+		const edgeW = 480;
+		const edgeH = 400;
+		const screenW = 1920;
+		const screenH = 1080;
+		const x = Math.round((screenW - edgeW) / 2);
+		const y = Math.round((screenH - edgeH) / 2);
+
+		// Use cmd.exe to launch Edge (faster than PowerShell, runs synchronously to ensure Edge starts)
+		const edgeCmd = `msedge --app="${url}" --window-position=${x},${y}`;
+		logToFile(`Launching Edge: ${edgeCmd}`);
+
+		spawn('cmd.exe', ['/c', 'start', '', 'msedge', `--app=${url}`, `--window-position=${x},${y}`], {
+			detached: true,
+			stdio: 'ignore',
+			windowsHide: true,
+		}).unref();
+
+		// Give Edge a moment to start and gain focus, then signal HTA to close
+		setTimeout(() => {
+			fs.writeFileSync(readyFile, 'close', 'utf-8');
+			logToFile('Signaled HTA to close');
+		}, 200);
 	} catch (err) {
-		console.error('Failed to write ready signal:', err);
+		console.error('Failed to launch Edge:', err);
+		// Still try to signal HTA to close
+		try {
+			fs.writeFileSync(readyFile, 'close', 'utf-8');
+		} catch {
+			// Ignore
+		}
 	}
 }

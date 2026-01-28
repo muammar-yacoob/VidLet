@@ -94,31 +94,17 @@
     self.close();
   }
 
-  function openEdgeAndClose(url) {
-    log("openEdgeAndClose() URL: " + url);
+  function fadeAndClose() {
+    log("fadeAndClose() - Edge already launched by server");
     if (isClosing) return;
     isClosing = true;
     if (pollTimer) clearInterval(pollTimer);
     pollTimer = null;
     try { fso.DeleteFile(readyFile); } catch(e) {}
 
-    // Fade out
+    // Fade out and close (Edge is already running)
     document.body.className = 'fade-out';
-
-    setTimeout(function() {
-      log("Fade complete, opening Edge");
-      // Calculate centered position
-      var edgeW = 480, edgeH = 400;
-      var x = Math.round((screen.availWidth - edgeW) / 2);
-      var y = Math.round((screen.availHeight - edgeH) / 2);
-
-      // Open Edge directly
-      shell.Run('msedge --app=' + url + ' --window-position=' + x + ',' + y, 1, false);
-      log("Edge launched");
-
-      // Close HTA after brief delay
-      setTimeout(closeHTA, 100);
-    }, 300);
+    setTimeout(closeHTA, 300);
   }
 
   function animateProgress() {
@@ -141,17 +127,8 @@
     pollTimer = setInterval(function() {
       animateProgress();
       if (fso.FileExists(readyFile)) {
-        log("Ready file found");
-        try {
-          var f = fso.OpenTextFile(readyFile, 1);
-          var url = f.ReadAll();
-          f.Close();
-          if (url && url.length > 0) {
-            openEdgeAndClose(url);
-          }
-        } catch(e) {
-          log("ERROR: " + e.message);
-        }
+        log("Ready file found - Edge already launched, closing HTA");
+        fadeAndClose();
       }
     }, 80);
   }, 100);

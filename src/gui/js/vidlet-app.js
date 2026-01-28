@@ -2220,16 +2220,20 @@ function initPlayerControls() {
     if (e.key === 'Alt') {
       const playhead = $('timeline-playhead');
       const range = $('timeline-range');
+      const playerSeek = $('playerSeek');
       if (playhead) playhead.classList.add('fine-mode');
       if (range) range.classList.add('fine-mode');
+      if (playerSeek) playerSeek.classList.add('fine-mode');
     }
   });
   document.addEventListener('keyup', (e) => {
     if (e.key === 'Alt') {
       const playhead = $('timeline-playhead');
       const range = $('timeline-range');
+      const playerSeek = $('playerSeek');
       if (playhead) playhead.classList.remove('fine-mode');
       if (range) range.classList.remove('fine-mode');
+      if (playerSeek) playerSeek.classList.remove('fine-mode');
     }
   });
 
