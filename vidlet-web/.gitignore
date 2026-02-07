@@ -1,0 +1,17 @@
+node_modules/
+.vercel
+.env
+.env.local
+dist/
+*.log
+
+# Symlinks (created by setup.sh, point to ../src/)
+# These are gitignored because they're links to desktop version
+public/vidlet.html
+public/css
+public/js
+public/icons
+lib/ffmpeg.ts
+lib/paths.ts
+lib/logger.ts
+lib/tools

@@ -1,0 +1,12 @@
+{
+  "buildCommand": "echo 'No build needed'",
+  "functions": {
+    "api/**/*.ts": {
+      "maxDuration": 300,
+      "memory": 3008
+    }
+  },
+  "rewrites": [
+    { "source": "/", "destination": "/public/index.html" }
+  ]
+}

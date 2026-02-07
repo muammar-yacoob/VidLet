@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VidLet Web - Video Tools</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+    }
+    .container {
+      text-align: center;
+      max-width: 600px;
+      padding: 40px;
+    }
+    h1 {
+      font-size: 3em;
+      margin-bottom: 20px;
+      text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+    }
+    .subtitle {
+      font-size: 1.2em;
+      margin-bottom: 40px;
+      opacity: 0.9;
+    }
+    .upload-zone {
+      background: rgba(255,255,255,0.1);
+      border: 3px dashed rgba(255,255,255,0.5);
+      border-radius: 20px;
+      padding: 60px 40px;
+      margin: 30px 0;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+    .upload-zone:hover, .upload-zone.drag-over {
+      background: rgba(255,255,255,0.2);
+      border-color: rgba(255,255,255,0.8);
+      transform: scale(1.02);
+    }
+    .upload-zone svg {
+      width: 80px;
+      height: 80px;
+      margin-bottom: 20px;
+      opacity: 0.8;
+    }
+    .upload-text {
+      font-size: 1.1em;
+      margin-bottom: 10px;
+    }
+    .upload-hint {
+      font-size: 0.9em;
+      opacity: 0.7;
+    }
+    input[type="file"] {
+      display: none;
+    }
+    .progress {
+      display: none;
+      margin-top: 20px;
+    }
+    .progress-bar {
+      background: rgba(255,255,255,0.2);
+      height: 6px;
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .progress-fill {
+      background: #fff;
+      height: 100%;
+      width: 0%;
+      transition: width 0.3s;
+    }
+    .progress-text {
+      margin-top: 10px;
+      font-size: 0.9em;
+    }
+    .tools-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 15px;
+      margin-top: 30px;
+    }
+    .tool-card {
+      background: rgba(255,255,255,0.15);
+      padding: 20px;
+      border-radius: 10px;
+      transition: all 0.3s;
+    }
+    .tool-card:hover {
+      background: rgba(255,255,255,0.25);
+      transform: translateY(-2px);
+    }
+    .tool-icon {
+      font-size: 2em;
+      margin-bottom: 10px;
+    }
+    .error {
+      background: rgba(255, 59, 48, 0.2);
+      border: 1px solid rgba(255, 59, 48, 0.5);
+      border-radius: 10px;
+      padding: 15px;
+      margin-top: 20px;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🎬 VidLet Web</h1>
+    <p class="subtitle">Professional video tools in your browser</p>
+
+    <div class="upload-zone" id="dropZone">
+      <svg fill="currentColor" viewBox="0 0 24 24">
+        <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4c-1.48 0-2.85.43-4.01 1.17l1.46 1.46C10.21 6.23 11.08 6 12 6c3.04 0 5.5 2.46 5.5 5.5v.5H19c1.66 0 3 1.34 3 3s-1.34 3-3 3h-5v2h5c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM11 8v5H8l4 4 4-4h-3V8h-2zm-6 9h5v2H5c-1.66 0-3-1.34-3-3s1.34-3 3-3h.5v-.5C5.5 9.46 7.96 7 11 7v2c-2.21 0-4 1.79-4 4v.5H5c-.55 0-1 .45-1 1s.45 1 1 1z"/>
+      </svg>
+      <div class="upload-text">Drop video here or click to browse</div>
+      <div class="upload-hint">Supports MP4, MOV, MKV, AVI, WebM</div>
+    </div>
+
+    <input type="file" id="fileInput" accept="video/*">
+
+    <div class="progress" id="progress">
+      <div class="progress-bar">
+        <div class="progress-fill" id="progressFill"></div>
+      </div>
+      <div class="progress-text" id="progressText">Uploading...</div>
+    </div>
+
+    <div class="error" id="error"></div>
+
+    <div class="tools-grid">
+      <div class="tool-card">
+        <div class="tool-icon">🗜️</div>
+        <div>Compress</div>
+      </div>
+      <div class="tool-card">
+        <div class="tool-icon">🎞️</div>
+        <div>To GIF</div>
+      </div>
+      <div class="tool-card">
+        <div class="tool-icon">✂️</div>
+        <div>Trim</div>
+      </div>
+      <div class="tool-card">
+        <div class="tool-icon">🔁</div>
+        <div>Loop</div>
+      </div>
+      <div class="tool-card">
+        <div class="tool-icon">📱</div>
+        <div>Portrait</div>
+      </div>
+      <div class="tool-card">
+        <div class="tool-icon">🎨</div>
+        <div>Filter</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+    const progress = document.getElementById('progress');
+    const progressFill = document.getElementById('progressFill');
+    const progressText = document.getElementById('progressText');
+    const errorDiv = document.getElementById('error');
+
+    function showError(message) {
+      errorDiv.textContent = message;
+      errorDiv.style.display = 'block';
+      setTimeout(() => {
+        errorDiv.style.display = 'none';
+      }, 5000);
+    }
+
+    // Click to browse
+    dropZone.addEventListener('click', () => fileInput.click());
+
+    // Drag and drop
+    dropZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropZone.classList.add('drag-over');
+    });
+
+    dropZone.addEventListener('dragleave', () => {
+      dropZone.classList.remove('drag-over');
+    });
+
+    dropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropZone.classList.remove('drag-over');
+      const file = e.dataTransfer.files[0];
+      if (file && file.type.startsWith('video/')) {
+        uploadAndProcess(file);
+      } else {
+        showError('Please drop a valid video file');
+      }
+    });
+
+    fileInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        uploadAndProcess(file);
+      }
+    });
+
+    async function uploadAndProcess(file) {
+      progress.style.display = 'block';
+      progressText.textContent = 'Uploading ' + file.name + '...';
+      progressFill.style.width = '50%';
+
+      try {
+        // Upload video
+        const formData = new FormData();
+        formData.append('video', file);
+
+        const uploadRes = await fetch('/api/upload', {
+          method: 'POST',
+          body: formData
+        });
+
+        if (!uploadRes.ok) {
+          const error = await uploadRes.json();
+          throw new Error(error.error || 'Upload failed');
+        }
+
+        const { videoId, info } = await uploadRes.json();
+
+        progressFill.style.width = '100%';
+        progressText.textContent = 'Video uploaded! Opening tools...';
+
+        // Redirect to main app with video ID
+        setTimeout(() => {
+          window.location.href = `/vidlet.html?v=${videoId}`;
+        }, 500);
+
+      } catch (err) {
+        console.error('Upload error:', err);
+        showError('Error: ' + err.message);
+        progressFill.style.width = '0%';
+        progress.style.display = 'none';
+      }
+    }
+  </script>
+</body>
+</html>
