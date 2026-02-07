@@ -39,6 +39,14 @@ const SEGMENT_COLORS = [
 let portraitKeyframes = [];
 let keyframeAnimationEnabled = false;
 
+// Overlay state
+let overlayLayers = []; // [{id, imagePath, imageDataUrl, fileName, x, y, scale, startTime, endTime, fadeIn, fadeOut}]
+let selectedOverlayIndex = -1;
+let overlayPreviewActive = false;
+const MAX_OVERLAY_LAYERS = 5;
+const OVERLAY_COLORS = SEGMENT_COLORS.slice(0, 5);
+let overlayNextId = 1;
+
 // Portrait timeline zoom state
 let portraitZoom = 1;
 let portraitOffset = 0; // 0-1, left edge position as fraction of duration
@@ -92,6 +100,8 @@ function getStateSnapshot() {
     portraitKeyframes: JSON.parse(JSON.stringify(portraitKeyframes)),
     trimStart: $('trim-start')?.value,
     trimEnd: $('trim-end')?.value,
+    overlayLayers: JSON.parse(JSON.stringify(overlayLayers)),
+    selectedOverlayIndex,
   };
 }
 
@@ -113,6 +123,12 @@ function restoreState(snapshot) {
     if (snapshot.trimStart !== undefined) $('trim-start').value = snapshot.trimStart;
     if (snapshot.trimEnd !== undefined) $('trim-end').value = snapshot.trimEnd;
     updateTimeline();
+  }
+  if (snapshot.tool === 'overlay') {
+    overlayLayers = snapshot.overlayLayers;
+    selectedOverlayIndex = snapshot.selectedOverlayIndex;
+    renderOverlayLayers();
+    updateOverlayGizmo();
   }
 }
 
@@ -387,6 +403,7 @@ async function init() {
   initDropZones();
   initVideoZoom();
   initCaptionTool();
+  initOverlayGizmoDrag();
   setupAudioPreviewSync();
   updateThumbAspectRatio();
 
@@ -540,6 +557,15 @@ function selectTool(id) {
 
   $('cropOverlay').classList.remove('active');
   $('captionOverlay').classList.add('hidden');
+  $('overlayGizmo').classList.add('hidden');
+  // Clean up overlay preview when switching tools
+  if (overlayPreviewActive) {
+    overlayPreviewActive = false;
+    const previewBtn = $('overlay-preview-btn');
+    if (previewBtn) previewBtn.classList.remove('primary');
+    $('overlayPreviewContainer').classList.add('hidden');
+    $('overlayPreviewContainer').innerHTML = '';
+  }
 
   // MKV files can only use mkv2mp4 tool
   if (isMkvFile && id !== 'mkv2mp4') {
@@ -588,6 +614,11 @@ function selectTool(id) {
     if (id === 'caption') {
       $('captionOverlay').classList.remove('hidden');
       updateCaptionPreview();
+    }
+
+    if (id === 'overlay') {
+      renderOverlayLayers();
+      updateOverlayGizmo();
     }
   } else {
     activeTool = null;
@@ -2145,6 +2176,10 @@ function initPlayerControls() {
         video.currentTime = trimStart;
       }
     }
+    // Update overlay preview visibility based on current time
+    if (activeTool === 'overlay') {
+      updateOverlayPreviewVisibility();
+    }
   });
   video.addEventListener('loadedmetadata', updateTimeDisplay);
 
@@ -3672,6 +3707,25 @@ async function process() {
       opts.captionFontSize = parseInt($('caption-size').value) || 48;
       opts.captionPosition = $('caption-position').value || 'bottom';
       break;
+    case 'overlay': {
+      const validLayers = overlayLayers.filter(l => l.imagePath);
+      if (validLayers.length === 0) {
+        $('loading').classList.remove('on');
+        alert('Add at least one image layer');
+        return;
+      }
+      opts.overlayLayers = validLayers.map(l => ({
+        imagePath: l.imagePath,
+        x: l.x,
+        y: l.y,
+        scale: l.scale || 1,
+        startTime: l.startTime,
+        endTime: l.endTime,
+        fadeIn: l.fadeIn,
+        fadeOut: l.fadeOut,
+      }));
+      break;
+    }
   }
 
   try {
@@ -3698,8 +3752,8 @@ async function process() {
         $('continueBtn').classList.remove('hidden');
         // Don't update currentFilePath - keep original video loaded
         skipReloadOnContinue = true;
-      } else if (activeTool === 'trim' || activeTool === 'mkv2mp4') {
-        // Trim/MKV - show done modal with continue button
+      } else if (activeTool === 'trim' || activeTool === 'mkv2mp4' || activeTool === 'overlay') {
+        // Trim/MKV/Overlay - show done modal with continue button
         $('done').classList.add('on', 'ok');
         $('done').classList.remove('err');
         $('output').textContent = res.output || 'Done!';
@@ -4153,6 +4207,550 @@ function updateCaptionPreview() {
   const scale = video ? video.clientHeight / 720 : 0.4;
   const previewSize = Math.round(size * scale);
   textEl.style.fontSize = Math.max(12, previewSize) + 'px';
+}
+
+// ============ OVERLAY TOOL ============
+
+function addOverlayLayer() {
+  if (overlayLayers.length >= MAX_OVERLAY_LAYERS) return;
+  saveUndoState();
+  const duration = info.duration || 10;
+  overlayLayers.push({
+    id: overlayNextId++,
+    imagePath: '',
+    imageDataUrl: '',
+    fileName: '(no file)',
+    x: 0.5,
+    y: 0.5,
+    scale: 1,
+    startTime: 0,
+    endTime: duration,
+    fadeIn: false,
+    fadeOut: false,
+  });
+  selectedOverlayIndex = overlayLayers.length - 1;
+  renderOverlayLayers();
+  updateOverlayGizmo();
+  updateOverlayAddBtn();
+}
+
+function removeOverlayLayer(i) {
+  if (i < 0 || i >= overlayLayers.length) return;
+  saveUndoState();
+  overlayLayers.splice(i, 1);
+  if (selectedOverlayIndex >= overlayLayers.length) {
+    selectedOverlayIndex = overlayLayers.length - 1;
+  }
+  renderOverlayLayers();
+  updateOverlayGizmo();
+  updateOverlayAddBtn();
+}
+
+function selectOverlayLayer(i) {
+  selectedOverlayIndex = i;
+  renderOverlayLayers();
+  updateOverlayGizmo();
+}
+
+function moveOverlayLayer(i, dir) {
+  const target = i + dir;
+  if (target < 0 || target >= overlayLayers.length) return;
+  saveUndoState();
+  const tmp = overlayLayers[i];
+  overlayLayers[i] = overlayLayers[target];
+  overlayLayers[target] = tmp;
+  selectedOverlayIndex = target;
+  renderOverlayLayers();
+  updateOverlayGizmo();
+}
+
+function toggleOverlayFade(i, type) {
+  if (i < 0 || i >= overlayLayers.length) return;
+  saveUndoState();
+  overlayLayers[i][type] = !overlayLayers[i][type];
+  renderOverlayLayers();
+}
+
+async function browseOverlayImage(i) {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/png,image/gif,image/jpeg,image/webp,video/mp4,video/webm';
+  input.onchange = async () => {
+    if (!input.files || !input.files[0]) return;
+    const file = input.files[0];
+    const layer = overlayLayers[i];
+    if (!layer) return;
+
+    // Read data URL for gizmo preview
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      layer.imageDataUrl = e.target.result;
+      layer.fileName = file.name;
+      renderOverlayLayers();
+      updateOverlayGizmo();
+    };
+    reader.readAsDataURL(file);
+
+    // Upload to server for FFmpeg processing
+    try {
+      const path = await uploadFile(file, 'image');
+      layer.imagePath = path;
+    } catch (err) {
+      layer.fileName = 'Upload failed';
+      renderOverlayLayers();
+    }
+  };
+  input.click();
+}
+
+function updateOverlayAddBtn() {
+  const btn = $('overlay-add-btn');
+  if (btn) {
+    btn.classList.toggle('hidden', overlayLayers.length >= MAX_OVERLAY_LAYERS);
+  }
+}
+
+function renderOverlayLayers() {
+  const container = $('overlay-layers');
+  if (!container) return;
+  const duration = info.duration || 10;
+
+  if (overlayLayers.length === 0) {
+    container.innerHTML = '<div class="overlay-empty">Click "Add Layer" to add an overlay</div>';
+    return;
+  }
+
+  container.innerHTML = '';
+
+  overlayLayers.forEach((layer, i) => {
+    const color = OVERLAY_COLORS[i % OVERLAY_COLORS.length];
+    const isSelected = i === selectedOverlayIndex;
+
+    const el = document.createElement('div');
+    el.className = 'overlay-layer' + (isSelected ? ' selected' : '');
+    el.onclick = (e) => {
+      if (!e.target.closest('.icon-btn') && !e.target.closest('.segment-handle')) {
+        selectOverlayLayer(i);
+      }
+    };
+
+    // Header row with controls
+    const header = document.createElement('div');
+    header.className = 'overlay-layer-header';
+
+    // Color dot
+    const dot = document.createElement('div');
+    dot.className = 'overlay-layer-color';
+    dot.style.background = color;
+    header.appendChild(dot);
+
+    // File name
+    const name = document.createElement('span');
+    name.className = 'overlay-layer-name';
+    name.textContent = layer.fileName || '(no file)';
+    header.appendChild(name);
+
+    // Action buttons
+    const actions = document.createElement('div');
+    actions.className = 'overlay-layer-actions';
+
+    // Browse button
+    actions.appendChild(makeOverlayIconBtn(
+      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`,
+      'Browse', () => browseOverlayImage(i)
+    ));
+
+    // Fade in
+    actions.appendChild(makeOverlayIconBtn(
+      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 20L22 4"/><path d="M2 20h20"/></svg>`,
+      'Fade in', () => { toggleOverlayFade(i, 'fadeIn'); }, layer.fadeIn
+    ));
+
+    // Fade out
+    actions.appendChild(makeOverlayIconBtn(
+      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 4l20 16"/><path d="M2 20h20"/></svg>`,
+      'Fade out', () => { toggleOverlayFade(i, 'fadeOut'); }, layer.fadeOut
+    ));
+
+    // Move up
+    actions.appendChild(makeOverlayIconBtn(
+      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/></svg>`,
+      'Move up', () => moveOverlayLayer(i, -1)
+    ));
+
+    // Move down
+    actions.appendChild(makeOverlayIconBtn(
+      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>`,
+      'Move down', () => moveOverlayLayer(i, 1)
+    ));
+
+    // Delete
+    actions.appendChild(makeOverlayIconBtn(
+      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>`,
+      'Delete', () => removeOverlayLayer(i)
+    ));
+
+    header.appendChild(actions);
+    el.appendChild(header);
+
+    // Timeline bar
+    const timeline = document.createElement('div');
+    timeline.className = 'overlay-layer-timeline';
+
+    const bar = document.createElement('div');
+    bar.className = 'overlay-layer-bar';
+    const leftPct = (layer.startTime / duration) * 100;
+    const widthPct = ((layer.endTime - layer.startTime) / duration) * 100;
+    bar.style.left = leftPct + '%';
+    bar.style.width = widthPct + '%';
+    bar.style.background = `linear-gradient(135deg, ${color}, ${adjustColor(color, -20)})`;
+
+    // Resize handles
+    const handleL = document.createElement('div');
+    handleL.className = 'segment-handle segment-handle-left';
+    handleL.dataset.layerIndex = i;
+    handleL.dataset.side = 'left';
+    bar.appendChild(handleL);
+
+    const handleR = document.createElement('div');
+    handleR.className = 'segment-handle segment-handle-right';
+    handleR.dataset.layerIndex = i;
+    handleR.dataset.side = 'right';
+    bar.appendChild(handleR);
+
+    timeline.appendChild(bar);
+    el.appendChild(timeline);
+    container.appendChild(el);
+  });
+
+  initOverlayHandles();
+  updateOverlayAddBtn();
+}
+
+function makeOverlayIconBtn(svgHtml, title, onClick, isActive) {
+  const btn = document.createElement('button');
+  btn.className = 'icon-btn' + (isActive ? ' active' : '');
+  btn.title = title;
+  btn.innerHTML = svgHtml;
+  btn.onclick = (e) => { e.stopPropagation(); onClick(); };
+  return btn;
+}
+
+function initOverlayHandles() {
+  const handles = document.querySelectorAll('.overlay-layer-bar .segment-handle');
+  const duration = info.duration || 10;
+
+  handles.forEach(handle => {
+    handle.addEventListener('mousedown', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      const layerIdx = parseInt(handle.dataset.layerIndex);
+      const side = handle.dataset.side;
+      const layer = overlayLayers[layerIdx];
+      if (!layer) return;
+
+      const bar = handle.parentElement;
+      const timeline = bar.parentElement;
+      const rect = timeline.getBoundingClientRect();
+
+      const onMove = (me) => {
+        const pct = Math.max(0, Math.min(1, (me.clientX - rect.left) / rect.width));
+        const time = pct * duration;
+
+        if (side === 'left') {
+          layer.startTime = Math.min(time, layer.endTime - 0.1);
+        } else {
+          layer.endTime = Math.max(time, layer.startTime + 0.1);
+        }
+
+        // Update bar position without full re-render
+        const leftPct = (layer.startTime / duration) * 100;
+        const widthPct = ((layer.endTime - layer.startTime) / duration) * 100;
+        bar.style.left = leftPct + '%';
+        bar.style.width = widthPct + '%';
+      };
+
+      const onUp = () => {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+      };
+
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+  });
+}
+
+function updateOverlayGizmo() {
+  const gizmo = $('overlayGizmo');
+  const img = $('overlayGizmoImg');
+  if (!gizmo || !img) return;
+
+  if (activeTool !== 'overlay' || selectedOverlayIndex < 0 || selectedOverlayIndex >= overlayLayers.length) {
+    gizmo.classList.add('hidden');
+    return;
+  }
+
+  const layer = overlayLayers[selectedOverlayIndex];
+  if (!layer.imageDataUrl) {
+    gizmo.classList.add('hidden');
+    return;
+  }
+
+  const color = OVERLAY_COLORS[selectedOverlayIndex % OVERLAY_COLORS.length];
+  gizmo.style.borderColor = color;
+  gizmo.querySelectorAll('.gizmo-handle').forEach(h => h.style.background = color);
+  img.src = layer.imageDataUrl;
+  gizmo.classList.remove('hidden');
+
+  // Update scale label
+  const label = $('gizmoScaleLabel');
+  if (label) label.textContent = Math.round((layer.scale || 1) * 100) + '%';
+
+  // Size and position gizmo after image loads
+  const applySize = () => {
+    applyGizmoScale(layer);
+    positionGizmo(layer);
+  };
+  if (img.complete && img.naturalWidth) {
+    applySize();
+  } else {
+    img.onload = applySize;
+  }
+}
+
+function applyGizmoScale(layer) {
+  const img = $('overlayGizmoImg');
+  const video = $('videoPreview');
+  if (!img || !video || !img.naturalWidth) return;
+
+  const scale = layer.scale || 1;
+  // Base size: scale so the image's natural width fills ~25% of video width at scale=1
+  const vRect = video.getBoundingClientRect();
+  const baseW = vRect.width * 0.25;
+  const aspect = img.naturalHeight / img.naturalWidth;
+  const w = baseW * scale;
+  const h = w * aspect;
+
+  img.style.width = w + 'px';
+  img.style.height = h + 'px';
+}
+
+function positionGizmo(layer) {
+  const gizmo = $('overlayGizmo');
+  const video = $('videoPreview');
+  if (!gizmo || !video) return;
+
+  const vRect = video.getBoundingClientRect();
+  const wrap = $('previewWrap');
+  const wRect = wrap.getBoundingClientRect();
+
+  // Offset of video within the preview wrap
+  const vOffsetX = vRect.left - wRect.left;
+  const vOffsetY = vRect.top - wRect.top;
+
+  const gW = gizmo.offsetWidth;
+  const gH = gizmo.offsetHeight;
+
+  const cx = vOffsetX + layer.x * vRect.width;
+  const cy = vOffsetY + layer.y * vRect.height;
+
+  gizmo.style.left = (cx - gW / 2) + 'px';
+  gizmo.style.top = (cy - gH / 2) + 'px';
+}
+
+function initOverlayGizmoDrag() {
+  const gizmo = $('overlayGizmo');
+  if (!gizmo) return;
+
+  // Move drag (on gizmo body, not on handles)
+  gizmo.addEventListener('mousedown', (e) => {
+    if (e.target.closest('.gizmo-handle')) return; // handled separately
+    if (selectedOverlayIndex < 0 || selectedOverlayIndex >= overlayLayers.length) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    const layer = overlayLayers[selectedOverlayIndex];
+    const video = $('videoPreview');
+    const wrap = $('previewWrap');
+    if (!video || !wrap) return;
+
+    const vRect = video.getBoundingClientRect();
+    const wRect = wrap.getBoundingClientRect();
+    const vOffsetX = vRect.left - wRect.left;
+    const vOffsetY = vRect.top - wRect.top;
+
+    const gW = gizmo.offsetWidth;
+    const gH = gizmo.offsetHeight;
+
+    const startMX = e.clientX;
+    const startMY = e.clientY;
+    const startGX = parseFloat(gizmo.style.left) || 0;
+    const startGY = parseFloat(gizmo.style.top) || 0;
+
+    const onMove = (me) => {
+      const dx = me.clientX - startMX;
+      const dy = me.clientY - startMY;
+
+      const newLeft = startGX + dx;
+      const newTop = startGY + dy;
+
+      const cx = newLeft + gW / 2;
+      const cy = newTop + gH / 2;
+
+      layer.x = Math.max(0, Math.min(1, (cx - vOffsetX) / vRect.width));
+      layer.y = Math.max(0, Math.min(1, (cy - vOffsetY) / vRect.height));
+
+      gizmo.style.left = newLeft + 'px';
+      gizmo.style.top = newTop + 'px';
+    };
+
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+
+  // Scale drag (on corner handles)
+  gizmo.querySelectorAll('.gizmo-handle').forEach(handle => {
+    handle.addEventListener('mousedown', (e) => {
+      if (selectedOverlayIndex < 0 || selectedOverlayIndex >= overlayLayers.length) return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      const layer = overlayLayers[selectedOverlayIndex];
+      const startScale = layer.scale || 1;
+      const startY = e.clientY;
+      const startX = e.clientX;
+
+      gizmo.classList.add('scaling');
+
+      const onMove = (me) => {
+        // Diagonal distance from start determines scale change
+        const dx = me.clientX - startX;
+        const dy = me.clientY - startY;
+        // Use the handle corner to determine sign: BR/TR grow right, BL/TL grow left
+        const isBR = handle.classList.contains('gizmo-handle-br');
+        const isTR = handle.classList.contains('gizmo-handle-tr');
+        const isBL = handle.classList.contains('gizmo-handle-bl');
+        // For BR: +dx or +dy = grow; for TL: -dx or -dy = grow
+        let delta;
+        if (isBR) delta = (dx + dy) / 2;
+        else if (isTR) delta = (dx - dy) / 2;
+        else if (isBL) delta = (-dx + dy) / 2;
+        else delta = (-dx - dy) / 2; // TL
+
+        const sensitivity = 0.005;
+        layer.scale = Math.max(0.1, Math.min(5, startScale + delta * sensitivity));
+
+        applyGizmoScale(layer);
+        positionGizmo(layer);
+
+        const label = $('gizmoScaleLabel');
+        if (label) label.textContent = Math.round(layer.scale * 100) + '%';
+      };
+
+      const onUp = () => {
+        gizmo.classList.remove('scaling');
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+      };
+
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+  });
+}
+
+// ============ OVERLAY PREVIEW ============
+
+function toggleOverlayPreview() {
+  overlayPreviewActive = !overlayPreviewActive;
+  const btn = $('overlay-preview-btn');
+  if (btn) btn.classList.toggle('primary', overlayPreviewActive);
+
+  if (overlayPreviewActive) {
+    buildOverlayPreviewImages();
+    updateOverlayPreviewVisibility();
+    // Hide the single-layer edit gizmo while preview is active
+    $('overlayGizmo').classList.add('hidden');
+  } else {
+    $('overlayPreviewContainer').classList.add('hidden');
+    $('overlayPreviewContainer').innerHTML = '';
+    // Restore edit gizmo
+    updateOverlayGizmo();
+  }
+}
+
+function buildOverlayPreviewImages() {
+  const container = $('overlayPreviewContainer');
+  if (!container) return;
+  container.innerHTML = '';
+  container.classList.remove('hidden');
+
+  const video = $('videoPreview');
+  if (!video) return;
+
+  overlayLayers.forEach((layer, i) => {
+    if (!layer.imageDataUrl) return;
+
+    const img = document.createElement('img');
+    img.className = 'overlay-preview-img';
+    img.src = layer.imageDataUrl;
+    img.draggable = false;
+    img.dataset.layerIndex = i;
+
+    img.onload = () => positionOverlayPreviewImg(img, layer);
+    container.appendChild(img);
+  });
+}
+
+function positionOverlayPreviewImg(img, layer) {
+  const video = $('videoPreview');
+  const wrap = $('previewWrap');
+  if (!video || !wrap || !img.naturalWidth) return;
+
+  const vRect = video.getBoundingClientRect();
+  const wRect = wrap.getBoundingClientRect();
+  const vOffsetX = vRect.left - wRect.left;
+  const vOffsetY = vRect.top - wRect.top;
+
+  const scale = layer.scale || 1;
+  const baseW = vRect.width * 0.25;
+  const aspect = img.naturalHeight / img.naturalWidth;
+  const w = baseW * scale;
+  const h = w * aspect;
+
+  img.style.width = w + 'px';
+  img.style.height = h + 'px';
+
+  const cx = vOffsetX + layer.x * vRect.width;
+  const cy = vOffsetY + layer.y * vRect.height;
+  img.style.left = (cx - w / 2) + 'px';
+  img.style.top = (cy - h / 2) + 'px';
+}
+
+function updateOverlayPreviewVisibility() {
+  if (!overlayPreviewActive) return;
+  const container = $('overlayPreviewContainer');
+  if (!container || container.classList.contains('hidden')) return;
+
+  const video = $('videoPreview');
+  if (!video) return;
+  const t = video.currentTime;
+
+  const imgs = container.querySelectorAll('.overlay-preview-img');
+  imgs.forEach(img => {
+    const i = parseInt(img.dataset.layerIndex);
+    const layer = overlayLayers[i];
+    if (!layer) return;
+
+    const inRange = t >= layer.startTime && t <= layer.endTime;
+    img.classList.toggle('out-of-range', !inRange);
+  });
 }
 
 // ============ CONFIRM MODAL ============

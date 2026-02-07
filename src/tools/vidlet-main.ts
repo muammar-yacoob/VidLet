@@ -19,6 +19,7 @@ import { portrait, portraitMultiSegment, type PortraitSegment } from './shorts.j
 import { addAudio, extractAudio } from './audio.js';
 import { filter } from './filter.js';
 import { caption } from './caption.js';
+import { overlay, type OverlayLayer } from './overlay.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -96,6 +97,8 @@ interface ToolOptions {
 	srtContent?: string;
 	captionFontSize?: number;
 	captionPosition?: 'bottom' | 'center' | 'top';
+	// Overlay options
+	overlayLayers?: OverlayLayer[];
 }
 
 /** Process result */
@@ -295,6 +298,19 @@ async function runTool(input: string, opts: ToolOptions): Promise<ProcessResult>
 					bitrate: opts.audioBitrate ?? 192,
 				});
 				logs.push({ type: 'success', message: 'Audio extracted!' });
+				break;
+			}
+
+			case 'overlay': {
+				if (!opts.overlayLayers || opts.overlayLayers.length === 0) {
+					throw new Error('No overlay layers provided');
+				}
+				logs.push({ type: 'info', message: `Applying ${opts.overlayLayers.length} overlay(s)...` });
+				output = await overlay({
+					input: actualInput,
+					layers: opts.overlayLayers,
+				});
+				logs.push({ type: 'success', message: 'Overlays applied!' });
 				break;
 			}
 

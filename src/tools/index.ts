@@ -11,3 +11,4 @@ export { togif, type ToGifOptions } from './togif.js';
 export { filter, type FilterOptions } from './filter.js';
 export { caption, type CaptionOptions, DEFAULT_SRT } from './caption.js';
 export { extractAudio, type ExtractAudioOptions } from './audio.js';
+export { overlay, type OverlayOptions, type OverlayLayer } from './overlay.js';
