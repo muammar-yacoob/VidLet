@@ -68,8 +68,13 @@ async function getVideoInfo(filePath: string) {
 
 // API Routes
 app.post('/api/upload', upload.single('video'), async (req: Request, res: Response) => {
+  console.log('📤 Upload request received');
+  console.log('  - File:', req.file?.originalname);
+  console.log('  - Size:', req.file?.size);
+
   try {
     if (!req.file) {
+      console.error('❌ No file in request');
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
@@ -77,11 +82,17 @@ app.post('/api/upload', upload.single('video'), async (req: Request, res: Respon
     const ext = req.file.originalname.split('.').pop();
     const finalPath = `/tmp/${videoId}.${ext}`;
 
+    console.log('  - Saving to:', finalPath);
+
     // Rename uploaded file
     await writeFile(finalPath, await readFile(req.file.path));
 
+    console.log('  - Getting metadata...');
+
     // Get video metadata
     const info = await getVideoInfo(finalPath);
+
+    console.log('✅ Upload complete:', videoId);
 
     res.json({
       success: true,
@@ -91,7 +102,7 @@ app.post('/api/upload', upload.single('video'), async (req: Request, res: Respon
     });
 
   } catch (err: any) {
-    console.error('Upload error:', err);
+    console.error('❌ Upload error:', err);
     res.status(500).json({
       success: false,
       error: err.message
@@ -177,7 +188,12 @@ app.post('/api/process', async (req: Request, res: Response) => {
     const { v: videoId } = req.query;
     const options = req.body;
 
+    console.log('🎬 Process request:');
+    console.log('  - Video ID:', videoId);
+    console.log('  - Options:', options);
+
     if (!videoId || typeof videoId !== 'string') {
+      console.error('❌ Missing video ID');
       return res.status(400).json({ error: 'Missing video ID' });
     }
 
@@ -226,6 +242,7 @@ app.post('/api/process', async (req: Request, res: Response) => {
       res.send(outputBuffer);
 
     } else {
+      console.warn(`⚠️  Tool not implemented: ${options.tool}`);
       res.status(400).json({
         success: false,
         error: `Tool '${options.tool}' not implemented yet`,
@@ -233,7 +250,7 @@ app.post('/api/process', async (req: Request, res: Response) => {
     }
 
   } catch (err: any) {
-    console.error('Process error:', err);
+    console.error('❌ Process error:', err);
     res.status(500).json({
       success: false,
       error: err.message,
