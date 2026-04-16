@@ -128,8 +128,8 @@ function optimizeJson(raw: string): { optimized: string; originalSize: number; n
  * Lottie files have "v" (version), "ip", "op", and "layers" keys
  */
 function isLottieFile(filePath: string): boolean {
-  const head = readFileSync(filePath, { encoding: 'utf8', flag: 'r' }).slice(0, 200);
-  return head.includes('"v"') && head.includes('"layers"');
+  const head = readFileSync(filePath, { encoding: 'utf8', flag: 'r' }).slice(0, 2000);
+  return head.includes('"v"') && (head.includes('"layers"') || head.includes('"fr"'));
 }
 
 function resolveFiles(input: string): string[] {

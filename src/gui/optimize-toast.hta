@@ -24,11 +24,11 @@
   html,body{width:100%;height:100%;overflow:hidden}
   body{background:#18181b;font-family:Segoe UI,sans-serif;color:#e4e4e7;padding:16px 20px;border:1px solid #444;opacity:1;transition:opacity .3s}
   body.fade-out{opacity:0}
-  .row{display:flex;align-items:center;gap:10px}
-  .icon{width:24px;height:24px}
-  .title{font-size:13px;font-weight:600;color:#a855f7}
-  .status{font-size:11px;color:#a1a1aa;margin-top:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .result{font-size:11px;color:#22c55e;margin-top:8px;display:none}
+  .header{margin-bottom:10px}
+  .header .icon{width:24px;height:24px;vertical-align:middle;margin-right:10px}
+  .header .title{font-size:13px;font-weight:600;color:#a855f7;vertical-align:middle}
+  .status{font-size:11px;color:#a1a1aa;margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .result{font-size:11px;color:#22c55e;margin-top:6px;display:none}
   .bar{width:100%;height:3px;background:#27272a;border-radius:2px;margin-top:10px;overflow:hidden}
   .fill{height:100%;background:linear-gradient(90deg,#a855f7,#c084fc);width:5%;transition:width .2s}
 </style>
@@ -71,8 +71,11 @@
           var pct = Math.round(((current - 1) / total) * 90) + 5;
           document.getElementById("fill").style.width = pct + "%";
           animPct = pct;
-          document.getElementById("status").innerText = total > 1
-            ? current + "/" + total + "  " + fname : fname;
+          if (total > 1) {
+            document.getElementById("status").innerText = current + "/" + total + "  " + fname;
+          } else {
+            document.getElementById("status").innerText = fname;
+          }
         }
       } catch(e) {}
     } else if (animPct < 90) {
@@ -101,9 +104,8 @@
 </script>
 </head>
 <body>
-  <div class="row">
-    <img class="icon" src="tv.png">
-    <div class="title">Optimizing Lottie</div>
+  <div class="header">
+    <img class="icon" src="tv.png"><span class="title">Optimizing Lottie</span>
   </div>
   <div class="status" id="status">Processing...</div>
   <div class="result" id="result"></div>
