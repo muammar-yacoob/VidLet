@@ -221,62 +221,75 @@ function writeProgress(current: number, total: number, fileName: string): void {
   } catch { /* ignore */ }
 }
 
-/** Write optimized animation to temp preview HTML and open Edge on first call */
-let _previewOpened = false;
-function writeAnimPreview(optimizedJson: string): void {
-  const tmp = getWslTemp();
-  if (!tmp) return;
-  try {
-    // Write the animation data to temp
-    writeFileSync(join(tmp, 'vidlet-anim-data.json'), optimizedJson, 'utf-8');
+/** Tiny preview server that serves lottie-web + animation data via HTTP */
+import { createServer, type Server } from 'node:http';
 
-    // Get lottie-web path from deployed GUI assets
-    const distDir = dirname(fileURLToPath(import.meta.url));
-    const lottieSrc = join(distDir, 'gui', 'lottie_light.min.js');
-    const lottieDst = join(tmp, 'vidlet-lottie-light.min.js');
-    if (!existsSync(lottieDst) && existsSync(lottieSrc)) {
-      writeFileSync(lottieDst, readFileSync(lottieSrc));
-    }
+let _previewServer: Server | null = null;
+let _currentAnimJson = '{}';
 
-    // Write self-contained preview HTML that auto-reloads animation data
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>VidLet Preview</title>
+function startPreviewServer(): void {
+  if (_previewServer) return;
+
+  const distDir = dirname(fileURLToPath(import.meta.url));
+  const lottieJs = readFileSync(join(distDir, 'gui', 'lottie_light.min.js'), 'utf-8');
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>VidLet Preview</title>
 <style>*{margin:0;padding:0}html,body{width:100%;height:100%;overflow:hidden;background:#18181b}
 #a{width:100%;height:100%;display:flex;align-items:center;justify-content:center}</style>
 </head><body><div id="a"></div>
-<script src="vidlet-lottie-light.min.js"></script>
+<script>${lottieJs}<\/script>
 <script>
-var anim=null,lastSize=0;
+var anim=null,lastLen=0;
 function load(){
-  var x=new XMLHttpRequest();
-  x.open("GET","vidlet-anim-data.json?t="+Date.now(),true);
-  x.onload=function(){
-    if(x.status===200&&x.responseText.length!==lastSize){
-      lastSize=x.responseText.length;
+  fetch("/anim.json?t="+Date.now()).then(function(r){return r.text()}).then(function(t){
+    if(t.length!==lastLen){
+      lastLen=t.length;
       if(anim){anim.destroy();anim=null;}
       document.getElementById("a").innerHTML="";
-      try{
-        anim=lottie.loadAnimation({container:document.getElementById("a"),renderer:"svg",loop:true,autoplay:true,animationData:JSON.parse(x.responseText)});
-      }catch(e){}
+      try{anim=lottie.loadAnimation({container:document.getElementById("a"),renderer:"svg",loop:true,autoplay:true,animationData:JSON.parse(t)})}catch(e){}
     }
-  };
-  x.send();
+  }).catch(function(){});
 }
-load();
-setInterval(load,1500);
-</script></body></html>`;
-    writeFileSync(join(tmp, 'vidlet-anim-preview.html'), html, 'utf-8');
+load();setInterval(load,1200);
+<\/script></body></html>`;
 
-    // Open Edge once on first animation
-    if (!_previewOpened) {
-      _previewOpened = true;
-      const winTmp = execSync('cmd.exe /c echo %TEMP%', { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
-      const previewUrl = winTmp + '\\vidlet-anim-preview.html';
-      const edgePath = '/mnt/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
-      if (existsSync(edgePath)) {
-        exec(`"${edgePath}" --app="file:///${previewUrl.replace(/\\/g, '/')}" --window-size=300,300 --user-data-dir="/tmp/vidlet-edge-${Date.now()}" --no-first-run --disable-extensions`, () => {});
-      }
+  const server = createServer((req, res) => {
+    const url = req.url?.split('?')[0] || '/';
+    if (url === '/anim.json') {
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      res.end(_currentAnimJson);
+    } else {
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end(html);
     }
-  } catch { /* ignore */ }
+  });
+
+  server.listen(0, '127.0.0.1', () => {
+    const addr = server.address();
+    if (!addr || typeof addr === 'string') return;
+    const port = addr.port;
+    const edgePath = '/mnt/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
+    if (existsSync(edgePath)) {
+      exec(`"${edgePath}" --app="http://127.0.0.1:${port}" --window-size=300,300 --new-window`, () => {});
+    }
+  });
+
+  _previewServer = server;
+}
+
+function updateAnimPreview(optimizedJson: string): void {
+  _currentAnimJson = optimizedJson;
+  if (!_previewServer) startPreviewServer();
+}
+
+function closePreviewServer(): Promise<void> {
+  if (!_previewServer) return Promise.resolve();
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      try { _previewServer?.close(); } catch {}
+      resolve();
+    }, 10000);
+  });
 }
 
 /**
@@ -337,7 +350,7 @@ export async function optimize(options: OptimizeOptions): Promise<string> {
 
     // Update animation preview with optimized data
     if (extname(file).toLowerCase() === '.json') {
-      writeAnimPreview(optimized);
+      updateAnimPreview(optimized);
     }
 
     const saved = originalSize - finalSize;
@@ -379,6 +392,8 @@ export async function optimize(options: OptimizeOptions): Promise<string> {
       writeFileSync(join(tmp, 'vidlet-optimize-done.tmp'), lines.join('\n'), 'utf-8');
     }
   } catch { /* ignore */ }
+
+  await closePreviewServer();
 
   const allProcessed = [...gifFiles, ...lottieFiles];
   return allProcessed.length === 1 ? allProcessed[0] : (Array.isArray(options.input) ? options.input[0] : options.input);
