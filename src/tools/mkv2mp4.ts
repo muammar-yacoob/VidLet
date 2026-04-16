@@ -29,7 +29,9 @@ export async function mkv2mp4(options: Mkv2Mp4Options): Promise<string> {
   console.log(`Input:  ${fmt.white(input)}`);
   console.log(`Output: ${fmt.white(output)}`);
   console.log(`Size:   ${fmt.white(`${info.width}x${info.height}`)}`);
-  console.log(`Mode:   ${fmt.yellow(copyStreams ? 'Stream Copy (fast)' : `Re-encode (CRF ${crf})`)}`);
+  console.log(
+    `Mode:   ${fmt.yellow(copyStreams ? 'Stream Copy (fast)' : `Re-encode (CRF ${crf})`)}`
+  );
   separator();
   console.log(fmt.dim('Converting...'));
 

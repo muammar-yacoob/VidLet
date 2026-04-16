@@ -101,7 +101,9 @@ async function findLoopPoints(
     logToFile(`Loop: Extracted ${framePaths.length} frames`);
 
     if (framePaths.length < fps * MIN_LOOP_LENGTH) {
-      logToFile(`Loop: Not enough frames (need ${fps * MIN_LOOP_LENGTH}, got ${framePaths.length})`);
+      logToFile(
+        `Loop: Not enough frames (need ${fps * MIN_LOOP_LENGTH}, got ${framePaths.length})`
+      );
       return null;
     }
 
@@ -125,7 +127,9 @@ async function findLoopPoints(
       }
     }
 
-    logToFile(`Loop: Best similarity score: ${bestScore.toFixed(4)}, threshold: ${SIMILARITY_THRESHOLD}`);
+    logToFile(
+      `Loop: Best similarity score: ${bestScore.toFixed(4)}, threshold: ${SIMILARITY_THRESHOLD}`
+    );
 
     if (bestScore === 0) {
       logToFile('Loop: No similar frames found above threshold');
@@ -136,7 +140,9 @@ async function findLoopPoints(
       start: bestStart / fps,
       end: bestEnd / fps,
     };
-    logToFile(`Loop: Found loop points: ${result_points.start.toFixed(2)}s -> ${result_points.end.toFixed(2)}s`);
+    logToFile(
+      `Loop: Found loop points: ${result_points.start.toFixed(2)}s -> ${result_points.end.toFixed(2)}s`
+    );
     return result_points;
   } catch (err) {
     logToFile(`Loop: Error in findLoopPoints: ${(err as Error).message}`);
@@ -174,7 +180,9 @@ export async function findAllLoopPoints(
   const frameSize = 48; // Smaller frames for speed (was 64)
 
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'vidlet_loop_all_'));
-  logToFile(`Loop: Finding loop points in ${inputPath}, duration: ${searchDuration}s, minGap: ${minGap}s`);
+  logToFile(
+    `Loop: Finding loop points in ${inputPath}, duration: ${searchDuration}s, minGap: ${minGap}s`
+  );
 
   try {
     const ffmpegArgs = [
@@ -279,7 +287,7 @@ export async function findMatchesFromEnd(
   duration: number,
   referenceTime = 0,
   minGap = 3,
-  threshold = 0.90
+  threshold = 0.9
 ): Promise<EndMatch[]> {
   const fps = 4;
   const frameSize = 48;
@@ -293,19 +301,27 @@ export async function findMatchesFromEnd(
   }
 
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'vidlet_match_'));
-  logToFile(`Match: Finding matches forward from ${referenceTime}s, searching ${searchStart}s to ${duration}s`);
+  logToFile(
+    `Match: Finding matches forward from ${referenceTime}s, searching ${searchStart}s to ${duration}s`
+  );
 
   try {
     // Extract reference frame at the start position
     const refFramePath = path.join(tempDir, 'ref.png');
     const refArgs = [
       '-y',
-      '-ss', referenceTime.toString(),
-      '-i', inputPath,
-      '-vframes', '1',
-      '-vf', `scale=${frameSize}:${frameSize}`,
+      '-ss',
+      referenceTime.toString(),
+      '-i',
+      inputPath,
+      '-vframes',
+      '1',
+      '-vf',
+      `scale=${frameSize}:${frameSize}`,
       refFramePath,
-      '-hide_banner', '-loglevel', 'error',
+      '-hide_banner',
+      '-loglevel',
+      'error',
     ];
 
     let result = await execa('ffmpeg', refArgs, { reject: false, all: true });
@@ -318,13 +334,20 @@ export async function findMatchesFromEnd(
     // Extract frames forward from searchStart to end of video
     const searchArgs = [
       '-y',
-      '-ss', searchStart.toString(),
-      '-i', inputPath,
-      '-t', searchDuration.toString(),
-      '-vf', `fps=${fps},scale=${frameSize}:${frameSize}`,
-      '-f', 'image2',
+      '-ss',
+      searchStart.toString(),
+      '-i',
+      inputPath,
+      '-t',
+      searchDuration.toString(),
+      '-vf',
+      `fps=${fps},scale=${frameSize}:${frameSize}`,
+      '-f',
+      'image2',
       path.join(tempDir, 'frame_%04d.png'),
-      '-hide_banner', '-loglevel', 'error',
+      '-hide_banner',
+      '-loglevel',
+      'error',
     ];
 
     result = await execa('ffmpeg', searchArgs, { reject: false, all: true });
@@ -363,7 +386,7 @@ export async function findMatchesFromEnd(
     // Keep top 5 unique time points (avoid clustering)
     const uniqueMatches: EndMatch[] = [];
     for (const match of matches) {
-      const tooClose = uniqueMatches.some(m => Math.abs(m.time - match.time) < 0.5);
+      const tooClose = uniqueMatches.some((m) => Math.abs(m.time - match.time) < 0.5);
       if (!tooClose) {
         uniqueMatches.push(match);
         if (uniqueMatches.length >= 5) break;
@@ -393,7 +416,7 @@ export async function findBestLoopStart(
   duration: number,
   searchRange = 5, // Search first N seconds
   minGap = 3,
-  threshold = 0.90
+  threshold = 0.9
 ): Promise<{ startTime: number; endTime: number; score: number } | null> {
   const fps = 4;
   const frameSize = 48;
@@ -413,12 +436,18 @@ export async function findBestLoopStart(
 
     const startArgs = [
       '-y',
-      '-i', inputPath,
-      '-t', searchStart.toString(),
-      '-vf', `fps=${fps},scale=${frameSize}:${frameSize}`,
-      '-f', 'image2',
+      '-i',
+      inputPath,
+      '-t',
+      searchStart.toString(),
+      '-vf',
+      `fps=${fps},scale=${frameSize}:${frameSize}`,
+      '-f',
+      'image2',
       path.join(startFramesDir, 'frame_%04d.png'),
-      '-hide_banner', '-loglevel', 'error',
+      '-hide_banner',
+      '-loglevel',
+      'error',
     ];
 
     await execa('ffmpeg', startArgs, { reject: false });
@@ -445,13 +474,20 @@ export async function findBestLoopStart(
 
     const endArgs = [
       '-y',
-      '-ss', endStartTime.toString(),
-      '-i', inputPath,
-      '-t', endSearchDuration.toString(),
-      '-vf', `fps=${fps},scale=${frameSize}:${frameSize}`,
-      '-f', 'image2',
+      '-ss',
+      endStartTime.toString(),
+      '-i',
+      inputPath,
+      '-t',
+      endSearchDuration.toString(),
+      '-vf',
+      `fps=${fps},scale=${frameSize}:${frameSize}`,
+      '-f',
+      'image2',
       path.join(endFramesDir, 'frame_%04d.png'),
-      '-hide_banner', '-loglevel', 'error',
+      '-hide_banner',
+      '-loglevel',
+      'error',
     ];
 
     await execa('ffmpeg', endArgs, { reject: false });
@@ -491,7 +527,9 @@ export async function findBestLoopStart(
     }
 
     if (bestMatch) {
-      logToFile(`BestStart: Found best match at ${bestMatch.startTime.toFixed(2)}s -> ${bestMatch.endTime.toFixed(2)}s (${(bestMatch.score * 100).toFixed(0)}%)`);
+      logToFile(
+        `BestStart: Found best match at ${bestMatch.startTime.toFixed(2)}s -> ${bestMatch.endTime.toFixed(2)}s (${(bestMatch.score * 100).toFixed(0)}%)`
+      );
     } else {
       logToFile(`BestStart: No matches found above threshold ${threshold}`);
     }

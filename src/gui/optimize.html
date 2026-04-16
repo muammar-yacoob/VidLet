@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html data-vidlet data-width="400" data-height="380">
+<head>
+  <meta charset="UTF-8">
+  <title>VidLet - Optimize</title>
+  <link rel="stylesheet" href="/css/theme.css">
+  <link rel="icon" href="/favicon.ico">
+</head>
+<body>
+  <div class="app">
+    <div class="hd">
+      <b>VidLet</b>
+      <span id="heading">Optimize</span>
+    </div>
+
+    <div class="meta" id="meta">
+      <div>File: <b id="fileName">-</b></div>
+      <div>Size: <b id="size">-</b></div>
+      <div>Type: <b id="fileType">-</b></div>
+    </div>
+
+    <!-- Lottie options -->
+    <div class="form" id="lottieForm">
+      <div class="row" data-tip="Optimizations to apply">
+        <label>Actions</label>
+        <div style="display:flex;flex-direction:column;gap:6px;flex:1">
+          <label style="font-size:12px"><input type="checkbox" id="roundFloats" checked> Truncate floats (3 decimals)</label>
+          <label style="font-size:12px"><input type="checkbox" id="stripMeta" checked> Strip editor metadata</label>
+          <label style="font-size:12px"><input type="checkbox" id="removeStrokes" checked> Remove zero-width strokes</label>
+          <label style="font-size:12px"><input type="checkbox" id="compact" checked disabled> Compact JSON</label>
+          <label style="font-size:12px"><input type="checkbox" id="dotlottie"> Output as .lottie (compressed)</label>
+        </div>
+      </div>
+    </div>
+
+    <!-- GIF options -->
+    <div class="form" id="gifForm" style="display:none">
+      <div class="row" data-tip="Lossy compression level (0-200)">
+        <label>Lossy</label>
+        <input type="range" id="lossy" min="0" max="200" value="80" style="flex:1">
+        <span id="lossyVal" style="min-width:30px;text-align:right">80</span>
+      </div>
+      <div class="row" data-tip="Optimization level (1=fast, 3=best)">
+        <label>Level</label>
+        <select id="level">
+          <option value="1">1 - Fast</option>
+          <option value="2">2 - Normal</option>
+          <option value="3" selected>3 - Best</option>
+        </select>
+      </div>
+      <div class="row" data-tip="Max colors (leave 256 for no reduction)">
+        <label>Colors</label>
+        <input type="range" id="colors" min="2" max="256" value="256" style="flex:1">
+        <span id="colorsVal" style="min-width:30px;text-align:right">256</span>
+      </div>
+    </div>
+
+    <div class="ld" id="loading">
+      <div class="sp"></div>
+      <span>Optimizing...</span>
+    </div>
+
+    <div class="log" id="log"></div>
+
+    <div class="dn" id="done">
+      <h4>Done!</h4>
+      <p id="output"></p>
+      <div class="btns" style="margin-top:12px;width:100%">
+        <button class="btn btn-p" onclick="VidLet.close()">Close</button>
+      </div>
+    </div>
+
+    <div class="btns" id="btns">
+      <button class="btn btn-g" onclick="VidLet.cancel()">Cancel</button>
+      <button class="btn btn-p" onclick="process()">Optimize</button>
+    </div>
+  </div>
+
+  <script src="/js/vidlet.js"></script>
+  <script>
+    const { $, log, postJson, setLoading, showDone } = VidLet;
+    let info = {};
+    let isGif = false;
+
+    function formatBytes(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+      return (bytes / 1048576).toFixed(1) + ' MB';
+    }
+
+    async function init() {
+      const res = await VidLet.fetchJson('/api/info');
+      info = res;
+      isGif = res.defaults?.isGif === true;
+
+      $('fileName').textContent = res.fileName;
+      $('size').textContent = formatBytes(res.fileSize);
+
+      if (isGif) {
+        $('heading').textContent = 'Optimize GIF';
+        $('fileType').textContent = 'GIF';
+        $('lottieForm').style.display = 'none';
+        $('gifForm').style.display = '';
+
+        $('lossy').oninput = () => $('lossyVal').textContent = $('lossy').value;
+        $('colors').oninput = () => $('colorsVal').textContent = $('colors').value;
+      } else {
+        $('heading').textContent = 'Optimize Lottie JSON';
+        $('fileType').textContent = 'Lottie JSON';
+        $('lottieForm').style.display = '';
+        $('gifForm').style.display = 'none';
+      }
+    }
+
+    async function process() {
+      setLoading(true, isGif ? 'Optimizing GIF...' : 'Optimizing JSON...');
+
+      try {
+        const body = isGif
+          ? {
+              lossy: parseInt($('lossy').value),
+              level: parseInt($('level').value),
+              colors: parseInt($('colors').value) < 256 ? parseInt($('colors').value) : undefined,
+            }
+          : { dotlottie: $('dotlottie').checked };
+
+        const res = await postJson('/api/process', body);
+
+        if (res.logs) {
+          res.logs.forEach(l => log('log', l.type === 'error' ? 'e' : l.type === 'success' ? 's' : 'i', l.message));
+        }
+
+        if (res.success) {
+          showDone(true, 'Optimization Complete!', res.output);
+        } else {
+          showDone(false, 'Optimization Failed', res.error);
+        }
+      } catch (err) {
+        showDone(false, 'Error', err.message);
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>

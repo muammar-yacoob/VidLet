@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync } from 'node:fs';
-import { dirname, basename, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { execa } from 'execa';
 
 /**

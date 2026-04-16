@@ -1,5 +1,11 @@
 import { type CompressConfig, getToolConfig } from '../lib/config.js';
-import { buildH264Args, buildHEVCArgs, checkFFmpeg, executeFFmpeg, getVideoInfo } from '../lib/ffmpeg.js';
+import {
+  buildH264Args,
+  buildHEVCArgs,
+  checkFFmpeg,
+  executeFFmpeg,
+  getVideoInfo,
+} from '../lib/ffmpeg.js';
 import { fmt, header, separator, success } from '../lib/logger.js';
 import { getOutputPath } from '../lib/paths.js';
 
@@ -36,7 +42,8 @@ export async function compress(options: CompressOptions): Promise<string> {
   separator();
   console.log(fmt.dim('Compressing...'));
 
-  const args = codec === 'hevc' ? buildHEVCArgs({ bitrate, preset }) : buildH264Args({ bitrate, preset });
+  const args =
+    codec === 'hevc' ? buildHEVCArgs({ bitrate, preset }) : buildH264Args({ bitrate, preset });
 
   await executeFFmpeg({ input, output, args });
 

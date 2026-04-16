@@ -2,7 +2,8 @@
  * VidLet Frame Cache Module
  * Caches video frames for smooth scrubbing preview
  */
-(function(V) {
+window.VidLet = window.VidLet || {};
+((V) => {
   let frames = [];
   let canvas = null;
   let ctx = null;
@@ -39,13 +40,13 @@
     for (let i = 0; i <= frameCount; i++) {
       const time = Math.min(i * INTERVAL, duration);
 
-      await new Promise(resolve => {
+      await new Promise((resolve) => {
         const onSeeked = () => {
           video.removeEventListener('seeked', onSeeked);
           ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
           frames.push({
             time,
-            dataUrl: canvas.toDataURL('image/jpeg', 0.7)
+            dataUrl: canvas.toDataURL('image/jpeg', 0.7),
           });
           resolve();
         };
@@ -129,5 +130,4 @@
 
   // Export to VidLet namespace
   V.frameCache = { build, get, showFrame, hideFrame, isReady, clear };
-
-})(window.VidLet || (window.VidLet = {}));
+})(window.VidLet);

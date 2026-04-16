@@ -1,5 +1,10 @@
 // Re-export tool configurations from CLI module
-export { toolConfigs, getToolConfigById, getToolsForExtension, type ToolConfig } from '../cli/tools.js';
+export {
+  toolConfigs,
+  getToolConfigById,
+  getToolsForExtension,
+  type ToolConfig,
+} from '../cli/tools.js';
 
 // Re-export all tools
 export { compress, type CompressOptions } from './compress.js';
@@ -11,3 +16,4 @@ export { togif, type ToGifOptions } from './togif.js';
 export { filter, type FilterOptions } from './filter.js';
 export { caption, type CaptionOptions, DEFAULT_SRT } from './caption.js';
 export { extractAudio, type ExtractAudioOptions } from './audio.js';
+export { optimize, type OptimizeOptions } from './optimize.js';

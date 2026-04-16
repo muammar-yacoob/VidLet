@@ -1,0 +1,96 @@
+<html>
+<head>
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<title>VidLet Optimize</title>
+<hta:application
+  id="VidLetOptimize"
+  applicationName="VidLetOptimize"
+  icon="tv.ico"
+  border="none"
+  borderStyle="normal"
+  caption="no"
+  innerBorder="no"
+  maximizeButton="no"
+  minimizeButton="no"
+  showInTaskbar="no"
+  singleInstance="no"
+  scroll="no"
+  contextMenu="no"
+  selection="no"
+  sysmenu="no"
+/>
+<style>
+  *{margin:0;padding:0;cursor:default}
+  html{height:100%}
+  body{height:100%;overflow:hidden;background:#18181b;font-family:Segoe UI,sans-serif;color:#e4e4e7;padding:16px 20px;border:1px solid #333;border-radius:10px;box-sizing:border-box;opacity:1;transition:opacity .3s}
+  body.fade-out{opacity:0}
+  .row{display:flex;align-items:center;gap:12px}
+  .icon{width:28px;height:28px}
+  .title{font-size:13px;font-weight:600;color:#a855f7}
+  .status{font-size:11px;color:#a1a1aa;margin-top:6px}
+  .result{font-size:11px;color:#22c55e;margin-top:6px;display:none}
+  .bar{width:100%;height:3px;background:#27272a;border-radius:2px;margin-top:10px;overflow:hidden}
+  .fill{height:100%;background:linear-gradient(90deg,#a855f7,#c084fc);width:10%;transition:width .15s}
+</style>
+<script language="javascript">
+  var w = 300, h = 110;
+  window.resizeTo(w, h);
+  // Bottom-right corner above taskbar
+  window.moveTo(screen.availWidth - w - 16, screen.availHeight - h - 16);
+
+  var fso = new ActiveXObject("Scripting.FileSystemObject");
+  var shell = new ActiveXObject("WScript.Shell");
+  var tempDir = shell.ExpandEnvironmentStrings("%TEMP%");
+  var doneFile = tempDir + "\\vidlet-optimize-done.tmp";
+  var animPct = 10;
+  var isClosing = false;
+
+  // Clean stale signal
+  try { fso.DeleteFile(doneFile); } catch(e) {}
+
+  function fadeAndClose() {
+    if (isClosing) return;
+    isClosing = true;
+    document.body.className = 'fade-out';
+    setTimeout(function() { self.close(); }, 300);
+  }
+
+  // Failsafe
+  setTimeout(function() { if (!isClosing) self.close(); }, 60000);
+
+  // Poll for completion
+  var poll = setInterval(function() {
+    // Animate progress
+    if (animPct < 90) {
+      animPct += 2;
+      document.getElementById('fill').style.width = animPct + '%';
+    }
+    // Check done signal
+    if (fso.FileExists(doneFile)) {
+      clearInterval(poll);
+      try {
+        var f = fso.OpenTextFile(doneFile, 1);
+        var msg = f.ReadAll();
+        f.Close();
+        fso.DeleteFile(doneFile);
+      } catch(e) { var msg = "Done"; }
+      document.getElementById('fill').style.width = '100%';
+      document.getElementById('status').style.display = 'none';
+      var res = document.getElementById('result');
+      res.innerText = msg;
+      res.style.display = 'block';
+      setTimeout(fadeAndClose, 2500);
+    }
+  }, 100);
+</script>
+</head>
+<body>
+  <div class="row">
+    <img class="icon" src="tv.png">
+    <div class="title">Optimizing Lottie</div>
+  </div>
+  <div class="status" id="status">Processing...</div>
+  <div class="result" id="result"></div>
+  <div class="bar"><div class="fill" id="fill"></div></div>
+</body>
+</html>

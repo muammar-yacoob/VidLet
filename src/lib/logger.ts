@@ -27,82 +27,82 @@ const LOG_FILE = join(LOG_DIR, 'vidlet.log');
 
 // Ensure log directory exists
 try {
-	mkdirSync(LOG_DIR, { recursive: true });
+  mkdirSync(LOG_DIR, { recursive: true });
 } catch {
-	// Ignore if already exists
+  // Ignore if already exists
 }
 
 /** Strip ANSI codes from string */
 function stripAnsi(str: string): string {
-	return str.replace(/\x1b\[[0-9;]*m/g, '');
+  return str.replace(/\x1b\[[0-9;]*m/g, '');
 }
 
 /** Write to log file with timestamp */
 function writeToLog(message: string): void {
-	try {
-		const timestamp = new Date().toISOString();
-		const cleanMessage = stripAnsi(message);
-		appendFileSync(LOG_FILE, `[${timestamp}] ${cleanMessage}\n`);
-	} catch {
-		// Silently ignore log write errors
-	}
+  try {
+    const timestamp = new Date().toISOString();
+    const cleanMessage = stripAnsi(message);
+    appendFileSync(LOG_FILE, `[${timestamp}] ${cleanMessage}\n`);
+  } catch {
+    // Silently ignore log write errors
+  }
 }
 
 /** Get log file path */
 export function getLogPath(): string {
-	return LOG_FILE;
+  return LOG_FILE;
 }
 
 /** Print success message with checkmark */
 export function success(message: string): void {
-	const msg = `${GREEN}${CHECK}${RESET} ${message}`;
-	console.log(msg);
-	writeToLog(`[SUCCESS] ${message}`);
+  const msg = `${GREEN}${CHECK}${RESET} ${message}`;
+  console.log(msg);
+  writeToLog(`[SUCCESS] ${message}`);
 }
 
 /** Print error message with X */
 export function error(message: string): void {
-	const msg = `${RED}${CROSS}${RESET} ${message}`;
-	console.log(msg);
-	writeToLog(`[ERROR] ${message}`);
+  const msg = `${RED}${CROSS}${RESET} ${message}`;
+  console.log(msg);
+  writeToLog(`[ERROR] ${message}`);
 }
 
 /** Print warning message */
 export function warn(message: string): void {
-	const msg = `${YELLOW}${message}${RESET}`;
-	console.log(msg);
-	writeToLog(`[WARN] ${message}`);
+  const msg = `${YELLOW}${message}${RESET}`;
+  console.log(msg);
+  writeToLog(`[WARN] ${message}`);
 }
 
 /** Print info message */
 export function info(message: string): void {
-	const msg = `${CYAN}${message}${RESET}`;
-	console.log(msg);
-	writeToLog(`[INFO] ${message}`);
+  const msg = `${CYAN}${message}${RESET}`;
+  console.log(msg);
+  writeToLog(`[INFO] ${message}`);
 }
 
 /** Print header with separator */
 export function header(title: string): void {
-	console.log(`${CYAN}${title}${RESET}`);
-	console.log(`${DIM}${'─'.repeat(40)}${RESET}`);
-	writeToLog(`\n=== ${title} ===`);
+  console.log(`${CYAN}${title}${RESET}`);
+  console.log(`${DIM}${'─'.repeat(40)}${RESET}`);
+  writeToLog(`\n=== ${title} ===`);
 }
 
 /** Print separator line */
 export function separator(): void {
-	console.log(`${DIM}${'─'.repeat(40)}${RESET}`);
+  console.log(`${DIM}${'─'.repeat(40)}${RESET}`);
 }
 
 /** Print dim text */
 export function dim(message: string): void {
-	const msg = `${DIM}${message}${RESET}`;
-	console.log(msg);
-	writeToLog(message);
+  const msg = `${DIM}${message}${RESET}`;
+  console.log(msg);
+  writeToLog(message);
 }
 
 /** Log raw message to file only (for debugging) */
 export function logToFile(message: string): void {
-	writeToLog(message);
+  writeToLog(message);
 }
 
 // Inline formatters for building strings
