@@ -8,13 +8,14 @@
  * 6. Compact JSON (no whitespace)
  */
 
-import { execFileSync, execSync } from 'node:child_process';
-import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { basename, extname, join } from 'node:path';
+import { exec, execFileSync, execSync } from 'node:child_process';
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { basename, dirname, extname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { getOutputPath } from '../lib/paths.js';
 
 export interface OptimizeOptions {
-  input: string;
+  input: string | string[];
   output?: string;
   dotlottie?: boolean;
   /** GIF lossy compression level (0-200, default 80). Higher = smaller but lower quality */
@@ -220,11 +221,70 @@ function writeProgress(current: number, total: number, fileName: string): void {
   } catch { /* ignore */ }
 }
 
+/** Write optimized animation to temp preview HTML and open Edge on first call */
+let _previewOpened = false;
+function writeAnimPreview(optimizedJson: string): void {
+  const tmp = getWslTemp();
+  if (!tmp) return;
+  try {
+    // Write the animation data to temp
+    writeFileSync(join(tmp, 'vidlet-anim-data.json'), optimizedJson, 'utf-8');
+
+    // Get lottie-web path from deployed GUI assets
+    const distDir = dirname(fileURLToPath(import.meta.url));
+    const lottieSrc = join(distDir, 'gui', 'lottie_light.min.js');
+    const lottieDst = join(tmp, 'vidlet-lottie-light.min.js');
+    if (!existsSync(lottieDst) && existsSync(lottieSrc)) {
+      writeFileSync(lottieDst, readFileSync(lottieSrc));
+    }
+
+    // Write self-contained preview HTML that auto-reloads animation data
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>VidLet Preview</title>
+<style>*{margin:0;padding:0}html,body{width:100%;height:100%;overflow:hidden;background:#18181b}
+#a{width:100%;height:100%;display:flex;align-items:center;justify-content:center}</style>
+</head><body><div id="a"></div>
+<script src="vidlet-lottie-light.min.js"></script>
+<script>
+var anim=null,lastSize=0;
+function load(){
+  var x=new XMLHttpRequest();
+  x.open("GET","vidlet-anim-data.json?t="+Date.now(),true);
+  x.onload=function(){
+    if(x.status===200&&x.responseText.length!==lastSize){
+      lastSize=x.responseText.length;
+      if(anim){anim.destroy();anim=null;}
+      document.getElementById("a").innerHTML="";
+      try{
+        anim=lottie.loadAnimation({container:document.getElementById("a"),renderer:"svg",loop:true,autoplay:true,animationData:JSON.parse(x.responseText)});
+      }catch(e){}
+    }
+  };
+  x.send();
+}
+load();
+setInterval(load,1500);
+</script></body></html>`;
+    writeFileSync(join(tmp, 'vidlet-anim-preview.html'), html, 'utf-8');
+
+    // Open Edge once on first animation
+    if (!_previewOpened) {
+      _previewOpened = true;
+      const winTmp = execSync('cmd.exe /c echo %TEMP%', { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+      const previewUrl = winTmp + '\\vidlet-anim-preview.html';
+      const edgePath = '/mnt/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
+      if (existsSync(edgePath)) {
+        exec(`"${edgePath}" --app="file:///${previewUrl.replace(/\\/g, '/')}" --window-size=300,300 --user-data-dir="/tmp/vidlet-edge-${Date.now()}" --no-first-run --disable-extensions`, () => {});
+      }
+    }
+  } catch { /* ignore */ }
+}
+
 /**
  * Optimize Lottie JSON or GIF files
  */
 export async function optimize(options: OptimizeOptions): Promise<string> {
-  const allFiles = resolveFiles(options.input);
+  const inputs = Array.isArray(options.input) ? options.input : [options.input];
+  const allFiles = inputs.flatMap((i) => resolveFiles(i));
   const gifFiles = allFiles.filter((f) => extname(f).toLowerCase() === '.gif');
   let lottieFiles = allFiles.filter((f) => extname(f).toLowerCase() === '.json' && isLottieFile(f));
 
@@ -275,6 +335,11 @@ export async function optimize(options: OptimizeOptions): Promise<string> {
       finalSize = newSize;
     }
 
+    // Update animation preview with optimized data
+    if (extname(file).toLowerCase() === '.json') {
+      writeAnimPreview(optimized);
+    }
+
     const saved = originalSize - finalSize;
     const pct = originalSize > 0 ? (saved / originalSize) * 100 : 0;
     results.push({
@@ -300,17 +365,21 @@ export async function optimize(options: OptimizeOptions): Promise<string> {
     console.log(`\nTotal: ${results.length} files, ${formatBytes(totalOriginal)} → ${formatBytes(totalOptimized)} (${totalPct.toFixed(1)}% saved)`);
   }
 
-  // Signal toast HTA
+  // Signal toast HTA with detailed summary
   try {
     const tmp = getWslTemp();
     if (tmp) {
-      const msg = results.length === 1
-        ? `${results[0].file}: ${results[0].savedPercent}% saved (${formatBytes(results[0].savedBytes)})`
-        : `${results.length} files: ${formatBytes(totalSaved)} saved (${totalPct.toFixed(1)}%)`;
-      writeFileSync(join(tmp, 'vidlet-optimize-done.tmp'), msg, 'utf-8');
+      const lines: string[] = [];
+      for (const r of results) {
+        lines.push(`${r.file}: ${formatBytes(r.originalSize)} > ${formatBytes(r.optimizedSize)} (${r.savedPercent}%)`);
+      }
+      if (results.length > 1) {
+        lines.push(`Total: ${formatBytes(totalSaved)} saved (${totalPct.toFixed(1)}%)`);
+      }
+      writeFileSync(join(tmp, 'vidlet-optimize-done.tmp'), lines.join('\n'), 'utf-8');
     }
   } catch { /* ignore */ }
 
   const allProcessed = [...gifFiles, ...lottieFiles];
-  return allProcessed.length === 1 ? allProcessed[0] : options.input;
+  return allProcessed.length === 1 ? allProcessed[0] : (Array.isArray(options.input) ? options.input[0] : options.input);
 }

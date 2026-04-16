@@ -1,6 +1,31 @@
 ' VidLet Launcher - Runs vidlet CLI from Windows with hidden console
 ' Usage: wscript launcher.vbs <command> <file> [options]
 
+Function ConvertToWslPath(winPath)
+    ' Handle \\wsl.localhost\Distro\path or \\wsl$\Distro\path
+    If Left(winPath, 2) = "\\" Then
+        Dim unc
+        unc = Replace(winPath, "\", "/")
+        ' unc = "//wsl.localhost/Distro/home/user/..."
+        ' Skip //host/distro to get the real WSL path
+        Dim slashPos, count
+        count = 0
+        For slashPos = 3 To Len(unc)
+            If Mid(unc, slashPos, 1) = "/" Then count = count + 1
+            If count = 2 Then Exit For
+        Next
+        ConvertToWslPath = Mid(unc, slashPos)
+        Exit Function
+    End If
+    ' Handle C:\path
+    If Len(winPath) >= 2 And Mid(winPath, 2, 1) = ":" Then
+        ConvertToWslPath = "/mnt/" & LCase(Left(winPath, 1)) & Replace(Mid(winPath, 3), "\", "/")
+        Exit Function
+    End If
+    ' Already a forward-slash path
+    ConvertToWslPath = Replace(winPath, "\", "/")
+End Function
+
 Set WshShell = CreateObject("WScript.Shell")
 Set fso = CreateObject("Scripting.FileSystemObject")
 Set args = WScript.Arguments
@@ -112,18 +137,20 @@ If skipLoading Then
     For Each fp In fileLines
         fp = Trim(fp)
         If fp <> "" Then
-            If Mid(fp, 2, 1) = ":" Then
-                wslP = "/mnt/" & LCase(Left(fp, 1)) & Replace(Mid(fp, 3), "\", "/")
-            Else
-                wslP = Replace(fp, "\", "/")
-            End If
+            wslP = ConvertToWslPath(fp)
             wslPaths = wslPaths & " """ & wslP & """"
         End If
     Next
 
-    Dim cmd
+    Dim cmd, logFile
+    logFile = tempDir & "\vidlet-launcher.log"
     cmd = "wsl vidlet " & command & wslPaths & flags
-    WshShell.Run cmd, 0, False
+    ' Log command and capture output for debugging
+    Dim logTs
+    Set logTs = fso.OpenTextFile(logFile, 8, True)
+    logTs.WriteLine Now() & " CMD: " & cmd
+    logTs.Close
+    WshShell.Run "cmd /c " & cmd & " >> """ & logFile & """ 2>&1", 0, False
     WScript.Quit 0
 End If
 
@@ -144,11 +171,7 @@ End If
 
 ' Convert Windows path to WSL path
 Dim wslPath
-If Mid(filePath, 2, 1) = ":" Then
-    wslPath = "/mnt/" & LCase(Left(filePath, 1)) & Replace(Mid(filePath, 3), "\", "/")
-Else
-    wslPath = Replace(filePath, "\", "/")
-End If
+wslPath = ConvertToWslPath(filePath)
 
 ' Run wsl command (hidden, don't wait)
 Dim guiCmd

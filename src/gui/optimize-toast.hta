@@ -24,16 +24,17 @@
   html,body{width:100%;height:100%;overflow:hidden}
   body{background:#18181b;font-family:Segoe UI,sans-serif;color:#e4e4e7;padding:16px 20px;border:1px solid #444;opacity:1;transition:opacity .3s}
   body.fade-out{opacity:0}
-  .header{margin-bottom:10px}
+  .header{margin-bottom:8px}
   .header .icon{width:24px;height:24px;vertical-align:middle;margin-right:10px}
   .header .title{font-size:13px;font-weight:600;color:#a855f7;vertical-align:middle}
-  .status{font-size:11px;color:#a1a1aa;margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .result{font-size:11px;color:#22c55e;margin-top:6px;display:none}
-  .bar{width:100%;height:3px;background:#27272a;border-radius:2px;margin-top:10px;overflow:hidden}
+  .status{font-size:11px;color:#a1a1aa;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .result{font-size:10px;color:#22c55e;margin-top:6px;display:none;line-height:1.5;max-height:200px;overflow-y:auto}
+  .result .total{color:#a855f7;font-weight:600;margin-top:4px}
+  .bar{width:100%;height:3px;background:#27272a;border-radius:2px;margin-top:8px;overflow:hidden}
   .fill{height:100%;background:linear-gradient(90deg,#a855f7,#c084fc);width:5%;transition:width .2s}
 </style>
 <script language="javascript">
-  var w = 320, h = 150;
+  var w = 340, h = 140;
   window.resizeTo(w, h);
   var left = Math.round((screen.availWidth - w) / 2);
   var top = Math.round((screen.availHeight - h) / 2);
@@ -71,11 +72,8 @@
           var pct = Math.round(((current - 1) / total) * 90) + 5;
           document.getElementById("fill").style.width = pct + "%";
           animPct = pct;
-          if (total > 1) {
-            document.getElementById("status").innerText = current + "/" + total + "  " + fname;
-          } else {
-            document.getElementById("status").innerText = fname;
-          }
+          document.getElementById("status").innerText = total > 1
+            ? current + "/" + total + "  " + fname : fname;
         }
       } catch(e) {}
     } else if (animPct < 90) {
@@ -95,10 +93,32 @@
       try { fso.DeleteFile(progressFile); } catch(e) {}
       document.getElementById("fill").style.width = "100%";
       document.getElementById("status").style.display = "none";
+
+      // Build result HTML from multi-line message
+      var lines = msg.split("\n");
+      var html = "";
+      for (var i = 0; i < lines.length; i++) {
+        if (lines[i].indexOf("Total:") === 0) {
+          html += "<div class='total'>" + lines[i] + "</div>";
+        } else {
+          html += lines[i] + "<br>";
+        }
+      }
+
       var res = document.getElementById("result");
-      res.innerText = msg;
+      res.innerHTML = html;
       res.style.display = "block";
-      setTimeout(fadeAndClose, 3000);
+
+      // Resize window to fit results
+      var newH = 100 + (lines.length * 16);
+      if (newH > 400) newH = 400;
+      if (newH > h) {
+        window.resizeTo(w, newH);
+        var newTop = Math.round((screen.availHeight - newH) / 2);
+        window.moveTo(left, newTop);
+      }
+
+      setTimeout(fadeAndClose, 5000);
     }
   }, 200);
 </script>
