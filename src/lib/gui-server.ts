@@ -148,6 +148,7 @@ export function startGuiServer(options: GuiServerOptions): Promise<boolean> {
         duration: options.videoInfo.duration,
         fps: options.videoInfo.fps,
         bitrate: options.videoInfo.bitrate,
+        fileSize: options.videoInfo.fileSize,
         defaults: options.defaults,
       });
     });

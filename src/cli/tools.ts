@@ -123,10 +123,10 @@ export const toolConfigs: ToolConfig[] = [
   },
   {
     id: 'optimize',
-    name: 'Optimize JSON',
+    name: 'Optimize',
     icon: 'tv.ico',
-    extensions: ['.json'],
-    description: 'Optimize Lottie JSON animation files',
+    extensions: ['.json', '.gif'],
+    description: 'Optimize Lottie JSON and GIF files',
   },
 ];
 
@@ -473,10 +473,15 @@ export const tools: Tool[] = [
       return optimize({
         input,
         output: options.output as string | undefined,
+        dotlottie: options.dotlottie as boolean | undefined,
+        lossy: options.lossy as number | undefined,
+        level: options.level as number | undefined,
+        colors: options.colors as number | undefined,
       });
     },
     runGUI: async (input) => {
       const stats = fs.statSync(input);
+      const isGif = path.extname(input).toLowerCase() === '.gif';
       const videoInfo: VideoInfo = {
         filePath: input,
         fileName: path.basename(input),
@@ -490,14 +495,26 @@ export const tools: Tool[] = [
       };
       await startGuiServer({
         htmlFile: 'optimize.html',
-        title: 'Optimize JSON',
+        title: isGif ? 'Optimize GIF' : 'Optimize JSON',
         videoInfo,
-        defaults: {},
-        onProcess: async () => {
+        defaults: { isGif },
+        onProcess: async (opts) => {
           const logs: Array<{ type: string; message: string }> = [];
           try {
-            logs.push({ type: 'info', message: 'Optimizing JSON...' });
-            const output = await optimize({ input });
+            if (isGif) {
+              logs.push({ type: 'info', message: 'Optimizing GIF...' });
+              const output = await optimize({
+                input,
+                lossy: opts.lossy as number | undefined,
+                level: opts.level as number | undefined,
+                colors: opts.colors as number | undefined,
+              });
+              logs.push({ type: 'success', message: 'GIF optimization complete!' });
+              return { success: true, output, logs };
+            }
+            const dl = opts.dotlottie as boolean | undefined;
+            logs.push({ type: 'info', message: dl ? 'Creating .lottie...' : 'Optimizing JSON...' });
+            const output = await optimize({ input, dotlottie: dl });
             logs.push({ type: 'success', message: 'Optimization complete!' });
             return { success: true, output, logs };
           } catch (err) {

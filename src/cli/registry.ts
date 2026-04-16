@@ -8,6 +8,11 @@ import { toolConfigs } from './tools.js';
 
 const execAsync = promisify(exec);
 
+/** Non-video extensions that run headless (no GUI, no loading HTA) */
+const HEADLESS_TOOLS: Record<string, { command: string; label: string }> = {
+  '.json': { command: 'optimize', label: 'Optimize Lottie Animation' },
+};
+
 /**
  * Get dist directory (where cli.js lives after bundling)
  */
@@ -102,15 +107,20 @@ async function registerMenuForExtension(
     return results;
   }
 
-  // Create single VidLet menu entry (opens unified GUI)
-  const menuSuccess = await addRegistryKey(basePath, 'MUIVerb', 'Open with VidLet');
+  const headless = HEADLESS_TOOLS[extension];
+  const menuLabel = headless ? headless.label : 'Open with VidLet';
+
+  const menuSuccess = await addRegistryKey(basePath, 'MUIVerb', menuLabel);
   const iconSuccess = await addRegistryKey(basePath, 'Icon', `${iconsDirWin}\\tv.ico`);
 
   // Enable multi-select
   await addRegistryKey(basePath, 'MultiSelectModel', 'Player');
 
-  // Command - opens unified VidLet GUI
-  const commandValue = `wscript.exe //B "${launcherWin}" vidlet "%1" -g`;
+  // Headless tools use VBS launcher with --no-loading (hidden, no HTA)
+  // Video tools go through VBS launcher with loading HTA
+  const commandValue = headless
+    ? `wscript.exe //B "${launcherWin}" "${headless.command}" "%1" --no-loading`
+    : `wscript.exe //B "${launcherWin}" vidlet "%1" -g`;
   const cmdSuccess = await addRegistryKey(`${basePath}\\command`, '', commandValue);
 
   results.push({
@@ -217,15 +227,18 @@ function generateRegContent(): string {
       continue;
     }
 
-    // Create single VidLet menu entry (opens unified GUI)
+    const headless = HEADLESS_TOOLS[extension];
+    const menuLabel = headless ? headless.label : 'Open with VidLet';
+
     lines.push(`[${basePath}]`);
-    lines.push(`"MUIVerb"="${escapeRegValue('Open with VidLet')}"`);
+    lines.push(`"MUIVerb"="${escapeRegValue(menuLabel)}"`);
     lines.push(`"Icon"="${escapeRegValue(`${iconsDirWin}\\tv.ico`)}"`);
     lines.push('"MultiSelectModel"="Player"');
     lines.push('');
 
-    // Command - opens unified VidLet GUI
-    const commandValue = `wscript.exe //B "${launcherWin}" vidlet "%1" -g`;
+    const commandValue = headless
+      ? `wscript.exe //B "${launcherWin}" "${headless.command}" "%1" --no-loading`
+      : `wscript.exe //B "${launcherWin}" vidlet "%1" -g`;
     lines.push(`[${basePath}\\command]`);
     lines.push(`@="${escapeRegValue(commandValue)}"`);
     lines.push('');

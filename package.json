@@ -47,10 +47,12 @@
     "node": ">=18"
   },
   "dependencies": {
+    "@dotlottie/dotlottie-js": "^1.6.3",
     "commander": "^13.1.0",
     "execa": "^9.5.2",
     "express": "^5.2.1",
     "figlet": "^1.9.4",
+    "gifsicle": "^7.0.1",
     "pixelmatch": "^6.0.0",
     "pngjs": "^7.0.0",
     "prompts": "^2.4.2",
