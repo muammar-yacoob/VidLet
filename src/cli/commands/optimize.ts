@@ -8,7 +8,7 @@ import { resolveInputPath } from '../utils.js';
  */
 export function registerOptimizeCommand(program: Command): void {
   program
-    .command('optimize <file>')
+    .command('optimize <files...>')
     .description('Optimize Lottie JSON or GIF files')
     .option('-g, --gui', 'Open GUI window')
     .option('-d, --dotlottie', 'Output as .lottie (compressed dotLottie format)')
@@ -16,20 +16,26 @@ export function registerOptimizeCommand(program: Command): void {
     .option('-l, --lossy <n>', 'GIF lossy compression level (0-200, default 80)', Number)
     .option('--level <n>', 'GIF optimization level (1-3, default 3)', Number)
     .option('--colors <n>', 'Max GIF colors (2-256)', Number)
-    .action(async (file: string, options) => {
+    .action(async (files: string[], options) => {
       try {
-        const input = await resolveInputPath(file);
         const tool = getToolById('optimize');
 
         if (!tool) {
           throw new Error('Optimize tool not found');
         }
 
-        if (options.gui) {
+        // Single file with GUI
+        if (options.gui && files.length === 1) {
+          const input = await resolveInputPath(files[0]);
           await tool.runGUI?.(input);
-        } else {
+          return;
+        }
+
+        // Process all files
+        for (const file of files) {
+          const input = await resolveInputPath(file);
           await tool.run(input, {
-            output: options.o,
+            output: files.length === 1 ? options.o : undefined,
             dotlottie: options.dotlottie,
             lossy: options.lossy,
             level: options.level,

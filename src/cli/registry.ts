@@ -1,5 +1,5 @@
 import { exec } from 'node:child_process';
-import { writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
@@ -30,6 +30,23 @@ export function getMenuBasePath(extension: string): string {
 }
 
 /**
+ * Look up the ProgId for a file extension (e.g. '.json' -> 'JSON')
+ */
+async function getProgId(extension: string): Promise<string | null> {
+  try {
+    const { stdout } = await execAsync(`reg.exe query "HKCU\\Software\\Classes\\${extension}" /ve`);
+    const match = stdout.match(/REG_SZ\s+(.+)/);
+    if (match && match[1].trim()) return match[1].trim();
+  } catch { /* ignore */ }
+  try {
+    const { stdout } = await execAsync(`reg.exe query "HKCR\\${extension}" /ve`);
+    const match = stdout.match(/REG_SZ\s+(.+)/);
+    if (match && match[1].trim()) return match[1].trim();
+  } catch { /* ignore */ }
+  return null;
+}
+
+/**
  * Add a registry key with value
  */
 export async function addRegistryKey(
@@ -39,7 +56,8 @@ export async function addRegistryKey(
   type = 'REG_SZ'
 ): Promise<boolean> {
   const valueArg = valueName ? `/v "${valueName}"` : '/ve';
-  const escapedValue = value.replace(/"/g, '\\"');
+  // Shell eats one backslash from \\ pairs, so double every \ to preserve paths
+  const escapedValue = value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
   const cmd = `reg.exe add "${keyPath}" ${valueArg} /t ${type} /d "${escapedValue}" /f`;
 
   try {
@@ -123,6 +141,16 @@ async function registerMenuForExtension(
     : `wscript.exe //B "${launcherWin}" vidlet "%1" -g`;
   const cmdSuccess = await addRegistryKey(`${basePath}\\command`, '', commandValue);
 
+  // Also register under ProgId if one exists (some extensions skip SystemFileAssociations)
+  const progId = await getProgId(extension);
+  if (progId) {
+    const progIdBase = `HKCU\\Software\\Classes\\${progId}\\shell\\VidLet`;
+    await addRegistryKey(progIdBase, 'MUIVerb', menuLabel);
+    await addRegistryKey(progIdBase, 'Icon', `${iconsDirWin}\\tv.ico`);
+    await addRegistryKey(progIdBase, 'MultiSelectModel', 'Player');
+    await addRegistryKey(`${progIdBase}\\command`, '', commandValue);
+  }
+
   results.push({
     extension,
     toolName: 'VidLet',
@@ -142,6 +170,14 @@ async function unregisterMenuForExtension(extension: string): Promise<Registrati
   // Delete command and VidLet menu entry
   await deleteRegistryKey(`${basePath}\\command`);
   const success = await deleteRegistryKey(basePath);
+
+  // Also clean up ProgId entries
+  const progId = await getProgId(extension);
+  if (progId) {
+    const progIdBase = `HKCU\\Software\\Classes\\${progId}\\shell\\VidLet`;
+    await deleteRegistryKey(`${progIdBase}\\command`);
+    await deleteRegistryKey(progIdBase);
+  }
 
   results.push({
     extension,
@@ -166,12 +202,58 @@ export function getAllExtensions(): string[] {
 }
 
 /**
+ * Deploy assets (icons, launcher, GUI) to a Windows-local directory
+ * so Windows shell can access them without UNC path issues.
+ * Returns { winDir, iconsDir, launcherPath } as WSL paths under /mnt/c/...
+ */
+async function deployAssetsToWindows(): Promise<{
+  winDir: string;
+  iconsDir: string;
+  launcherPath: string;
+}> {
+  const { stdout } = await execAsync('cmd.exe /c echo %LOCALAPPDATA%');
+  const localAppData = stdout.trim().replace(/\r/g, '');
+  // Convert Windows LOCALAPPDATA to WSL path
+  const drive = localAppData[0].toLowerCase();
+  const rest = localAppData.slice(2).replace(/\\/g, '/');
+  const wslLocalAppData = `/mnt/${drive}${rest}`;
+
+  const winDir = join(wslLocalAppData, 'VidLet');
+  const winIconsDir = join(winDir, 'icons');
+  const winGuiDir = join(winDir, 'gui');
+  await mkdir(winIconsDir, { recursive: true });
+  await mkdir(winGuiDir, { recursive: true });
+
+  const distDir = getDistDir();
+
+  // Copy launcher
+  const launcherDest = join(winDir, 'launcher.vbs');
+  await copyFile(join(distDir, 'launcher.vbs'), launcherDest);
+
+  // Copy icons
+  const { readdirSync } = await import('node:fs');
+  const srcIcons = join(distDir, 'icons');
+  for (const file of readdirSync(srcIcons)) {
+    await copyFile(join(srcIcons, file), join(winIconsDir, file));
+  }
+
+  // Recursively copy GUI directory
+  const srcGui = join(distDir, 'gui');
+  const { cpSync } = await import('node:fs');
+  try {
+    cpSync(srcGui, winGuiDir, { recursive: true, force: true });
+  } catch {
+    // GUI dir may not exist
+  }
+
+  return { winDir, iconsDir: winIconsDir, launcherPath: launcherDest };
+}
+
+/**
  * Register all tools for all supported extensions
  */
 export async function registerAllTools(): Promise<RegistrationResult[]> {
-  const distDir = getDistDir();
-  const iconsDir = join(distDir, 'icons');
-  const launcherPath = join(distDir, 'launcher.vbs');
+  const { iconsDir, launcherPath } = await deployAssetsToWindows();
   const results: RegistrationResult[] = [];
 
   // Register for each unique extension

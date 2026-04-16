@@ -1,87 +1,103 @@
 <html>
 <head>
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
-<title>VidLet Optimize</title>
+<title>VidLet</title>
 <hta:application
   id="VidLetOptimize"
   applicationName="VidLetOptimize"
   icon="tv.ico"
-  border="none"
+  border="thin"
   borderStyle="normal"
   caption="no"
   innerBorder="no"
   maximizeButton="no"
   minimizeButton="no"
   showInTaskbar="no"
-  singleInstance="no"
+  singleInstance="yes"
   scroll="no"
   contextMenu="no"
   selection="no"
   sysmenu="no"
 />
 <style>
-  *{margin:0;padding:0;cursor:default}
-  html{height:100%}
-  body{height:100%;overflow:hidden;background:#18181b;font-family:Segoe UI,sans-serif;color:#e4e4e7;padding:16px 20px;border:1px solid #333;border-radius:10px;box-sizing:border-box;opacity:1;transition:opacity .3s}
+  *{margin:0;padding:0;cursor:default;box-sizing:border-box}
+  html,body{width:100%;height:100%;overflow:hidden}
+  body{background:#18181b;font-family:Segoe UI,sans-serif;color:#e4e4e7;padding:16px 20px;border:1px solid #444;opacity:1;transition:opacity .3s}
   body.fade-out{opacity:0}
-  .row{display:flex;align-items:center;gap:12px}
-  .icon{width:28px;height:28px}
+  .row{display:flex;align-items:center;gap:10px}
+  .icon{width:24px;height:24px}
   .title{font-size:13px;font-weight:600;color:#a855f7}
-  .status{font-size:11px;color:#a1a1aa;margin-top:6px}
-  .result{font-size:11px;color:#22c55e;margin-top:6px;display:none}
+  .status{font-size:11px;color:#a1a1aa;margin-top:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .result{font-size:11px;color:#22c55e;margin-top:8px;display:none}
   .bar{width:100%;height:3px;background:#27272a;border-radius:2px;margin-top:10px;overflow:hidden}
-  .fill{height:100%;background:linear-gradient(90deg,#a855f7,#c084fc);width:10%;transition:width .15s}
+  .fill{height:100%;background:linear-gradient(90deg,#a855f7,#c084fc);width:5%;transition:width .2s}
 </style>
 <script language="javascript">
-  var w = 300, h = 110;
+  var w = 320, h = 150;
   window.resizeTo(w, h);
-  // Bottom-right corner above taskbar
-  window.moveTo(screen.availWidth - w - 16, screen.availHeight - h - 16);
+  var left = Math.round((screen.availWidth - w) / 2);
+  var top = Math.round((screen.availHeight - h) / 2);
+  window.moveTo(left, top);
 
   var fso = new ActiveXObject("Scripting.FileSystemObject");
-  var shell = new ActiveXObject("WScript.Shell");
-  var tempDir = shell.ExpandEnvironmentStrings("%TEMP%");
+  var wshShell = new ActiveXObject("WScript.Shell");
+  var tempDir = wshShell.ExpandEnvironmentStrings("%TEMP%");
   var doneFile = tempDir + "\\vidlet-optimize-done.tmp";
-  var animPct = 10;
+  var progressFile = tempDir + "\\vidlet-optimize-progress.tmp";
+  var animPct = 5;
   var isClosing = false;
-
-  // Clean stale signal
-  try { fso.DeleteFile(doneFile); } catch(e) {}
 
   function fadeAndClose() {
     if (isClosing) return;
     isClosing = true;
-    document.body.className = 'fade-out';
-    setTimeout(function() { self.close(); }, 300);
+    document.body.className = "fade-out";
+    setTimeout(function() { window.close(); }, 300);
   }
 
-  // Failsafe
-  setTimeout(function() { if (!isClosing) self.close(); }, 60000);
+  setTimeout(function() { if (!isClosing) window.close(); }, 120000);
 
-  // Poll for completion
   var poll = setInterval(function() {
-    // Animate progress
-    if (animPct < 90) {
-      animPct += 2;
-      document.getElementById('fill').style.width = animPct + '%';
+    if (fso.FileExists(progressFile)) {
+      try {
+        var pf = fso.OpenTextFile(progressFile, 1);
+        var pdata = pf.ReadAll();
+        pf.Close();
+        var parts = pdata.split("|");
+        var nums = parts[0].split("/");
+        var current = parseInt(nums[0], 10);
+        var total = parseInt(nums[1], 10);
+        var fname = parts.length > 1 ? parts[1] : "";
+        if (total > 0) {
+          var pct = Math.round(((current - 1) / total) * 90) + 5;
+          document.getElementById("fill").style.width = pct + "%";
+          animPct = pct;
+          document.getElementById("status").innerText = total > 1
+            ? current + "/" + total + "  " + fname : fname;
+        }
+      } catch(e) {}
+    } else if (animPct < 90) {
+      animPct += 1;
+      document.getElementById("fill").style.width = animPct + "%";
     }
-    // Check done signal
+
     if (fso.FileExists(doneFile)) {
       clearInterval(poll);
+      var msg = "Done";
       try {
         var f = fso.OpenTextFile(doneFile, 1);
-        var msg = f.ReadAll();
+        msg = f.ReadAll();
         f.Close();
         fso.DeleteFile(doneFile);
-      } catch(e) { var msg = "Done"; }
-      document.getElementById('fill').style.width = '100%';
-      document.getElementById('status').style.display = 'none';
-      var res = document.getElementById('result');
+      } catch(e) {}
+      try { fso.DeleteFile(progressFile); } catch(e) {}
+      document.getElementById("fill").style.width = "100%";
+      document.getElementById("status").style.display = "none";
+      var res = document.getElementById("result");
       res.innerText = msg;
-      res.style.display = 'block';
-      setTimeout(fadeAndClose, 2500);
+      res.style.display = "block";
+      setTimeout(fadeAndClose, 3000);
     }
-  }, 100);
+  }, 200);
 </script>
 </head>
 <body>

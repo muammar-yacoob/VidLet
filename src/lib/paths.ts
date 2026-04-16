@@ -94,6 +94,13 @@ export function wslToWindows(wslPath: string): string {
     const [, drive, rest = ''] = match;
     return `${drive.toUpperCase()}:${rest.replace(/\//g, '\\')}`;
   }
+  // For WSL-internal paths (e.g. /home/...), use UNC path
+  if (wslPath.startsWith('/')) {
+    const distro = process.env.WSL_DISTRO_NAME;
+    if (distro) {
+      return `\\\\wsl.localhost\\${distro}${wslPath.replace(/\//g, '\\')}`;
+    }
+  }
   return wslPath;
 }
 

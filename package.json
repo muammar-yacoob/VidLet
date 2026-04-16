@@ -53,6 +53,7 @@
     "express": "^5.2.1",
     "figlet": "^1.9.4",
     "gifsicle": "^7.0.1",
+    "lottie-web": "^5.13.0",
     "pixelmatch": "^6.0.0",
     "pngjs": "^7.0.0",
     "prompts": "^2.4.2",

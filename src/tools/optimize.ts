@@ -192,22 +192,57 @@ async function toDotLottie(jsonData: unknown, outputPath: string): Promise<numbe
   return Buffer.byteLength(Buffer.from(buffer));
 }
 
+/** Format bytes as human-readable */
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** Resolve Windows temp dir as WSL path (cached) */
+let _wslTemp: string | null = null;
+function getWslTemp(): string | null {
+  if (_wslTemp !== null) return _wslTemp;
+  try {
+    const winTemp = execSync('cmd.exe /c echo %TEMP%', { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+    _wslTemp = execSync(`wslpath -u "${winTemp}"`, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+  } catch {
+    _wslTemp = '';
+  }
+  return _wslTemp || null;
+}
+
+function writeProgress(current: number, total: number, fileName: string): void {
+  const tmp = getWslTemp();
+  if (!tmp) return;
+  try {
+    writeFileSync(join(tmp, 'vidlet-optimize-progress.tmp'), `${current}/${total}|${fileName}`, 'utf-8');
+  } catch { /* ignore */ }
+}
+
 /**
  * Optimize Lottie JSON or GIF files
  */
 export async function optimize(options: OptimizeOptions): Promise<string> {
   const allFiles = resolveFiles(options.input);
   const gifFiles = allFiles.filter((f) => extname(f).toLowerCase() === '.gif');
-  const lottieFiles = allFiles.filter((f) => extname(f).toLowerCase() === '.json' && isLottieFile(f));
+  let lottieFiles = allFiles.filter((f) => extname(f).toLowerCase() === '.json' && isLottieFile(f));
 
   if (gifFiles.length === 0 && lottieFiles.length === 0) {
     throw new Error('No Lottie JSON or GIF files found');
   }
 
+  // Sort Lottie files by size (smallest first)
+  lottieFiles.sort((a, b) => statSync(a).size - statSync(b).size);
+
   const results: OptimizeResult[] = [];
+  const totalFiles = gifFiles.length + lottieFiles.length;
+  let processed = 0;
 
   // Optimize GIF files
   for (const file of gifFiles) {
+    processed++;
+    writeProgress(processed, totalFiles, basename(file));
     const result = await optimizeGif(file, {
       output: options.output && gifFiles.length === 1 ? options.output : undefined,
       lossy: options.lossy,
@@ -219,6 +254,8 @@ export async function optimize(options: OptimizeOptions): Promise<string> {
 
   // Optimize Lottie JSON files
   for (const file of lottieFiles) {
+    processed++;
+    writeProgress(processed, totalFiles, basename(file));
     const raw = readFileSync(file, 'utf8');
     const originalSize = Buffer.byteLength(raw, 'utf8');
     const { optimized, newSize } = optimizeJson(raw);
@@ -249,22 +286,30 @@ export async function optimize(options: OptimizeOptions): Promise<string> {
     });
   }
 
-  const summary = results
-    .map((r) => `${r.file}: ${r.originalSize} → ${r.optimizedSize} bytes (${r.savedPercent}% smaller)`)
-    .join('\n');
+  // Print per-file summary
+  for (const r of results) {
+    console.log(`${r.file}: ${formatBytes(r.originalSize)} → ${formatBytes(r.optimizedSize)} (${r.savedPercent}% saved)`);
+  }
 
-  console.log(summary);
+  const totalOriginal = results.reduce((s, r) => s + r.originalSize, 0);
+  const totalOptimized = results.reduce((s, r) => s + r.optimizedSize, 0);
+  const totalSaved = totalOriginal - totalOptimized;
+  const totalPct = totalOriginal > 0 ? (totalSaved / totalOriginal) * 100 : 0;
 
-  // Signal toast HTA if running (write result to temp file)
+  if (results.length > 1) {
+    console.log(`\nTotal: ${results.length} files, ${formatBytes(totalOriginal)} → ${formatBytes(totalOptimized)} (${totalPct.toFixed(1)}% saved)`);
+  }
+
+  // Signal toast HTA
   try {
-    const winTemp = execSync('cmd.exe /c echo %TEMP%', { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
-    const wslTemp = execSync(`wslpath -u "${winTemp}"`, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
-    const totalSaved = results.reduce((sum, r) => sum + r.savedBytes, 0);
-    const msg = results.length === 1
-      ? `${results[0].file}: ${results[0].savedPercent}% smaller`
-      : `${results.length} files optimized, ${(totalSaved / 1024).toFixed(1)} KB saved`;
-    writeFileSync(join(wslTemp, 'vidlet-optimize-done.tmp'), msg, 'utf-8');
-  } catch { /* not on Windows/WSL, skip */ }
+    const tmp = getWslTemp();
+    if (tmp) {
+      const msg = results.length === 1
+        ? `${results[0].file}: ${results[0].savedPercent}% saved (${formatBytes(results[0].savedBytes)})`
+        : `${results.length} files: ${formatBytes(totalSaved)} saved (${totalPct.toFixed(1)}%)`;
+      writeFileSync(join(tmp, 'vidlet-optimize-done.tmp'), msg, 'utf-8');
+    }
+  } catch { /* ignore */ }
 
   const allProcessed = [...gifFiles, ...lottieFiles];
   return allProcessed.length === 1 ? allProcessed[0] : options.input;
