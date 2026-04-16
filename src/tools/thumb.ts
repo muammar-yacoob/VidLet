@@ -1,8 +1,13 @@
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { checkFFmpeg, executeFFmpeg, executeFFmpegMultiInput, getVideoInfo } from '../lib/ffmpeg.js';
-import { fmt, header, separator, success, logToFile } from '../lib/logger.js';
+import {
+  checkFFmpeg,
+  executeFFmpeg,
+  executeFFmpegMultiInput,
+  getVideoInfo,
+} from '../lib/ffmpeg.js';
+import { fmt, header, logToFile, separator, success } from '../lib/logger.js';
 import { getOutputPath } from '../lib/paths.js';
 
 export interface ThumbOptions {
@@ -21,11 +26,7 @@ export async function extractFrame(videoPath: string, timestamp: number): Promis
   await executeFFmpeg({
     input: videoPath,
     output: jpegPath,
-    args: [
-      '-ss', timestamp.toString(),
-      '-frames:v', '1',
-      '-q:v', '2',
-    ],
+    args: ['-ss', timestamp.toString(), '-frames:v', '1', '-q:v', '2'],
   });
 
   return jpegPath;
@@ -42,13 +43,20 @@ async function convertToJpeg(imagePath: string): Promise<string> {
 
   // Use execa directly for more control over the conversion
   const { execa } = await import('execa');
-  const result = await execa('ffmpeg', [
-    '-y',
-    '-i', imagePath,
-    '-c:v', 'mjpeg',           // Explicit JPEG codec
-    '-q:v', '2',               // High quality
-    jpegPath
-  ], { reject: false });
+  const result = await execa(
+    'ffmpeg',
+    [
+      '-y',
+      '-i',
+      imagePath,
+      '-c:v',
+      'mjpeg', // Explicit JPEG codec
+      '-q:v',
+      '2', // High quality
+      jpegPath,
+    ],
+    { reject: false }
+  );
 
   logToFile(`JPEG conversion exit code: ${result.exitCode}`);
   if (result.exitCode !== 0) {
@@ -118,14 +126,22 @@ export async function thumb(options: ThumbOptions): Promise<string> {
   // Map only video stream 0 and audio (skip existing attached pics which may be incompatible)
   // Re-encode thumbnail as mjpeg to ensure MP4 compatibility regardless of source format
   await executeFFmpegMultiInput([input, jpegImage], output, [
-    '-map', '0:v:0',    // Main video stream only
-    '-map', '0:a?',     // Audio if present
-    '-map', '1:v:0',    // Thumbnail image (explicit first video stream)
-    '-c:v:0', 'copy',   // Copy main video codec
-    '-c:a', 'copy',     // Copy audio codec
-    '-c:v:1', 'mjpeg',  // Re-encode thumbnail as JPEG for MP4 compatibility
-    '-q:v:1', '2',      // High quality for thumbnail
-    '-disposition:v:1', 'attached_pic',
+    '-map',
+    '0:v:0', // Main video stream only
+    '-map',
+    '0:a?', // Audio if present
+    '-map',
+    '1:v:0', // Thumbnail image (explicit first video stream)
+    '-c:v:0',
+    'copy', // Copy main video codec
+    '-c:a',
+    'copy', // Copy audio codec
+    '-c:v:1',
+    'mjpeg', // Re-encode thumbnail as JPEG for MP4 compatibility
+    '-q:v:1',
+    '2', // High quality for thumbnail
+    '-disposition:v:1',
+    'attached_pic',
   ]);
 
   // Cleanup temp files

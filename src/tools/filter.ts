@@ -8,11 +8,11 @@ import { getOutputPath } from '../lib/paths.js';
 export interface FilterOptions {
   input: string;
   brightness?: number; // -1 to 1 (0 = normal)
-  contrast?: number;   // 0 to 2 (1 = normal)
+  contrast?: number; // 0 to 2 (1 = normal)
   saturation?: number; // 0 to 2 (1 = normal)
   grayscale?: boolean;
   sepia?: boolean;
-  blur?: number;       // 0 to 10 (0 = none)
+  blur?: number; // 0 to 10 (0 = none)
   sharpen?: boolean;
   vignette?: boolean;
   output?: string;
@@ -98,8 +98,10 @@ export async function filter(options: FilterOptions): Promise<string> {
     input,
     output,
     args: [
-      '-vf', filterStr,
-      '-c:a', 'copy', // Copy audio without re-encoding
+      '-vf',
+      filterStr,
+      '-c:a',
+      'copy', // Copy audio without re-encoding
     ],
   });
 

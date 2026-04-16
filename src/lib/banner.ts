@@ -4,7 +4,7 @@ import { fmt } from './logger.js';
 // Vivid RGB rainbow colors (one per line)
 const lineColors = [
   [255, 100, 100], // Bright Red
-  [255, 200, 80],  // Orange/Yellow
+  [255, 200, 80], // Orange/Yellow
   [100, 255, 100], // Bright Green
   [100, 200, 255], // Bright Cyan
   [180, 130, 255], // Purple

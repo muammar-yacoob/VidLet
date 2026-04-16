@@ -32,7 +32,7 @@
     return fetchJson(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data)
+      body: JSON.stringify(data),
     });
   }
 
@@ -51,7 +51,7 @@
     fetch('/api/open-url', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url })
+      body: JSON.stringify({ url }),
     });
   }
 
@@ -84,7 +84,7 @@
     document.documentElement.style.zoom = '100%';
 
     // Disable context menu
-    document.addEventListener('contextmenu', e => e.preventDefault());
+    document.addEventListener('contextmenu', (e) => e.preventDefault());
   }
 
   // Resize window to fit video aspect ratio
@@ -251,7 +251,7 @@
     setLoading,
     showDone,
     formatDuration,
-    formatSize
+    formatSize,
   };
 
   // Auto-init on DOMContentLoaded if data attributes present
@@ -260,7 +260,7 @@
     if (html.dataset.vidlet !== undefined) {
       init({
         width: Number.parseInt(html.dataset.width) || undefined,
-        height: Number.parseInt(html.dataset.height) || undefined
+        height: Number.parseInt(html.dataset.height) || undefined,
       });
     }
   });

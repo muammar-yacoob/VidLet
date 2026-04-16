@@ -2,7 +2,8 @@
  * VidLet Hotkeys Module
  * Configurable keyboard shortcuts for different editor presets
  */
-(function(V) {
+window.VidLet = window.VidLet || {};
+((V) => {
   let currentPreset = 'premiere';
 
   const PRESETS = {
@@ -130,11 +131,13 @@
     };
 
     container.innerHTML = Object.entries(labels)
-      .map(([key, label]) => `<div class="hotkey-item"><span>${label}</span><kbd>${format(map[key])}</kbd></div>`)
+      .map(
+        ([key, label]) =>
+          `<div class="hotkey-item"><span>${label}</span><kbd>${format(map[key])}</kbd></div>`
+      )
       .join('');
   }
 
   // Export to VidLet namespace
   V.hotkeys = { matches, format, getMap, setPreset, getPreset, updateDisplay, PRESETS };
-
-})(window.VidLet || (window.VidLet = {}));
+})(window.VidLet);

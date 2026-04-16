@@ -66,7 +66,8 @@ export async function getVideoInfo(inputPath: string): Promise<VideoInfo> {
   const bitrate = Math.round((streamBitrate || formatBitrate) / 1000);
 
   // Check for audio stream
-  const hasAudio = data.streams?.some((s: { codec_type: string }) => s.codec_type === 'audio') ?? false;
+  const hasAudio =
+    data.streams?.some((s: { codec_type: string }) => s.codec_type === 'audio') ?? false;
 
   return {
     duration: Number.parseFloat(data.format?.duration || '0'),

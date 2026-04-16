@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html data-vidlet data-width="400" data-height="380">
+<head>
+  <meta charset="UTF-8">
+  <title>VidLet - Optimize JSON</title>
+  <link rel="stylesheet" href="/css/theme.css">
+  <link rel="icon" href="/favicon.ico">
+</head>
+<body>
+  <div class="app">
+    <div class="hd">
+      <b>VidLet</b>
+      <span>Optimize Lottie JSON</span>
+    </div>
+
+    <div class="meta" id="meta">
+      <div>File: <b id="fileName">-</b></div>
+      <div>Size: <b id="size">-</b></div>
+      <div>Type: <b id="fileType">-</b></div>
+    </div>
+
+    <div class="form" id="form">
+      <div class="row" data-tip="Optimizations to apply">
+        <label>Actions</label>
+        <div style="display:flex;flex-direction:column;gap:6px;flex:1">
+          <label style="font-size:12px"><input type="checkbox" id="roundFloats" checked> Truncate floats (3 decimals)</label>
+          <label style="font-size:12px"><input type="checkbox" id="stripMeta" checked> Strip editor metadata</label>
+          <label style="font-size:12px"><input type="checkbox" id="removeStrokes" checked> Remove zero-width strokes</label>
+          <label style="font-size:12px"><input type="checkbox" id="compact" checked disabled> Compact JSON</label>
+        </div>
+      </div>
+    </div>
+
+    <div class="ld" id="loading">
+      <div class="sp"></div>
+      <span>Optimizing...</span>
+    </div>
+
+    <div class="log" id="log"></div>
+
+    <div class="dn" id="done">
+      <h4>Done!</h4>
+      <p id="output"></p>
+      <div class="btns" style="margin-top:12px;width:100%">
+        <button class="btn btn-p" onclick="VidLet.close()">Close</button>
+      </div>
+    </div>
+
+    <div class="btns" id="btns">
+      <button class="btn btn-g" onclick="VidLet.cancel()">Cancel</button>
+      <button class="btn btn-p" onclick="process()">Optimize</button>
+    </div>
+  </div>
+
+  <script src="/js/vidlet.js"></script>
+  <script>
+    const { $, log, postJson, setLoading, showDone } = VidLet;
+    let info = {};
+
+    function formatBytes(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+      return (bytes / 1048576).toFixed(1) + ' MB';
+    }
+
+    async function init() {
+      const res = await VidLet.fetchJson('/api/info');
+      info = res;
+      $('fileName').textContent = res.fileName;
+      $('size').textContent = formatBytes(res.fileSize);
+      $('fileType').textContent = 'Lottie JSON';
+    }
+
+    async function process() {
+      setLoading(true, 'Optimizing JSON...');
+
+      try {
+        const res = await postJson('/api/process', {});
+
+        if (res.logs) {
+          res.logs.forEach(l => log('log', l.type === 'error' ? 'e' : l.type === 'success' ? 's' : 'i', l.message));
+        }
+
+        if (res.success) {
+          showDone(true, 'Optimization Complete!', res.output);
+        } else {
+          showDone(false, 'Optimization Failed', res.error);
+        }
+      } catch (err) {
+        showDone(false, 'Error', err.message);
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>

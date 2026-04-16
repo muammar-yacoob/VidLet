@@ -1,55 +1,57 @@
 import { Command } from 'commander';
 import { showHelp } from '../lib/help.js';
 import {
-	registerCompressCommand,
-	registerConfigCommand,
-	registerExtractAudioCommand,
-	registerHelpCommand,
-	registerInstallCommand,
-	registerLoopCommand,
-	registerMkv2mp4Command,
-	registerShrinkCommand,
-	registerThumbCommand,
-	registerTogifCommand,
-	registerUninstallCommand,
-	registerVidletCommand,
+  registerCompressCommand,
+  registerConfigCommand,
+  registerExtractAudioCommand,
+  registerHelpCommand,
+  registerOptimizeCommand,
+  registerInstallCommand,
+  registerLoopCommand,
+  registerMkv2mp4Command,
+  registerShrinkCommand,
+  registerThumbCommand,
+  registerTogifCommand,
+  registerUninstallCommand,
+  registerVidletCommand,
 } from './commands/index.js';
 
 /**
  * Create and configure the CLI program
  */
 export function createProgram(): Command {
-	const program = new Command();
+  const program = new Command();
 
-	// Override default help
-	program.helpInformation = () => '';
-	program.on('--help', () => {});
+  // Override default help
+  program.helpInformation = () => '';
+  program.on('--help', () => {});
 
-	program
-		.name('vidlet')
-		.description('Video utility toolkit with Windows shell integration')
-		.version('1.0.0')
-		.action(() => {
-			showHelp();
-		});
+  program
+    .name('vidlet')
+    .description('Video utility toolkit with Windows shell integration')
+    .version('1.0.0')
+    .action(() => {
+      showHelp();
+    });
 
-	// Register all commands
-	registerHelpCommand(program);
-	registerInstallCommand(program);
-	registerUninstallCommand(program);
-	registerConfigCommand(program);
+  // Register all commands
+  registerHelpCommand(program);
+  registerInstallCommand(program);
+  registerUninstallCommand(program);
+  registerConfigCommand(program);
 
-	// Tool commands
-	registerCompressCommand(program);
-	registerTogifCommand(program);
-	registerMkv2mp4Command(program);
-	registerShrinkCommand(program);
-	registerThumbCommand(program);
-	registerLoopCommand(program);
-	registerExtractAudioCommand(program);
-	registerVidletCommand(program);
+  // Tool commands
+  registerCompressCommand(program);
+  registerTogifCommand(program);
+  registerMkv2mp4Command(program);
+  registerShrinkCommand(program);
+  registerThumbCommand(program);
+  registerLoopCommand(program);
+  registerExtractAudioCommand(program);
+  registerOptimizeCommand(program);
+  registerVidletCommand(program);
 
-	return program;
+  return program;
 }
 
 // Re-export tools and utilities

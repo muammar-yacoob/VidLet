@@ -44,14 +44,16 @@ export const Mkv2Mp4ConfigSchema = z.object({
 export const ThumbConfigSchema = z.object({});
 
 // Hotkey preset options
-export const HotkeyPresetSchema = z.enum([
-  'premiere',   // Adobe Premiere Pro
-  'resolve',    // DaVinci Resolve
-  'capcut',     // CapCut
-  'shotcut',    // Shotcut
-  'descript',   // Descript
-  'camtasia',   // Camtasia
-]).default('premiere');
+export const HotkeyPresetSchema = z
+  .enum([
+    'premiere', // Adobe Premiere Pro
+    'resolve', // DaVinci Resolve
+    'capcut', // CapCut
+    'shotcut', // Shotcut
+    'descript', // Descript
+    'camtasia', // Camtasia
+  ])
+  .default('premiere');
 
 // App settings schema (non-tool settings)
 export const AppSettingsSchema = z.object({

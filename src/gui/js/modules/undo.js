@@ -2,7 +2,8 @@
  * VidLet Undo/Redo Module
  * Simple command pattern for undo/redo operations
  */
-(function(V) {
+window.VidLet = window.VidLet || {};
+((V) => {
   const MAX_HISTORY = 20;
   let undoStack = [];
   let redoStack = [];
@@ -98,5 +99,4 @@
 
   // Export to VidLet namespace
   V.undo = { save, undo, redo, clear, updateButtons };
-
-})(window.VidLet || (window.VidLet = {}));
+})(window.VidLet);
