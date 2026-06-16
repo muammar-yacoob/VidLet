@@ -95,6 +95,13 @@ export interface GuiServerOptions {
     score?: number;
     error?: string;
   }>;
+  onAnalyzeAudio?: () => Promise<{
+    success: boolean;
+    voiceStart?: number;
+    currentLoudness?: number;
+    suggestedNoiseReduction?: number;
+    error?: string;
+  }>;
 }
 
 /**
@@ -255,6 +262,19 @@ export function startGuiServer(options: GuiServerOptions): Promise<boolean> {
         const searchRange = req.body.searchRange ?? 5;
         const minGap = req.body.minGap ?? 3;
         const result = await options.onFindBestStart(searchRange, minGap);
+        res.json(result);
+      } catch (err) {
+        res.json({ success: false, error: (err as Error).message });
+      }
+    });
+
+    app.post('/api/analyze-audio', async (_req, res) => {
+      if (!options.onAnalyzeAudio) {
+        res.json({ success: false, error: 'Audio analysis not supported' });
+        return;
+      }
+      try {
+        const result = await options.onAnalyzeAudio();
         res.json(result);
       } catch (err) {
         res.json({ success: false, error: (err as Error).message });

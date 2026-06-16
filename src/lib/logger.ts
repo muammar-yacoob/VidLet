@@ -105,6 +105,29 @@ export function logToFile(message: string): void {
   writeToLog(message);
 }
 
+/** Create a CLI spinner for long-running operations */
+export function createSpinner(message: string) {
+  const frames = ['\u28CB', '\u28D9', '\u28F9', '\u28F8', '\u28FC', '\u28F4', '\u28E6', '\u28E7', '\u28C7', '\u28CF'];
+  let text = message;
+  let i = 0;
+  const id = setInterval(() => {
+    process.stdout.write(`\r${CYAN}${frames[i++ % frames.length]}${RESET} ${DIM}${text}${RESET}\x1b[K`);
+  }, 80);
+
+  return {
+    update(msg: string) {
+      text = msg;
+    },
+    stop(finalMessage?: string) {
+      clearInterval(id);
+      process.stdout.write('\r\x1b[2K');
+      if (finalMessage) {
+        console.log(finalMessage);
+      }
+    },
+  };
+}
+
 // Inline formatters for building strings
 export const fmt = {
   cyan: (s: string) => `${CYAN}${s}${RESET}`,

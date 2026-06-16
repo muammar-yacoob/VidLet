@@ -1,14 +1,15 @@
 import { Command } from 'commander';
 import { showHelp } from '../lib/help.js';
 import {
+  registerCleanVoiceCommand,
   registerCompressCommand,
   registerConfigCommand,
   registerExtractAudioCommand,
   registerHelpCommand,
-  registerOptimizeCommand,
   registerInstallCommand,
   registerLoopCommand,
   registerMkv2mp4Command,
+  registerOptimizeCommand,
   registerShrinkCommand,
   registerThumbCommand,
   registerTogifCommand,
@@ -48,6 +49,7 @@ export function createProgram(): Command {
   registerThumbCommand(program);
   registerLoopCommand(program);
   registerExtractAudioCommand(program);
+  registerCleanVoiceCommand(program);
   registerOptimizeCommand(program);
   registerVidletCommand(program);
 

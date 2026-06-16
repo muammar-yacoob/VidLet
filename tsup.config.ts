@@ -1,17 +1,19 @@
 import { cpSync } from 'node:fs';
 import { defineConfig } from 'tsup';
 
+const isWatch = process.argv.includes('--watch');
+
 export default defineConfig({
 	entry: ['src/cli.ts'],
 	format: ['esm'],
 	dts: false,
 	splitting: false,
 	sourcemap: true,
-	clean: true,
+	clean: !isWatch,
 	outDir: 'dist',
-	treeshake: true,
+	treeshake: !isWatch,
 	target: 'node18',
-	silent: true,
+	silent: !isWatch,
 	banner: {
 		js: '#!/usr/bin/env node',
 	},

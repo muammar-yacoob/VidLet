@@ -9,6 +9,7 @@ import { getVideoInfo } from '../lib/ffmpeg.js';
 import { type VideoInfo, startGuiServer } from '../lib/gui-server.js';
 import { logToFile } from '../lib/logger.js';
 import { addAudio, extractAudio } from './audio.js';
+import { analyzeVoice, cleanVoice } from './cleanvoice.js';
 import { caption } from './caption.js';
 import { compress } from './compress.js';
 import { filter } from './filter.js';
@@ -83,6 +84,9 @@ interface ToolOptions {
   // Extract audio options
   audioFormat?: 'mp3' | 'aac' | 'wav' | 'flac';
   audioBitrate?: number;
+  // Clean voice options
+  noiseReduction?: number;
+  targetLoudness?: number;
   // Filter options
   filterBrightness?: number;
   filterContrast?: number;
@@ -296,6 +300,17 @@ async function runTool(input: string, opts: ToolOptions): Promise<ProcessResult>
         break;
       }
 
+      case 'cleanvoice': {
+        logs.push({ type: 'info', message: 'Cleaning voice audio...' });
+        output = await cleanVoice({
+          input: actualInput,
+          noiseReduction: opts.noiseReduction,
+          targetLoudness: opts.targetLoudness,
+        });
+        logs.push({ type: 'success', message: 'Voice cleaned!' });
+        break;
+      }
+
       case 'extractaudio': {
         logs.push({ type: 'info', message: 'Extracting audio...' });
         output = await extractAudio({
@@ -458,6 +473,19 @@ export async function runGUI(input: string): Promise<boolean> {
         return { success: true, startTime: 0, endTime: 0, score: 0 };
       } catch (err) {
         logToFile(`VidLet: Best start finding failed: ${(err as Error).message}`);
+        return { success: false, error: (err as Error).message };
+      }
+    },
+    onAnalyzeAudio: async () => {
+      try {
+        logToFile('VidLet: Analyzing voice audio...');
+        const result = await analyzeVoice(currentInput);
+        logToFile(
+          `VidLet: Analysis: voiceStart=${result.voiceStart.toFixed(2)}s, loudness=${result.currentLoudness.toFixed(1)} LUFS, suggestedNR=${result.suggestedNoiseReduction}dB`
+        );
+        return { success: true, ...result };
+      } catch (err) {
+        logToFile(`VidLet: Audio analysis failed: ${(err as Error).message}`);
         return { success: false, error: (err as Error).message };
       }
     },

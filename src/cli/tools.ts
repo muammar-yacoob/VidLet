@@ -4,10 +4,11 @@ import { getToolConfig as getToolSettings } from '../lib/config.js';
 import { getVideoInfo } from '../lib/ffmpeg.js';
 import { type VideoInfo, startGuiServer } from '../lib/gui-server.js';
 import { extractAudio } from '../tools/audio.js';
-import { optimize } from '../tools/optimize.js';
+import { cleanVoice } from '../tools/cleanvoice.js';
 import { compress } from '../tools/compress.js';
 import { loop } from '../tools/loop.js';
 import { mkv2mp4 } from '../tools/mkv2mp4.js';
+import { optimize } from '../tools/optimize.js';
 import { portrait } from '../tools/shorts.js';
 import { shrink } from '../tools/shrink.js';
 import { thumb } from '../tools/thumb.js';
@@ -127,6 +128,13 @@ export const toolConfigs: ToolConfig[] = [
     icon: 'tv.ico',
     extensions: ['.json', '.gif'],
     description: 'Optimize Lottie JSON and GIF files',
+  },
+  {
+    id: 'cleanvoice',
+    name: 'Clean Voice',
+    icon: 'tv.ico',
+    extensions: ['.mp4', '.mkv', '.avi', '.mov', '.webm'],
+    description: 'Clean and enhance voice audio',
   },
 ];
 
@@ -522,6 +530,17 @@ export const tools: Tool[] = [
             return { success: false, error: (err as Error).message, logs };
           }
         },
+      });
+    },
+  },
+  {
+    config: toolConfigs[10],
+    run: async (input, options) => {
+      return cleanVoice({
+        input,
+        output: options.output as string | undefined,
+        noiseReduction: options.noiseReduction as number | undefined,
+        targetLoudness: options.targetLoudness as number | undefined,
       });
     },
   },

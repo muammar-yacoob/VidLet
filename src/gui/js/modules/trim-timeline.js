@@ -31,13 +31,13 @@
     const endPct = (end / duration) * 100;
     const rangePct = endPct - startPct;
 
-    $('trim-range').style.left = `${startPct}%`;
-    $('trim-range').style.width = `${rangePct}%`;
+    $('timeline-range').style.left = `${startPct}%`;
+    $('timeline-range').style.width = `${rangePct}%`;
 
     const { formatTime, formatDuration } = window.VidLetUtils;
-    $('trim-start-time').textContent = formatTime(start);
-    $('trim-end-time').textContent = formatTime(end);
-    $('trim-duration').textContent = formatDuration(Math.max(0, end - start));
+    $('trim-start-badge').textContent = formatTime(start);
+    $('trim-end-badge').textContent = formatTime(end);
+    $('trim-duration-badge').textContent = formatDuration(Math.max(0, end - start));
   }
 
   /**
@@ -90,9 +90,9 @@
    */
   function initTimelineHandles(info) {
     const timeline = $('timeline');
-    const startHandle = $('trim-start-handle');
-    const endHandle = $('trim-end-handle');
-    const rangeHandle = $('trim-range');
+    const startHandle = $('handle-start');
+    const endHandle = $('handle-end');
+    const rangeHandle = $('timeline-range');
 
     let isDragging = false;
     let dragType = null;

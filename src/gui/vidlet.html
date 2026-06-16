@@ -64,7 +64,7 @@
           </div>
           <div class="tool" id="t-audio" onclick="selectTool('audio')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-            <span>Add Audio</span>
+            <span>Audio</span>
           </div>
           <div class="tool" id="t-filter" onclick="selectTool('filter')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
@@ -244,21 +244,46 @@
           </div>
 
           <div class="opts" id="opts-audio">
-            <div class="opts-row">
-              <div class="drop-zone" id="audioDropZone" onclick="$('audioFileInput').click()">
-                <span id="audioFileName">Drop audio file or click to browse</span>
-                <input type="file" id="audioFileInput" accept="audio/*" style="display:none" onchange="handleAudioFile(this)">
+            <div class="opts-row"><label>Mode</label>
+              <div class="preset-btns" id="audio-mode-btns">
+                <button type="button" class="preset-btn active" data-mode="add" onclick="setAudioMode('add')">Add Track</button>
+                <button type="button" class="preset-btn" data-mode="clean" onclick="setAudioMode('clean')">Clean Voice</button>
               </div>
             </div>
-            <div class="opts-row"><label>Volume</label>
-              <div class="slider-row">
-                <input type="range" id="audio-volume" min="0" max="100" value="50" oninput="updateAudioVolume()">
-                <span class="slider-val" id="audio-vol-val">50%</span>
+            <div id="audio-add-opts">
+              <div class="opts-row">
+                <div class="drop-zone" id="audioDropZone" onclick="$('audioFileInput').click()">
+                  <span id="audioFileName">Drop audio file or click to browse</span>
+                  <input type="file" id="audioFileInput" accept="audio/*" style="display:none" onchange="handleAudioFile(this)">
+                </div>
+              </div>
+              <div class="opts-row"><label>Volume</label>
+                <div class="slider-row">
+                  <input type="range" id="audio-volume" min="0" max="100" value="50" oninput="updateAudioVolume()">
+                  <span class="slider-val" id="audio-vol-val">50%</span>
+                </div>
+              </div>
+              <div class="opts-row"><label>Mix</label><div class="toggle on" id="audio-toggle" onclick="toggleAudioMix()"><div class="toggle-track"></div><span class="toggle-label">Blend with original</span></div></div>
+              <input type="hidden" id="audio-path" value="">
+              <audio id="audioPreview" style="display:none"></audio>
+            </div>
+            <div id="audio-clean-opts" style="display:none">
+              <div class="opts-row"><label>Denoise</label>
+                <div class="slider-row">
+                  <input type="range" id="clean-noise" min="1" max="10" value="5" oninput="updateCleanNoiseLabel()">
+                  <span class="slider-val" id="clean-noise-val">5</span>
+                </div>
+              </div>
+              <div class="opts-row"><label>Loudness</label>
+                <div class="slider-row">
+                  <input type="range" id="clean-loudness" min="-24" max="-10" value="-14" oninput="updateCleanLoudnessLabel()">
+                  <span class="slider-val" id="clean-loudness-val">-14 LUFS</span>
+                </div>
+              </div>
+              <div class="opts-row" style="justify-content:center">
+                <span id="clean-analysis-info" style="color:var(--text-dim);font-size:11px">Select to analyze audio...</span>
               </div>
             </div>
-            <div class="opts-row"><label>Mix</label><div class="toggle on" id="audio-toggle" onclick="toggleAudioMix()"><div class="toggle-track"></div><span class="toggle-label">Blend with original</span></div></div>
-            <input type="hidden" id="audio-path" value="">
-            <audio id="audioPreview" style="display:none"></audio>
           </div>
 
           <div class="opts" id="opts-portrait">

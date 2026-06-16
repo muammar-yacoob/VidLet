@@ -14,6 +14,7 @@ let homepage = 'https://vidlet.app';
 let _currentFilePath = null;
 let isMkvFile = false;
 let skipReloadOnContinue = false;
+let audioMode = 'add';
 
 // Make info globally accessible for modules
 window.videoInfo = info;
@@ -468,6 +469,59 @@ function setAudioBitrate(bitrate) {
 }
 
 // biome-ignore lint/correctness/noUnusedVariables: Called from HTML
+function setAudioMode(mode) {
+  audioMode = mode;
+  const addOpts = $('audio-add-opts');
+  const cleanOpts = $('audio-clean-opts');
+  if (addOpts) addOpts.style.display = mode === 'add' ? '' : 'none';
+  if (cleanOpts) cleanOpts.style.display = mode === 'clean' ? '' : 'none';
+  for (const btn of document.querySelectorAll('#audio-mode-btns .preset-btn')) {
+    btn.classList.remove('active');
+  }
+  const activeBtn = document.querySelector(`#audio-mode-btns [data-mode="${mode}"]`);
+  if (activeBtn) activeBtn.classList.add('active');
+
+  if (mode === 'clean') analyzeAudioForCleanVoice();
+}
+
+async function analyzeAudioForCleanVoice() {
+  const infoEl = $('clean-analysis-info');
+  if (infoEl) infoEl.textContent = 'Analyzing audio...';
+
+  try {
+    const res = await postJson('/api/analyze-audio', {});
+    if (res.success) {
+      $('clean-noise').value = res.suggestedNoiseReduction;
+      $('clean-noise-val').textContent = `${res.suggestedNoiseReduction}`;
+
+      $('clean-loudness').value = -14;
+      $('clean-loudness-val').textContent = '-14 LUFS';
+
+      const profile = res.voiceStart > 0
+        ? `Profile: 0→${res.voiceStart.toFixed(1)}s`
+        : 'Profile: auto';
+      infoEl.textContent = `${profile} · Current: ${res.currentLoudness.toFixed(1)} LUFS`;
+    } else {
+      if (infoEl) infoEl.textContent = 'Analysis failed — using defaults';
+    }
+  } catch {
+    if (infoEl) infoEl.textContent = 'Analysis failed — using defaults';
+  }
+}
+
+// biome-ignore lint/correctness/noUnusedVariables: Called from HTML
+function updateCleanNoiseLabel() {
+  const val = $('clean-noise')?.value;
+  if ($('clean-noise-val')) $('clean-noise-val').textContent = val;
+}
+
+// biome-ignore lint/correctness/noUnusedVariables: Called from HTML
+function updateCleanLoudnessLabel() {
+  const val = $('clean-loudness')?.value;
+  if ($('clean-loudness-val')) $('clean-loudness-val').textContent = `${val} LUFS`;
+}
+
+// biome-ignore lint/correctness/noUnusedVariables: Called from HTML
 function setMkvMode(mode) {
   window.VidLetMkvTool.setMode(mode);
 }
@@ -680,12 +734,18 @@ async function process() {
     } else if (activeTool === 'portrait') {
       opts = { ...opts, ...window.VidLet.portrait.getOptions() };
     } else if (activeTool === 'audio') {
-      if (!window.VidLetAudioTool.isLoaded()) {
-        alert('Please select an audio file first');
-        $('loading').classList.remove('on');
-        return;
+      if (audioMode === 'clean') {
+        opts.tool = 'cleanvoice';
+        opts.noiseReduction = Number.parseInt($('clean-noise').value);
+        opts.targetLoudness = Number.parseInt($('clean-loudness').value);
+      } else {
+        if (!window.VidLetAudioTool.isLoaded()) {
+          alert('Please select an audio file first');
+          $('loading').classList.remove('on');
+          return;
+        }
+        opts = { ...opts, ...window.VidLetAudioTool.getOptions() };
       }
-      opts = { ...opts, ...window.VidLetAudioTool.getOptions() };
     } else if (activeTool === 'filter') {
       if (!window.VidLetFilterTool.hasActiveFilters()) {
         alert('No filters applied');

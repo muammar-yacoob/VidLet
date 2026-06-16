@@ -88,41 +88,15 @@ export async function getVideoDuration(inputPath: string): Promise<number> {
   return info.duration;
 }
 
-/**
- * Execute an ffmpeg command
- */
-export async function executeFFmpeg(options: FFmpegOptions): Promise<void> {
-  const { input, output, args = [], overwrite = true } = options;
-
-  // Validate input file exists
+/** Run FFmpeg with standard error handling and logging */
+async function runFFmpeg(args: string[], label: string) {
+  logToFile(`FFmpeg ${label}: ffmpeg ${args.join(' ')}`);
   try {
-    await fs.access(input);
-  } catch {
-    throw new Error(`Input file not found: ${input}`);
-  }
-
-  const ffmpegArgs = [
-    '-nostdin', // Prevent waiting for input
-    ...(overwrite ? ['-y'] : ['-n']),
-    '-i',
-    input,
-    ...args,
-    '-loglevel',
-    'error', // Only show errors to reduce output buffering
-    output,
-  ];
-
-  // Log the command for debugging
-  logToFile(`FFmpeg command: ffmpeg ${ffmpegArgs.join(' ')}`);
-
-  try {
-    const result = await execa('ffmpeg', ffmpegArgs, {
+    const result = await execa('ffmpeg', args, {
       reject: false,
-      timeout: 30 * 60 * 1000, // 30 minute timeout
+      timeout: 30 * 60 * 1000,
     });
-
     logToFile(`FFmpeg completed with exit code: ${result.exitCode}`);
-
     if (result.exitCode !== 0) {
       const errorMsg = result.stderr?.trim() || `Exit code ${result.exitCode}`;
       logToFile(`FFmpeg error: ${errorMsg}`);
@@ -130,15 +104,40 @@ export async function executeFFmpeg(options: FFmpegOptions): Promise<void> {
       (err as any).isFFmpegError = true;
       throw err;
     }
-
-    logToFile(`FFmpeg success: Output at ${output}`);
+    return result;
   } catch (error) {
-    // Don't double-wrap FFmpeg errors
     if ((error as any).isFFmpegError) throw error;
     const execaError = error as ExecaError;
     logToFile(`FFmpeg exception: ${execaError.message}`);
     throw new Error(`FFmpeg failed: ${execaError.message}`);
   }
+}
+
+/**
+ * Execute an ffmpeg command
+ */
+export async function executeFFmpeg(options: FFmpegOptions): Promise<void> {
+  const { input, output, args = [], overwrite = true } = options;
+
+  try {
+    await fs.access(input);
+  } catch {
+    throw new Error(`Input file not found: ${input}`);
+  }
+
+  const ffmpegArgs = [
+    '-nostdin',
+    ...(overwrite ? ['-y'] : ['-n']),
+    '-i',
+    input,
+    ...args,
+    '-loglevel',
+    'error',
+    output,
+  ];
+
+  await runFFmpeg(ffmpegArgs, 'command');
+  logToFile(`FFmpeg success: Output at ${output}`);
 }
 
 /**
@@ -162,66 +161,31 @@ export async function executeFFmpegMultiInput(
     output,
   ];
 
-  logToFile(`FFmpeg multi-input command: ffmpeg ${ffmpegArgs.join(' ')}`);
-
-  try {
-    const result = await execa('ffmpeg', ffmpegArgs, {
-      reject: false,
-      timeout: 30 * 60 * 1000,
-    });
-
-    logToFile(`FFmpeg completed with exit code: ${result.exitCode}`);
-
-    if (result.exitCode !== 0) {
-      const errorMsg = result.stderr?.trim() || `Exit code ${result.exitCode}`;
-      logToFile(`FFmpeg error: ${errorMsg}`);
-      const err = new Error(`FFmpeg failed: ${errorMsg}`);
-      (err as any).isFFmpegError = true;
-      throw err;
-    }
-
-    logToFile(`FFmpeg success: Output at ${output}`);
-  } catch (error) {
-    // Don't double-wrap FFmpeg errors
-    if ((error as any).isFFmpegError) throw error;
-    const execaError = error as ExecaError;
-    logToFile(`FFmpeg exception: ${execaError.message}`);
-    throw new Error(`FFmpeg failed: ${execaError.message}`);
-  }
+  await runFFmpeg(ffmpegArgs, 'multi-input');
+  logToFile(`FFmpeg success: Output at ${output}`);
 }
 
 /**
  * Execute ffmpeg with raw arguments (no automatic input/output handling)
  */
 export async function executeFFmpegRaw(args: string[]): Promise<void> {
-  const ffmpegArgs = ['-nostdin', '-loglevel', 'error', ...args];
+  await runFFmpeg(['-nostdin', '-loglevel', 'error', ...args], 'raw');
+}
 
-  logToFile(`FFmpeg raw command: ffmpeg ${ffmpegArgs.join(' ')}`);
-
+/**
+ * Run an FFmpeg analysis pass (output to null) and return stderr.
+ * Used for filters like silencedetect and loudnorm that output results to stderr.
+ */
+export async function executeFFmpegAnalysis(input: string, args: string[]): Promise<string> {
   try {
-    const result = await execa('ffmpeg', ffmpegArgs, {
-      reject: false,
-      timeout: 30 * 60 * 1000, // 30 minute timeout
-    });
-
-    logToFile(`FFmpeg completed with exit code: ${result.exitCode}`);
-
-    if (result.exitCode !== 0) {
-      const errorMsg = result.stderr?.trim() || `Exit code ${result.exitCode}`;
-      logToFile(`FFmpeg error: ${errorMsg}`);
-      const err = new Error(`FFmpeg failed: ${errorMsg}`);
-      (err as any).isFFmpegError = true;
-      throw err;
-    }
-
-    logToFile('FFmpeg raw command completed successfully');
-  } catch (error) {
-    // Don't double-wrap FFmpeg errors
-    if ((error as any).isFFmpegError) throw error;
-    const execaError = error as ExecaError;
-    logToFile(`FFmpeg exception: ${execaError.message}`);
-    throw new Error(`FFmpeg failed: ${execaError.message}`);
+    await fs.access(input);
+  } catch {
+    throw new Error(`Input file not found: ${input}`);
   }
+
+  const ffmpegArgs = ['-nostdin', '-y', '-i', input, ...args, '-f', 'null', '-'];
+  const result = await runFFmpeg(ffmpegArgs, 'analysis');
+  return result.stderr || '';
 }
 
 /**
