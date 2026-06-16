@@ -3,7 +3,7 @@
  * Manages video player controls and keyboard shortcuts
  */
 (() => {
-  const { $, formatDuration } = window.VidLet;
+  const { $ } = window.VidLet;
   const { formatTime, matchesHotkey } = window.VidLetUtils;
 
   // Player state
@@ -17,42 +17,24 @@
    */
   function initPlayerControls(setTrimStartToCurrent, setTrimEndToCurrent, getActiveTool) {
     const video = $('videoPreview');
-    const playBtn = $('playBtn');
-    const muteBtn = $('muteBtn');
-    const speedBtn = $('speedBtn');
-    const progressBar = $('progress-bar');
-    const progressFill = $('progress-fill');
-    const currentTimeEl = $('current-time');
-    const durationEl = $('total-duration');
+    const seek = $('playerSeek');
 
-    // Play/Pause
-    playBtn?.addEventListener('click', togglePlay);
-    video.addEventListener('play', () => {
-      playBtn.textContent = 'Pause';
-      playBtn.classList.add('playing');
-    });
-    video.addEventListener('pause', () => {
-      playBtn.textContent = 'Play';
-      playBtn.classList.remove('playing');
-    });
+    // Play/Pause icon toggling
+    video.addEventListener('play', updatePlayIcon);
+    video.addEventListener('pause', updatePlayIcon);
 
-    // Mute
-    muteBtn?.addEventListener('click', toggleMute);
-
-    // Speed control
-    speedBtn?.addEventListener('click', cycleSpeed);
-
-    // Progress bar
+    // Progress bar + time display + timeline playhead
     video.addEventListener('timeupdate', () => {
-      if (!video.duration) return;
-      const pct = (video.currentTime / video.duration) * 100;
-      progressFill.style.width = `${pct}%`;
-      currentTimeEl.textContent = formatTime(video.currentTime);
-      durationEl.textContent = formatDuration(video.duration);
+      updateTimeDisplay(getActiveTool);
+      updatePlayhead();
+      if (getActiveTool() === 'portrait') {
+        window.VidLet.portrait.updatePlayhead?.();
+      }
     });
 
-    progressBar?.addEventListener('click', (e) => {
-      const rect = progressBar.getBoundingClientRect();
+    // Seek on click
+    seek?.addEventListener('click', (e) => {
+      const rect = seek.getBoundingClientRect();
       const pct = (e.clientX - rect.left) / rect.width;
       video.currentTime = pct * video.duration;
     });
@@ -61,6 +43,43 @@
     document.addEventListener('keydown', (e) =>
       handlePlayerKeydown(e, setTrimStartToCurrent, setTrimEndToCurrent, getActiveTool)
     );
+  }
+
+  function updatePlayIcon() {
+    const video = $('videoPreview');
+    $('playIcon').style.display = video.paused ? 'block' : 'none';
+    $('pauseIcon').style.display = video.paused ? 'none' : 'block';
+  }
+
+  function updateTimeDisplay(getActiveTool) {
+    const video = $('videoPreview');
+    if (!video.duration) return;
+
+    const currentTime = video.currentTime;
+
+    if (getActiveTool() === 'trim') {
+      const trimStart = parseFloat($('trim-start').value) || 0;
+      const trimEnd = parseFloat($('trim-end').value) || video.duration;
+      const trimDuration = trimEnd - trimStart;
+      const relativeTime = Math.max(0, currentTime - trimStart);
+      const pct = trimDuration > 0 ? (relativeTime / trimDuration) * 100 : 0;
+      $('playerProgress').style.width = Math.min(100, pct) + '%';
+      $('playerThumb').style.left = Math.min(100, pct) + '%';
+      $('playerTime').textContent = formatTime(relativeTime) + ' / ' + formatTime(trimDuration);
+    } else {
+      const pct = (currentTime / video.duration) * 100;
+      $('playerProgress').style.width = pct + '%';
+      $('playerThumb').style.left = pct + '%';
+      $('playerTime').textContent = formatTime(currentTime) + ' / ' + formatTime(video.duration);
+    }
+  }
+
+  function updatePlayhead() {
+    const video = $('videoPreview');
+    const playhead = $('timeline-playhead');
+    if (!video.duration || !playhead) return;
+    const pct = (video.currentTime / video.duration) * 100;
+    playhead.style.left = pct + '%';
   }
 
   /**
@@ -81,10 +100,15 @@
   function toggleMute() {
     const video = $('videoPreview');
     video.muted = !video.muted;
-    const muteBtn = $('muteBtn');
-    if (muteBtn) {
-      muteBtn.textContent = video.muted ? 'Unmute' : 'Mute';
-    }
+    updateVolumeUI();
+  }
+
+  function updateVolumeUI() {
+    const video = $('videoPreview');
+    const muted = video.muted || video.volume === 0;
+    $('volIcon').style.display = muted ? 'none' : 'block';
+    $('mutedIcon').style.display = muted ? 'block' : 'none';
+    $('volumeLevel').style.width = (muted ? 0 : video.volume * 100) + '%';
   }
 
   /**
@@ -97,7 +121,7 @@
     currentSpeed = speeds[nextIndex];
     const video = $('videoPreview');
     video.playbackRate = currentSpeed;
-    const speedBtn = $('speedBtn');
+    const speedBtn = $('speedVal');
     if (speedBtn) {
       speedBtn.textContent = `${currentSpeed}x`;
     }
@@ -204,6 +228,7 @@
     initPlayerControls,
     togglePlay,
     toggleMute,
+    updateVolumeUI,
     cycleSpeed,
   };
 })();

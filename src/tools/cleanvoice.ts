@@ -26,7 +26,7 @@ interface LoudnormMeasurements {
 const MIN_NOISE_PROFILE_DURATION = 0.3;
 
 export async function cleanVoice(options: CleanVoiceOptions): Promise<string> {
-  const { input, output: customOutput, noiseReduction = 12, targetLoudness = -14 } = options;
+  const { input, output: customOutput, noiseReduction = 5, targetLoudness = -14 } = options;
 
   if (!(await checkFFmpeg())) {
     throw new Error('FFmpeg not found. Please install ffmpeg.');
@@ -41,7 +41,7 @@ export async function cleanVoice(options: CleanVoiceOptions): Promise<string> {
 
   header('Clean Voice');
   console.log(`Input:    ${fmt.white(input)}`);
-  console.log(`Denoise:  ${fmt.yellow(`${noiseReduction} dB`)}`);
+  console.log(`Denoise:  ${fmt.yellow(`${noiseReduction}/10`)}`);
   console.log(`Loudness: ${fmt.yellow(`${targetLoudness} LUFS`)}`);
   separator();
 
@@ -140,7 +140,9 @@ function buildBaseFilters(voiceStart: number, noiseReduction: number): string[] 
   filters.push('lowpass=f=16000');
 
   // Noise reduction: non-local means (no FFT artifacts / robotic sound)
-  filters.push(`anlmdn=s=${noiseReduction}:p=0.002:r=0.006:m=15`);
+  // Map user-facing scale (1-10) to anlmdn strength (0.0001 to 0.1 log scale)
+  const strength = 0.0001 * Math.pow(10, (noiseReduction - 1) / 3);
+  filters.push(`anlmdn=s=${strength}:p=0.015:r=0.05:m=15`);
 
   return filters;
 }

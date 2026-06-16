@@ -711,6 +711,10 @@ window.restoreState = restoreState;
 async function process() {
   if (!activeTool) return;
 
+  // Stop playback before processing
+  const video = $('videoPreview');
+  if (video && !video.paused) video.pause();
+
   $('loading').classList.add('on');
   $('loading').querySelector('span').textContent = 'Processing...';
 
