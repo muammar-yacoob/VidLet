@@ -42,7 +42,7 @@ interface SilenceSegment {
 export async function cleanVoice(options: CleanVoiceOptions): Promise<string> {
   const { input, output: customOutput, noiseReduction = 5, targetLoudness = -14, noiseSampleStart, noiseSampleEnd } = options;
   const progress = options.onProgress ?? (() => {});
-  const noiseSample = noiseSampleStart != null && noiseSampleEnd != null && noiseSampleEnd > noiseSampleStart
+  const manualSample = noiseSampleStart != null && noiseSampleEnd != null && noiseSampleEnd > noiseSampleStart
     ? { start: noiseSampleStart, end: noiseSampleEnd }
     : undefined;
 
@@ -62,14 +62,34 @@ export async function cleanVoice(options: CleanVoiceOptions): Promise<string> {
   console.log(`Input:    ${fmt.white(input)}`);
   console.log(`Denoise:  ${fmt.yellow(`${noiseReduction}/10`)}`);
   console.log(`Engine:   ${fmt.yellow(hasRnnoise ? 'RNNoise (neural)' : 'FFT (adaptive)')}`);
-  if (noiseSample) {
-    console.log(`Sample:   ${fmt.yellow(`${noiseSample.start}s → ${noiseSample.end}s`)}`);
+
+  // Resolve noise sample: manual override > auto-detect from longest silence
+  progress('Detecting noise...');
+  let spin = createSpinner('Detecting noise...');
+  let noiseSample = manualSample;
+  if (!noiseSample) {
+    const segments = await detectSilenceSegments(input);
+    if (segments.length > 0) {
+      // Pick the longest silence segment as the best noise sample
+      noiseSample = segments.reduce((best, seg) =>
+        (seg.end - seg.start) > (best.end - best.start) ? seg : best
+      );
+    }
   }
+
+  if (noiseSample) {
+    const label = manualSample ? 'manual' : 'auto';
+    console.log(`Sample:   ${fmt.yellow(`${noiseSample.start.toFixed(1)}s → ${noiseSample.end.toFixed(1)}s (${label})`)}`);
+    spin.stop();
+  } else {
+    spin.stop(`Sample:   ${fmt.yellow('none (neural only)')}`);
+  }
+
   console.log(`Loudness: ${fmt.yellow(`${targetLoudness} LUFS`)}`);
   separator();
 
   progress('Measuring loudness...');
-  let spin = createSpinner('Measuring loudness...');
+  spin = createSpinner('Measuring loudness...');
   try {
     const baseFilters = buildBaseFilters(noiseReduction, hasRnnoise, noiseSample);
 
