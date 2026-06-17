@@ -1,0 +1,198 @@
+/* Spark AI Kit styles */
+
+/* ── Keyframes ────────────────────────────────────────────────────────────── */
+
+@keyframes aiGlow {
+	0%,
+	100% {
+		filter: drop-shadow(0 0 1px rgba(167, 139, 250, 0.3));
+	}
+	50% {
+		filter: drop-shadow(0 0 6px rgba(167, 139, 250, 0.8))
+			drop-shadow(0 0 12px rgba(167, 139, 250, 0.4));
+	}
+}
+@keyframes aiRainbow {
+	0% {
+		background-position: 0% 50%;
+	}
+	50% {
+		background-position: 100% 50%;
+	}
+	100% {
+		background-position: 0% 50%;
+	}
+}
+@keyframes aiTipIn {
+	from {
+		opacity: 0;
+		transform: translateX(-50%) translateY(3px);
+	}
+	to {
+		opacity: 1;
+		transform: translateX(-50%);
+	}
+}
+@keyframes aiTipOut {
+	from {
+		opacity: 1;
+		transform: translateX(-50%);
+	}
+	to {
+		opacity: 0;
+		transform: translateX(-50%) translateY(3px);
+	}
+}
+@keyframes aiOrbit1 {
+	0% {
+		transform: rotate(0deg) translateX(8px) rotate(0deg);
+		opacity: 0;
+	}
+	15% {
+		opacity: 1;
+	}
+	85% {
+		opacity: 1;
+	}
+	100% {
+		transform: rotate(360deg) translateX(8px) rotate(-360deg);
+		opacity: 0;
+	}
+}
+@keyframes aiOrbit2 {
+	0% {
+		transform: rotate(120deg) translateX(10px) rotate(-120deg);
+		opacity: 0;
+	}
+	15% {
+		opacity: 0.8;
+	}
+	85% {
+		opacity: 0.8;
+	}
+	100% {
+		transform: rotate(480deg) translateX(10px) rotate(-480deg);
+		opacity: 0;
+	}
+}
+
+/* ── Wand button ──────────────────────────────────────────────────────────── */
+
+[data-ai-wand] {
+	position: relative;
+	animation: aiGlow 2.5s ease-in-out infinite;
+	cursor: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAABGdBTUEAALGPC/xhBQAAACBjSFJNAAB6JgAAgIQAAPoAAACA6AAAdTAAAOpgAAA6mAAAF3CculE8AAAABmJLR0QA/wD/AP+gvaeTAAAAB3RJTUUH6gQBCzggFpMgMwAAAX1JREFUWMPt1DFrwkAYxvGnrUjBoYQukqEYGgc7dBLBxaFjUJyke5dunf0AHZykOLZrN4fT5RbpJ1A7dKiQRDoZXKSBILQk8HYSJKDE5JIu+W8H73E/juOAtLS0PfV6vSsiotls9tvtds8SO5gxVplOp59ERLZtU+KI8Xj8TlsljmCMVcjXNkKW5dPYEf1+/2YXol6vm/+GaLVa1Ol0qFar6YkjRqMRKYpC1WpVGOIkAOBLUZQ3y7LuBoMBJEmCrutYLBZoNBrnq9Xq1nXdF8dxvDCAo6CDmqZd5nI5c7OeTCbI5/NoNpvgnBumaV5blvUj/AY2GYbxXSgUXrPZ7AMAyLIs5CYCA+JCHASIA3EwQDQiFEAkIjRAFCISQAQiMiAqQgggCuJYFAAAOOfz9XqtbtblchnL5RLD4RCaphVVVf3w7wn8FR/Svm8bgNRut+1YAbsQpVKpyDk3t+diA/gRnuc9M8bu/TNC34A/zvkcwAWAp0wm8xjnWWmh+wM1Nr64KCSlaAAAACV0RVh0ZGF0ZTpjcmVhdGUAMjAyNi0wNC0wMVQxMTo1NjozMiswMDowMBytUj0AAAAldEVYdGRhdGU6bW9kaWZ5ADIwMjYtMDQtMDFUMTE6NTY6MzIrMDA6MDBt8OqBAAAAAElFTkSuQmCC")
+		6 5, pointer;
+	will-change: filter;
+	transform: translateZ(0);
+}
+[data-ai-wand]::before,
+[data-ai-wand]::after {
+	content: "";
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	width: 3px;
+	height: 3px;
+	margin: -1.5px 0 0 -1.5px;
+	border-radius: 50%;
+	pointer-events: none;
+	opacity: 0;
+}
+[data-ai-wand]::before {
+	background: #c4b5fd;
+	box-shadow: 0 0 4px 1px rgba(196, 181, 253, 0.6);
+}
+[data-ai-wand]::after {
+	background: #a78bfa;
+	box-shadow: 0 0 3px 1px rgba(167, 139, 250, 0.5);
+	width: 2px;
+	height: 2px;
+	margin: -1px 0 0 -1px;
+}
+[data-ai-wand]:hover::before {
+	animation: aiOrbit1 1.8s linear infinite;
+}
+[data-ai-wand]:hover::after {
+	animation: aiOrbit2 2.4s linear infinite .2s;
+}
+
+/* ── Tooltip ──────────────────────────────────────────────────────────────── */
+
+[data-ai-tip="in"] {
+	animation: aiTipIn .13s cubic-bezier(0.2, 0, 0.2, 1) forwards;
+}
+[data-ai-tip="out"] {
+	animation: aiTipOut .25s ease-in forwards;
+}
+
+.ai-spark-link {
+	background: linear-gradient(135deg, #f36, #ff6b35, #fc3, #6f6, #39f, #96f, #f3c);
+	background-size: 400% 400%;
+	-webkit-background-clip: text;
+	background-clip: text;
+	-webkit-text-fill-color: transparent;
+	animation: aiRainbow 4s ease infinite;
+	font-weight: 600;
+}
+
+/* ── AiInput / AiTextarea ─────────────────────────────────────────────────── */
+
+.ai-field-wrap {
+	position: relative;
+	display: flex;
+	width: 100%;
+}
+.ai-field-input {
+	width: 100%;
+	padding-right: 2rem;
+}
+.ai-field-wand {
+	position: absolute;
+	right: 0.375rem;
+	top: 50%;
+	transform: translateY(-50%);
+	display: flex;
+	align-items: center;
+}
+.ai-field-wand--top {
+	top: 0.5rem;
+	transform: none;
+}
+
+/* ── Comparison copy buttons ─────────────────────────────────────────────── */
+
+.comparison-copy-btn {
+	font-size: 10px;
+	color: #9ca3af;
+	background: none;
+	border: 1px solid rgba(148, 163, 184, 0.15);
+	border-radius: 4px;
+	padding: 3px 8px;
+	cursor: pointer;
+	white-space: nowrap;
+	min-width: 60px;
+	text-align: center;
+	transition: color 0.15s, border-color 0.15s;
+}
+.comparison-copy-btn:hover {
+	color: #c084fc;
+	border-color: rgba(192, 132, 252, 0.3);
+}
+
+/* ── Button sizing (works without Tailwind) ──────────────────────────────── */
+
+button[data-ai-wand] {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 1px;
+	padding: 14px;
+	margin: -14px;
+	border-radius: 4px;
+	background: none;
+	border: none;
+}
+button[data-ai-wand]:disabled {
+	pointer-events: none;
+}

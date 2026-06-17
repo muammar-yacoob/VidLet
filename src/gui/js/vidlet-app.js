@@ -28,6 +28,9 @@ async function init() {
   window.VidLet.state = window.VidLet.state || {};
   window.VidLet.state.info = info;
   _currentFilePath = res.filePath;
+  if (res.sparkAiKey && window.SparkAI) {
+    window.SparkAI.configure({ apiKey: res.sparkAiKey });
+  }
   updateFileDisplay();
 
   const video = $('videoPreview');
