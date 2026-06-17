@@ -572,7 +572,7 @@ function updateFeatureHints(tool, outputDuration) {
 // ============ CROP OVERLAY (PORTRAIT) ============
 
 function initCropOverlay() {
-  window.VidLet.portrait.initCropOverlay();
+  window.VidLet.portrait.initOverlay();
 }
 
 // biome-ignore lint/correctness/noUnusedVariables: Called from portrait module
