@@ -50,28 +50,16 @@ export async function cleanVoice(options: CleanVoiceOptions): Promise<string> {
   console.log(`Loudness: ${fmt.yellow(`${targetLoudness} LUFS`)}`);
   separator();
 
-  let spin = createSpinner('Analyzing audio...');
+  let spin = createSpinner('Measuring loudness...');
   try {
-    // Pass 1: Find all silence gaps (pauses, breaths, room tone) for noise profiling
-    const segments = await detectSilenceSegments(input);
-    if (segments.length > 0) {
-      const totalNoise = segments.reduce((s, seg) => s + (seg.end - seg.start), 0);
-      spin.stop(`Noise:    ${fmt.yellow(`${segments.length} segments (${totalNoise.toFixed(1)}s)`)}`);
-    } else {
-      spin.stop(`Noise:    ${fmt.yellow('adaptive (no silence found)')}`);
-    }
+    const baseFilters = buildBaseFilters(noiseReduction);
 
-    const baseFilters = buildBaseFilters(segments, noiseReduction);
-
-    // Pass 2: Measure loudness (lightweight — skip anlmdn to avoid double processing)
-    spin = createSpinner('Measuring loudness...');
-    const lightFilters = baseFilters.filter(
-      (f) => !f.startsWith('anlmdn') && !f.startsWith('afftdn') && !f.startsWith('asendcmd')
-    );
+    // Pass 1: Measure loudness (lightweight — skip denoiser)
+    const lightFilters = baseFilters.filter((f) => !f.startsWith('afftdn'));
     const measurements = await measureLoudness(input, lightFilters, targetLoudness);
     spin.stop();
 
-    // Pass 3: Apply full chain with calibrated loudnorm
+    // Pass 2: Denoise + normalize + limit
     spin = createSpinner('Processing audio...');
     const loudnorm =
       `loudnorm=I=${targetLoudness}:TP=-3:LRA=11` +
@@ -178,11 +166,8 @@ async function measureLoudness(
   };
 }
 
-function buildBaseFilters(segments: SilenceSegment[], noiseReduction: number): string[] {
+function buildBaseFilters(noiseReduction: number): string[] {
   const filters: string[] = [];
-
-  // Downmix to mono first — all subsequent filters process one channel
-  filters.push('pan=mono|c0=0.5*c0+0.5*c1');
 
   // High-pass: remove rumble below 80Hz
   filters.push('highpass=f=80');
@@ -190,21 +175,11 @@ function buildBaseFilters(segments: SilenceSegment[], noiseReduction: number): s
   // Low-pass: remove hiss above speech range (16kHz preserves voice harmonics)
   filters.push('lowpass=f=16000');
 
-  // Noise reduction: FFT spectral denoising with noise profiling
+  // Adaptive FFT denoising — continuously tracks stationary noise (fans, AC, hiss)
+  // from the signal itself, no silence sampling needed
   // Map user-facing scale (1-10) to noise reduction in dB (6-33)
   const nr = noiseReduction * 3 + 3;
-
-  if (segments.length > 0) {
-    // Sample noise from every silence gap — afftdn accumulates the profile
-    const cmds = segments
-      .map((s) => `${s.start.toFixed(3)} afftdn sn start;${s.end.toFixed(3)} afftdn sn stop`)
-      .join(';');
-    filters.push(`asendcmd=c='${cmds}'`);
-    filters.push(`afftdn=nr=${nr}:nf=-30:tn=0`);
-  } else {
-    // No silence found — use adaptive noise tracking
-    filters.push(`afftdn=nr=${nr}:nf=-30:tn=1`);
-  }
+  filters.push(`afftdn=nr=${nr}:nf=-40:tn=1`);
 
   return filters;
 }
