@@ -497,6 +497,15 @@ video::-webkit-media-controls-panel {
   color: var(--txt);
   font-size: 11px;
 }
+.opts-row input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+.opts-row input[type="number"]::-webkit-inner-spin-button,
+.opts-row input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
 .opts-row input:focus,
 .opts-row select:focus {
   outline: none;

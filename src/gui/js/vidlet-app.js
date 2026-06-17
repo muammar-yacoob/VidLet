@@ -497,9 +497,15 @@ async function analyzeAudioForCleanVoice() {
       $('clean-loudness').value = -14;
       $('clean-loudness-val').textContent = '-14 LUFS';
 
-      const profile =
-        res.voiceStart > 0 ? `Profile: 0→${res.voiceStart.toFixed(1)}s` : 'Profile: auto';
-      infoEl.textContent = `${profile} · Current: ${res.currentLoudness.toFixed(1)} LUFS`;
+      if (res.noiseSampleStart != null && res.noiseSampleEnd != null) {
+        $('clean-noise-start').value = res.noiseSampleStart.toFixed(1);
+        $('clean-noise-end').value = res.noiseSampleEnd.toFixed(1);
+      }
+
+      const sample = res.noiseSampleStart != null
+        ? `Sample: ${res.noiseSampleStart.toFixed(1)}→${res.noiseSampleEnd.toFixed(1)}s`
+        : 'No noise detected';
+      infoEl.textContent = `${sample} · ${res.currentLoudness.toFixed(1)} LUFS`;
     } else {
       if (infoEl) infoEl.textContent = 'Analysis failed — using defaults';
     }

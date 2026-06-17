@@ -22,6 +22,8 @@ export interface VoiceAnalysis {
   voiceStart: number;
   currentLoudness: number;
   suggestedNoiseReduction: number;
+  noiseSampleStart: number | null;
+  noiseSampleEnd: number | null;
 }
 
 interface LoudnormMeasurements {
@@ -245,7 +247,12 @@ function buildBaseFilters(
 }
 
 export async function analyzeVoice(input: string): Promise<VoiceAnalysis> {
-  const voiceStart = await detectVoiceStart(input);
+  // Find silence segments and derive voice start + best noise sample
+  const segments = await detectSilenceSegments(input);
+  const voiceStart = segments.length > 0 && segments[0].start === 0 ? segments[0].end : 0;
+  const bestSegment = segments.length > 0
+    ? segments.reduce((best, seg) => (seg.end - seg.start) > (best.end - best.start) ? seg : best)
+    : null;
 
   // Measure current loudness on raw audio
   const stderr = await executeFFmpegAnalysis(input, [
@@ -260,10 +267,15 @@ export async function analyzeVoice(input: string): Promise<VoiceAnalysis> {
     currentLoudness = Number.parseFloat(data.input_i);
   }
 
-  // Suggest denoise strength (afftdn scale: 1=subtle, 10=aggressive)
   let suggestedNoiseReduction = 3;
   if (voiceStart > 1.0) suggestedNoiseReduction = 7;
   else if (voiceStart >= MIN_NOISE_PROFILE_DURATION) suggestedNoiseReduction = 5;
 
-  return { voiceStart, currentLoudness, suggestedNoiseReduction };
+  return {
+    voiceStart,
+    currentLoudness,
+    suggestedNoiseReduction,
+    noiseSampleStart: bestSegment?.start ?? null,
+    noiseSampleEnd: bestSegment?.end ?? null,
+  };
 }
