@@ -166,6 +166,8 @@ function signalAppReady() {
     // Start frame cache with progress callback
     const frameSkip = window.VidLetSettingsManager.getPhase1FrameSkip();
     window.VidLet.frameCache.build(frameSkip, (pct) => {
+      $('cache-progress-fill').style.width = `${pct}%`;
+      $('cache-progress-pct').textContent = `${pct}%`;
       VidLet.postJson('/api/progress', { percent: pct });
     });
   };
