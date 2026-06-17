@@ -1,12 +1,19 @@
+import { existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { checkFFmpeg, executeFFmpeg, executeFFmpegAnalysis, getVideoInfo } from '../lib/ffmpeg.js';
 import { createSpinner, fmt, header, separator, success } from '../lib/logger.js';
 import { getOutputPath } from '../lib/paths.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const RNNOISE_MODEL = join(__dirname, 'models', 'rnnoise.rnnn');
 
 export interface CleanVoiceOptions {
   input: string;
   output?: string;
   noiseReduction?: number;
   targetLoudness?: number;
+  onProgress?: (stage: string) => void;
 }
 
 export interface VoiceAnalysis {
@@ -32,6 +39,7 @@ interface SilenceSegment {
 
 export async function cleanVoice(options: CleanVoiceOptions): Promise<string> {
   const { input, output: customOutput, noiseReduction = 5, targetLoudness = -14 } = options;
+  const progress = options.onProgress ?? (() => {});
 
   if (!(await checkFFmpeg())) {
     throw new Error('FFmpeg not found. Please install ffmpeg.');
@@ -43,23 +51,29 @@ export async function cleanVoice(options: CleanVoiceOptions): Promise<string> {
   }
 
   const output = customOutput ?? getOutputPath(input, '_cleanvoice');
+  const hasRnnoise = existsSync(RNNOISE_MODEL);
 
   header('Clean Voice');
   console.log(`Input:    ${fmt.white(input)}`);
   console.log(`Denoise:  ${fmt.yellow(`${noiseReduction}/10`)}`);
+  console.log(`Engine:   ${fmt.yellow(hasRnnoise ? 'RNNoise (neural)' : 'FFT (adaptive)')}`);
   console.log(`Loudness: ${fmt.yellow(`${targetLoudness} LUFS`)}`);
   separator();
 
+  progress('Measuring loudness...');
   let spin = createSpinner('Measuring loudness...');
   try {
-    const baseFilters = buildBaseFilters(noiseReduction);
+    const baseFilters = buildBaseFilters(noiseReduction, hasRnnoise);
 
-    // Pass 1: Measure loudness (lightweight — skip denoiser)
-    const lightFilters = baseFilters.filter((f) => !f.startsWith('afftdn'));
+    // Pass 1: Measure loudness (lightweight — skip denoisers)
+    const lightFilters = baseFilters.filter(
+      (f) => !f.startsWith('arnndn') && !f.startsWith('afftdn')
+    );
     const measurements = await measureLoudness(input, lightFilters, targetLoudness);
     spin.stop();
 
     // Pass 2: Denoise + normalize + limit
+    progress(hasRnnoise ? 'Denoising with RNNoise...' : 'Denoising audio...');
     spin = createSpinner('Processing audio...');
     const loudnorm =
       `loudnorm=I=${targetLoudness}:TP=-3:LRA=11` +
@@ -73,9 +87,10 @@ export async function cleanVoice(options: CleanVoiceOptions): Promise<string> {
     const filters = [
       ...baseFilters,
       loudnorm,
-      'alimiter=limit=0.85:attack=3:release=50:asc=1',
+      'alimiter=limit=0.95:attack=5:release=50:asc=1',
     ].join(',');
 
+    progress('Encoding final output...');
     await executeFFmpeg({
       input,
       output,
@@ -98,6 +113,7 @@ export async function cleanVoice(options: CleanVoiceOptions): Promise<string> {
     throw err;
   }
 
+  progress('Done!');
   success(`Output: ${output}`);
   return output;
 }
@@ -166,20 +182,23 @@ async function measureLoudness(
   };
 }
 
-function buildBaseFilters(noiseReduction: number): string[] {
+function buildBaseFilters(noiseReduction: number, hasRnnoise: boolean): string[] {
   const filters: string[] = [];
 
   // High-pass: remove rumble below 80Hz
   filters.push('highpass=f=80');
 
-  // Low-pass: remove hiss above speech range (16kHz preserves voice harmonics)
-  filters.push('lowpass=f=16000');
-
-  // Adaptive FFT denoising — continuously tracks stationary noise (fans, AC, hiss)
-  // from the signal itself, no silence sampling needed
-  // Map user-facing scale (1-10) to noise reduction in dB (6-33)
-  const nr = noiseReduction * 3 + 3;
-  filters.push(`afftdn=nr=${nr}:nf=-40:tn=1`);
+  if (hasRnnoise) {
+    // RNNoise neural denoiser — trained on speech vs noise, handles fans/AC/hum natively
+    // mix: blend denoised output with original (preserves natural voice texture)
+    const mix = Math.min(1, 0.4 + noiseReduction * 0.06);
+    filters.push(`arnndn=m=${RNNOISE_MODEL}:mix=${mix.toFixed(2)}`);
+  } else {
+    // Fallback: adaptive FFT denoising when RNNoise model not available
+    filters.push('lowpass=f=16000');
+    const nr = noiseReduction * 3 + 3;
+    filters.push(`afftdn=nr=${nr}:nf=-40:tn=1`);
+  }
 
   return filters;
 }

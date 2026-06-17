@@ -11,6 +11,7 @@ import express from 'express';
 import { loadToolsConfig, saveToolsConfig } from './config.js';
 import { cleanupSignalFiles, signalLoadingComplete } from './loading-window.js';
 import { logToFile } from './logger.js';
+import { getProcessStatus } from './process-status.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -199,6 +200,10 @@ export function startGuiServer(options: GuiServerOptions): Promise<boolean> {
           logs: [{ type: 'error', message: (err as Error).message }],
         });
       }
+    });
+
+    app.get('/api/process-status', (_req, res) => {
+      res.json({ status: getProcessStatus() });
     });
 
     app.post('/api/load', async (req, res) => {

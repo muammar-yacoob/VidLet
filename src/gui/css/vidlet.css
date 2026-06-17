@@ -1897,6 +1897,17 @@ video::-webkit-media-controls-panel {
   margin-top: 6px;
   font-weight: 600;
 }
+.process-log {
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--fg2);
+  font-family: monospace;
+  max-height: 80px;
+  overflow-y: auto;
+  text-align: left;
+  width: 80%;
+  line-height: 1.6;
+}
 .dn h4 {
   font-size: 14px;
   margin-bottom: 4px;

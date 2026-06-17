@@ -767,7 +767,23 @@ async function process() {
       opts = { ...opts, ...window.VidLetThumbTool.getOptions() };
     }
 
+    // Poll for live processing status
+    const logEl = $('process-log');
+    logEl.textContent = '';
+    const statusPoll = setInterval(async () => {
+      try {
+        const s = await fetch('/api/process-status').then((r) => r.json());
+        if (s.status) {
+          const line = document.createElement('div');
+          line.textContent = `› ${s.status}`;
+          logEl.appendChild(line);
+          logEl.scrollTop = logEl.scrollHeight;
+        }
+      } catch { /* ignore */ }
+    }, 600);
+
     const res = await postJson('/api/process', opts);
+    clearInterval(statusPoll);
     $('loading').classList.remove('on');
 
     if (res.success) {

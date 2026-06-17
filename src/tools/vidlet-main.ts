@@ -21,6 +21,8 @@ import { thumb } from './thumb.js';
 import { togif } from './togif.js';
 import { trim, trimAccurate } from './trim.js';
 
+import { setProcessStatus } from '../lib/process-status.js';
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /**
@@ -306,7 +308,11 @@ async function runTool(input: string, opts: ToolOptions): Promise<ProcessResult>
           input: actualInput,
           noiseReduction: opts.noiseReduction,
           targetLoudness: opts.targetLoudness,
+          onProgress: (stage) => {
+            setProcessStatus(stage);
+          },
         });
+        setProcessStatus('');
         logs.push({ type: 'success', message: 'Voice cleaned!' });
         break;
       }

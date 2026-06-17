@@ -34,6 +34,9 @@ export default defineConfig({
 		// Copy launcher script
 		cpSync('src/launcher.vbs', 'dist/launcher.vbs');
 
+		// Copy audio models (RNNoise)
+		cpSync('src/models', 'dist/models', { recursive: true });
+
 		// Copy lottie-web light build for HTA animation preview
 		cpSync('node_modules/lottie-web/build/player/lottie_light.min.js', 'dist/gui/lottie_light.min.js');
 	},
