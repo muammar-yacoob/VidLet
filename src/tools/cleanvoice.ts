@@ -1,12 +1,16 @@
-import { existsSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, unlinkSync } from 'node:fs';
+import { homedir, platform, arch, tmpdir } from 'node:os';
+import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { checkFFmpeg, executeFFmpeg, executeFFmpegAnalysis, getVideoInfo } from '../lib/ffmpeg.js';
+import { checkFFmpeg, executeFFmpeg, executeFFmpegAnalysis, executeFFmpegRaw, getVideoInfo } from '../lib/ffmpeg.js';
 import { createSpinner, fmt, header, separator, success } from '../lib/logger.js';
 import { getOutputPath } from '../lib/paths.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const RNNOISE_MODEL = join(__dirname, 'models', 'rnnoise.rnnn');
+const DEEPFILTER_DIR = join(homedir(), '.config', 'vidlet', 'bin');
+const DEEPFILTER_BIN = join(DEEPFILTER_DIR, 'deep-filter');
+const DEEPFILTER_VERSION = '0.5.6';
 
 export interface CleanVoiceOptions {
   input: string;
@@ -41,12 +45,57 @@ interface SilenceSegment {
   end: number;
 }
 
+type Engine = 'deepfilter' | 'rnnoise' | 'ffmpeg';
+
+// ============ ENGINE RESOLUTION ============
+
+function resolveEngine(): Engine {
+  if (existsSync(DEEPFILTER_BIN)) return 'deepfilter';
+  if (existsSync(RNNOISE_MODEL)) return 'rnnoise';
+  return 'ffmpeg';
+}
+
+function getDeepFilterUrl(): string | null {
+  const p = platform();
+  const a = arch();
+  const base = `https://github.com/Rikorose/DeepFilterNet/releases/download/v${DEEPFILTER_VERSION}`;
+  if (p === 'linux' && a === 'x64') return `${base}/deep-filter-${DEEPFILTER_VERSION}-x86_64-unknown-linux-musl`;
+  if (p === 'linux' && a === 'arm64') return `${base}/deep-filter-${DEEPFILTER_VERSION}-aarch64-unknown-linux-gnu`;
+  if (p === 'darwin' && a === 'x64') return `${base}/deep-filter-${DEEPFILTER_VERSION}-x86_64-apple-darwin`;
+  if (p === 'darwin' && a === 'arm64') return `${base}/deep-filter-${DEEPFILTER_VERSION}-aarch64-apple-darwin`;
+  return null;
+}
+
+export async function ensureDeepFilter(): Promise<boolean> {
+  if (existsSync(DEEPFILTER_BIN)) return true;
+
+  const url = getDeepFilterUrl();
+  if (!url) return false;
+
+  mkdirSync(DEEPFILTER_DIR, { recursive: true });
+
+  const { execaCommand } = await import('execa');
+  try {
+    await execaCommand(`curl -sL "${url}" -o "${DEEPFILTER_BIN}"`, { shell: true });
+    chmodSync(DEEPFILTER_BIN, 0o755);
+    return true;
+  } catch {
+    try { unlinkSync(DEEPFILTER_BIN); } catch { /* ignore */ }
+    return false;
+  }
+}
+
+const ENGINE_LABELS: Record<Engine, string> = {
+  deepfilter: 'DeepFilterNet (neural, 48kHz)',
+  rnnoise: 'RNNoise (neural)',
+  ffmpeg: 'FFmpeg (adaptive FFT)',
+};
+
+// ============ MAIN ENTRY ============
+
 export async function cleanVoice(options: CleanVoiceOptions): Promise<string> {
   const { input, output: customOutput, noiseReduction = 5, targetLoudness = -14, noiseSampleStart, noiseSampleEnd } = options;
   const progress = options.onProgress ?? (() => {});
-  const manualSample = noiseSampleStart != null && noiseSampleEnd != null && noiseSampleEnd > noiseSampleStart
-    ? { start: noiseSampleStart, end: noiseSampleEnd }
-    : undefined;
 
   if (!(await checkFFmpeg())) {
     throw new Error('FFmpeg not found. Please install ffmpeg.');
@@ -58,21 +107,125 @@ export async function cleanVoice(options: CleanVoiceOptions): Promise<string> {
   }
 
   const output = customOutput ?? getOutputPath(input, '_cleanvoice');
-  const hasRnnoise = existsSync(RNNOISE_MODEL);
+  const engine = resolveEngine();
 
   header('Clean Voice');
   console.log(`Input:    ${fmt.white(input)}`);
   console.log(`Denoise:  ${fmt.yellow(`${noiseReduction}/10`)}`);
-  console.log(`Engine:   ${fmt.yellow(hasRnnoise ? 'RNNoise (neural)' : 'FFT (adaptive)')}`);
+  console.log(`Engine:   ${fmt.yellow(ENGINE_LABELS[engine])}`);
+  console.log(`Loudness: ${fmt.yellow(`${targetLoudness} LUFS`)}`);
+  separator();
 
-  // Resolve noise sample: manual override > auto-detect from longest silence
+  if (engine === 'deepfilter') {
+    await cleanWithDeepFilter(input, output, noiseReduction, targetLoudness, progress);
+  } else {
+    const manualSample = noiseSampleStart != null && noiseSampleEnd != null && noiseSampleEnd > noiseSampleStart
+      ? { start: noiseSampleStart, end: noiseSampleEnd }
+      : undefined;
+    await cleanWithFFmpegFilters(input, output, noiseReduction, targetLoudness, engine, manualSample, progress);
+  }
+
+  progress('Done!');
+  success(`Output: ${output}`);
+  return output;
+}
+
+// ============ DEEPFILTER PATH ============
+
+async function cleanWithDeepFilter(
+  input: string,
+  output: string,
+  noiseReduction: number,
+  targetLoudness: number,
+  progress: (s: string) => void
+): Promise<void> {
+  const tmpDir = mkdtempSync(join(tmpdir(), 'vidlet-df-'));
+  const tmpWav = join(tmpDir, 'audio.wav');
+  const enhancedDir = join(tmpDir, 'enhanced');
+  mkdirSync(enhancedDir);
+
+  let spin = createSpinner('Extracting audio...');
+  try {
+    // Step 1: Extract audio as 48kHz WAV (DeepFilterNet requires 48kHz)
+    progress('Extracting audio...');
+    await executeFFmpegRaw(['-y', '-i', input, '-vn', '-ar', '48000', '-ac', '1', '-f', 'wav', tmpWav]);
+    spin.stop();
+
+    // Step 2: Run DeepFilterNet
+    progress('Denoising with DeepFilterNet...');
+    spin = createSpinner('Denoising with DeepFilterNet...');
+    const attenDb = Math.round(10 + noiseReduction * 9); // Scale 1-10 → 19-100 dB
+    const { execaCommand } = await import('execa');
+    await execaCommand(
+      `"${DEEPFILTER_BIN}" "${tmpWav}" -o "${enhancedDir}" --pf --atten-lim-db ${attenDb}`,
+      { shell: true, timeout: 600_000 }
+    );
+    spin.stop();
+
+    // Find the enhanced file (same basename in output dir)
+    const enhancedWav = join(enhancedDir, 'audio.wav');
+    if (!existsSync(enhancedWav)) {
+      throw new Error('DeepFilterNet did not produce output');
+    }
+
+    // Step 3: Measure loudness on enhanced audio
+    progress('Measuring loudness...');
+    spin = createSpinner('Measuring loudness...');
+    const measurements = await measureLoudness(enhancedWav, ['highpass=f=80'], targetLoudness);
+    spin.stop();
+
+    // Step 4: Mux enhanced audio back with original video + loudnorm
+    progress('Encoding final output...');
+    spin = createSpinner('Encoding final output...');
+    const loudnorm =
+      `loudnorm=I=${targetLoudness}:TP=-1.5:LRA=11` +
+      `:measured_I=${measurements.input_i}` +
+      `:measured_TP=${measurements.input_tp}` +
+      `:measured_LRA=${measurements.input_lra}` +
+      `:measured_thresh=${measurements.input_thresh}` +
+      `:offset=${measurements.target_offset}` +
+      ':linear=true';
+
+    const filters = `highpass=f=80,${loudnorm},alimiter=limit=0.95:attack=5:release=50:asc=1`;
+
+    await executeFFmpegRaw([
+      '-y',
+      '-i', input,
+      '-i', enhancedWav,
+      '-map', '0:v',
+      '-map', '1:a',
+      '-af', filters,
+      '-c:v', 'copy',
+      '-c:a', 'aac',
+      '-b:a', '256k',
+      '-movflags', '+faststart',
+      output,
+    ]);
+    spin.stop();
+  } finally {
+    // Cleanup temp files
+    try { rmSync(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ }
+  }
+}
+
+// ============ FFMPEG FILTER PATH (RNNOISE / AFFTDN) ============
+
+async function cleanWithFFmpegFilters(
+  input: string,
+  output: string,
+  noiseReduction: number,
+  targetLoudness: number,
+  engine: 'rnnoise' | 'ffmpeg',
+  manualSample: { start: number; end: number } | undefined,
+  progress: (s: string) => void
+): Promise<void> {
+  // Auto-detect noise sample if not manually specified
   progress('Detecting noise...');
   let spin = createSpinner('Detecting noise...');
   let noiseSample = manualSample;
   if (!noiseSample) {
     const segments = await detectSilenceSegments(input);
     if (segments.length > 0) {
-      // Pick the longest silence segment as the best noise sample
       noiseSample = segments.reduce((best, seg) =>
         (seg.end - seg.start) > (best.end - best.start) ? seg : best
       );
@@ -82,77 +235,47 @@ export async function cleanVoice(options: CleanVoiceOptions): Promise<string> {
   if (noiseSample) {
     const label = manualSample ? 'manual' : 'auto';
     console.log(`Sample:   ${fmt.yellow(`${noiseSample.start.toFixed(1)}s → ${noiseSample.end.toFixed(1)}s (${label})`)}`);
-    spin.stop();
-  } else {
-    spin.stop(`Sample:   ${fmt.yellow('none (neural only)')}`);
   }
+  spin.stop();
 
-  console.log(`Loudness: ${fmt.yellow(`${targetLoudness} LUFS`)}`);
-  separator();
+  const baseFilters = buildBaseFilters(noiseReduction, engine === 'rnnoise', noiseSample);
 
   progress('Measuring loudness...');
   spin = createSpinner('Measuring loudness...');
-  try {
-    const baseFilters = buildBaseFilters(noiseReduction, hasRnnoise, noiseSample);
+  const lightFilters = baseFilters.filter(
+    (f) => !f.startsWith('arnndn') && !f.startsWith('afftdn') && !f.startsWith('asendcmd')
+  );
+  const measurements = await measureLoudness(input, lightFilters, targetLoudness);
+  spin.stop();
 
-    // Pass 1: Measure loudness (lightweight — skip denoisers)
-    const lightFilters = baseFilters.filter(
-      (f) => !f.startsWith('arnndn') && !f.startsWith('afftdn') && !f.startsWith('asendcmd')
-    );
-    const measurements = await measureLoudness(input, lightFilters, targetLoudness);
-    spin.stop();
+  progress(engine === 'rnnoise' ? 'Denoising with RNNoise...' : 'Denoising audio...');
+  spin = createSpinner('Processing audio...');
+  const loudnorm =
+    `loudnorm=I=${targetLoudness}:TP=-1.5:LRA=11` +
+    `:measured_I=${measurements.input_i}` +
+    `:measured_TP=${measurements.input_tp}` +
+    `:measured_LRA=${measurements.input_lra}` +
+    `:measured_thresh=${measurements.input_thresh}` +
+    `:offset=${measurements.target_offset}` +
+    ':linear=true';
 
-    // Pass 2: Denoise + normalize + limit
-    progress(hasRnnoise ? 'Denoising with RNNoise...' : 'Denoising audio...');
-    spin = createSpinner('Processing audio...');
-    const loudnorm =
-      `loudnorm=I=${targetLoudness}:TP=-3:LRA=11` +
-      `:measured_I=${measurements.input_i}` +
-      `:measured_TP=${measurements.input_tp}` +
-      `:measured_LRA=${measurements.input_lra}` +
-      `:measured_thresh=${measurements.input_thresh}` +
-      `:offset=${measurements.target_offset}` +
-      ':linear=true';
+  const filters = [
+    ...baseFilters,
+    loudnorm,
+    'alimiter=limit=0.95:attack=5:release=50:asc=1',
+  ].join(',');
 
-    const filters = [
-      ...baseFilters,
-      loudnorm,
-      'alimiter=limit=0.95:attack=5:release=50:asc=1',
-    ].join(',');
-
-    progress('Encoding final output...');
-    await executeFFmpeg({
-      input,
-      output,
-      args: [
-        '-af',
-        filters,
-        '-c:v',
-        'copy',
-        '-c:a',
-        'aac',
-        '-b:a',
-        '256k',
-        '-movflags',
-        '+faststart',
-      ],
-    });
-    spin.stop();
-  } catch (err) {
-    spin.stop();
-    throw err;
-  }
-
-  progress('Done!');
-  success(`Output: ${output}`);
-  return output;
+  progress('Encoding final output...');
+  await executeFFmpeg({
+    input,
+    output,
+    args: ['-af', filters, '-c:v', 'copy', '-c:a', 'aac', '-b:a', '256k', '-movflags', '+faststart'],
+  });
+  spin.stop();
 }
 
-/**
- * Find all silence segments across the entire audio.
- * These are gaps between speech (pauses, breaths, room tone) — ideal
- * for building a noise profile since they contain noise but no voice.
- */
+// ============ SHARED HELPERS ============
+
 async function detectSilenceSegments(input: string): Promise<SilenceSegment[]> {
   const stderr = await executeFFmpegAnalysis(input, [
     '-t', '120',
@@ -168,22 +291,12 @@ async function detectSilenceSegments(input: string): Promise<SilenceSegment[]> {
     if (match[1] === 'start') {
       pendingStart = time;
     } else {
-      // silence_end with no prior start means leading silence from t=0
       segments.push({ start: pendingStart ?? 0, end: time });
       pendingStart = null;
     }
   }
 
   return segments;
-}
-
-/** Derive voice start from first silence segment (for analyzeVoice) */
-async function detectVoiceStart(input: string): Promise<number> {
-  const segments = await detectSilenceSegments(input);
-  if (segments.length > 0 && segments[0].start === 0) {
-    return segments[0].end;
-  }
-  return 0;
 }
 
 async function measureLoudness(
@@ -193,7 +306,7 @@ async function measureLoudness(
 ): Promise<LoudnormMeasurements> {
   const filters = [
     ...baseFilters,
-    `loudnorm=I=${targetLoudness}:TP=-3:LRA=11:print_format=json`,
+    `loudnorm=I=${targetLoudness}:TP=-1.5:LRA=11:print_format=json`,
   ].join(',');
 
   const stderr = await executeFFmpegAnalysis(input, ['-af', filters]);
@@ -219,11 +332,8 @@ function buildBaseFilters(
   noiseSample?: { start: number; end: number }
 ): string[] {
   const filters: string[] = [];
-
-  // High-pass: remove rumble below 80Hz
   filters.push('highpass=f=80');
 
-  // Layer 1: Spectral subtraction from explicit noise sample (if provided)
   if (noiseSample) {
     const nr = noiseReduction * 3 + 3;
     filters.push(
@@ -232,12 +342,10 @@ function buildBaseFilters(
     filters.push(`afftdn=nr=${nr}:nf=-30:tn=0`);
   }
 
-  // Layer 2: Neural or adaptive denoising
   if (hasRnnoise) {
     const mix = Math.min(1, 0.4 + noiseReduction * 0.06);
     filters.push(`arnndn=m=${RNNOISE_MODEL}:mix=${mix.toFixed(2)}`);
   } else if (!noiseSample) {
-    // Fallback only when no noise sample and no RNNoise
     filters.push('lowpass=f=16000');
     const nr = noiseReduction * 3 + 3;
     filters.push(`afftdn=nr=${nr}:nf=-40:tn=1`);
@@ -246,18 +354,18 @@ function buildBaseFilters(
   return filters;
 }
 
+// ============ ANALYSIS (GUI) ============
+
 export async function analyzeVoice(input: string): Promise<VoiceAnalysis> {
-  // Find silence segments and derive voice start + best noise sample
   const segments = await detectSilenceSegments(input);
   const voiceStart = segments.length > 0 && segments[0].start === 0 ? segments[0].end : 0;
   const bestSegment = segments.length > 0
     ? segments.reduce((best, seg) => (seg.end - seg.start) > (best.end - best.start) ? seg : best)
     : null;
 
-  // Measure current loudness on raw audio
   const stderr = await executeFFmpegAnalysis(input, [
     '-af',
-    'loudnorm=I=-14:TP=-3:LRA=11:print_format=json',
+    'loudnorm=I=-14:TP=-1.5:LRA=11:print_format=json',
   ]);
 
   let currentLoudness = -24;

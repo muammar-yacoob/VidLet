@@ -19,6 +19,7 @@ export { extractAudio, type ExtractAudioOptions } from './audio.js';
 export {
   cleanVoice,
   analyzeVoice,
+  ensureDeepFilter,
   type CleanVoiceOptions,
   type VoiceAnalysis,
 } from './cleanvoice.js';

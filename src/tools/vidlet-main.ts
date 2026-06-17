@@ -10,7 +10,7 @@ import { type VideoInfo, startGuiServer } from '../lib/gui-server.js';
 import { logToFile } from '../lib/logger.js';
 import { addAudio, extractAudio } from './audio.js';
 import { caption } from './caption.js';
-import { analyzeVoice, cleanVoice } from './cleanvoice.js';
+import { analyzeVoice, cleanVoice, ensureDeepFilter } from './cleanvoice.js';
 import { compress } from './compress.js';
 import { filter } from './filter.js';
 import { findAllLoopPoints, findBestLoopStart, findMatchesFromEnd } from './loop.js';
@@ -306,6 +306,7 @@ async function runTool(input: string, opts: ToolOptions): Promise<ProcessResult>
 
       case 'cleanvoice': {
         logs.push({ type: 'info', message: 'Cleaning voice audio...' });
+        await ensureDeepFilter().catch(() => {});
         output = await cleanVoice({
           input: actualInput,
           noiseReduction: opts.noiseReduction,
