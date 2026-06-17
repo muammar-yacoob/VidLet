@@ -13,6 +13,8 @@ export interface CleanVoiceOptions {
   output?: string;
   noiseReduction?: number;
   targetLoudness?: number;
+  noiseSampleStart?: number;
+  noiseSampleEnd?: number;
   onProgress?: (stage: string) => void;
 }
 
@@ -38,8 +40,11 @@ interface SilenceSegment {
 }
 
 export async function cleanVoice(options: CleanVoiceOptions): Promise<string> {
-  const { input, output: customOutput, noiseReduction = 5, targetLoudness = -14 } = options;
+  const { input, output: customOutput, noiseReduction = 5, targetLoudness = -14, noiseSampleStart, noiseSampleEnd } = options;
   const progress = options.onProgress ?? (() => {});
+  const noiseSample = noiseSampleStart != null && noiseSampleEnd != null && noiseSampleEnd > noiseSampleStart
+    ? { start: noiseSampleStart, end: noiseSampleEnd }
+    : undefined;
 
   if (!(await checkFFmpeg())) {
     throw new Error('FFmpeg not found. Please install ffmpeg.');
@@ -57,17 +62,20 @@ export async function cleanVoice(options: CleanVoiceOptions): Promise<string> {
   console.log(`Input:    ${fmt.white(input)}`);
   console.log(`Denoise:  ${fmt.yellow(`${noiseReduction}/10`)}`);
   console.log(`Engine:   ${fmt.yellow(hasRnnoise ? 'RNNoise (neural)' : 'FFT (adaptive)')}`);
+  if (noiseSample) {
+    console.log(`Sample:   ${fmt.yellow(`${noiseSample.start}s → ${noiseSample.end}s`)}`);
+  }
   console.log(`Loudness: ${fmt.yellow(`${targetLoudness} LUFS`)}`);
   separator();
 
   progress('Measuring loudness...');
   let spin = createSpinner('Measuring loudness...');
   try {
-    const baseFilters = buildBaseFilters(noiseReduction, hasRnnoise);
+    const baseFilters = buildBaseFilters(noiseReduction, hasRnnoise, noiseSample);
 
     // Pass 1: Measure loudness (lightweight — skip denoisers)
     const lightFilters = baseFilters.filter(
-      (f) => !f.startsWith('arnndn') && !f.startsWith('afftdn')
+      (f) => !f.startsWith('arnndn') && !f.startsWith('afftdn') && !f.startsWith('asendcmd')
     );
     const measurements = await measureLoudness(input, lightFilters, targetLoudness);
     spin.stop();
@@ -182,19 +190,31 @@ async function measureLoudness(
   };
 }
 
-function buildBaseFilters(noiseReduction: number, hasRnnoise: boolean): string[] {
+function buildBaseFilters(
+  noiseReduction: number,
+  hasRnnoise: boolean,
+  noiseSample?: { start: number; end: number }
+): string[] {
   const filters: string[] = [];
 
   // High-pass: remove rumble below 80Hz
   filters.push('highpass=f=80');
 
+  // Layer 1: Spectral subtraction from explicit noise sample (if provided)
+  if (noiseSample) {
+    const nr = noiseReduction * 3 + 3;
+    filters.push(
+      `asendcmd=c='${noiseSample.start.toFixed(3)} afftdn sn start;${noiseSample.end.toFixed(3)} afftdn sn stop'`
+    );
+    filters.push(`afftdn=nr=${nr}:nf=-30:tn=0`);
+  }
+
+  // Layer 2: Neural or adaptive denoising
   if (hasRnnoise) {
-    // RNNoise neural denoiser — trained on speech vs noise, handles fans/AC/hum natively
-    // mix: blend denoised output with original (preserves natural voice texture)
     const mix = Math.min(1, 0.4 + noiseReduction * 0.06);
     filters.push(`arnndn=m=${RNNOISE_MODEL}:mix=${mix.toFixed(2)}`);
-  } else {
-    // Fallback: adaptive FFT denoising when RNNoise model not available
+  } else if (!noiseSample) {
+    // Fallback only when no noise sample and no RNNoise
     filters.push('lowpass=f=16000');
     const nr = noiseReduction * 3 + 3;
     filters.push(`afftdn=nr=${nr}:nf=-40:tn=1`);

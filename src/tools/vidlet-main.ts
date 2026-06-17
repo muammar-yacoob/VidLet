@@ -89,6 +89,8 @@ interface ToolOptions {
   // Clean voice options
   noiseReduction?: number;
   targetLoudness?: number;
+  noiseSampleStart?: number;
+  noiseSampleEnd?: number;
   // Filter options
   filterBrightness?: number;
   filterContrast?: number;
@@ -308,6 +310,8 @@ async function runTool(input: string, opts: ToolOptions): Promise<ProcessResult>
           input: actualInput,
           noiseReduction: opts.noiseReduction,
           targetLoudness: opts.targetLoudness,
+          noiseSampleStart: opts.noiseSampleStart,
+          noiseSampleEnd: opts.noiseSampleEnd,
           onProgress: (stage) => {
             setProcessStatus(stage);
           },

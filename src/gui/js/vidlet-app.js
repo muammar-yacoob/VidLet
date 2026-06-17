@@ -741,6 +741,12 @@ async function process() {
         opts.tool = 'cleanvoice';
         opts.noiseReduction = Number.parseInt($('clean-noise').value);
         opts.targetLoudness = Number.parseInt($('clean-loudness').value);
+        const nsStart = Number.parseFloat($('clean-noise-start').value);
+        const nsEnd = Number.parseFloat($('clean-noise-end').value);
+        if (nsStart >= 0 && nsEnd > nsStart) {
+          opts.noiseSampleStart = nsStart;
+          opts.noiseSampleEnd = nsEnd;
+        }
       } else {
         if (!window.VidLetAudioTool.isLoaded()) {
           alert('Please select an audio file first');
