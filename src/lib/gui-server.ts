@@ -157,8 +157,13 @@ export function startGuiServer(options: GuiServerOptions): Promise<boolean> {
         fps: options.videoInfo.fps,
         bitrate: options.videoInfo.bitrate,
         fileSize: options.videoInfo.fileSize,
+        hasAudio: options.videoInfo.hasAudio,
         defaults: options.defaults,
-        sparkAiKey: process.env.SPARK_AI_API_KEY || process.env.NEXT_PUBLIC_SPARK_AI_API_KEY || '',
+        sparkAiKey:
+          process.env.SPARK_AI_API_KEY ||
+          process.env.NEXT_PUBLIC_SPARK_AI_API_KEY ||
+          (options.defaults as Record<string, unknown>)?.sparkAiKey ||
+          '',
       });
     });
 

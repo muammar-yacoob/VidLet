@@ -224,7 +224,12 @@ async function cleanWithDeepFilter(
     // Step 4: Mux enhanced audio back with original video
     progress('Encoding final output...');
     spin = createSpinner('Encoding final output...');
-    const filters = [HIGHPASS, COMPRESSOR, buildLoudnorm(measurements, targetLoudness), LIMITER].join(',');
+    const filters = [
+      HIGHPASS,
+      COMPRESSOR,
+      buildLoudnorm(measurements, targetLoudness),
+      LIMITER,
+    ].join(',');
 
     await executeFFmpegRaw([
       '-y',

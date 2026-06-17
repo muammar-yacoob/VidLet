@@ -4,11 +4,13 @@ import { getToolConfig as getToolSettings } from '../lib/config.js';
 import { getVideoInfo } from '../lib/ffmpeg.js';
 import { type VideoInfo, startGuiServer } from '../lib/gui-server.js';
 import { extractAudio } from '../tools/audio.js';
+import { autoCleanup } from '../tools/autocleanup.js';
 import { cleanVoice } from '../tools/cleanvoice.js';
 import { compress } from '../tools/compress.js';
 import { loop } from '../tools/loop.js';
 import { mkv2mp4 } from '../tools/mkv2mp4.js';
 import { optimize } from '../tools/optimize.js';
+import { removeSilence } from '../tools/removesilence.js';
 import { portrait } from '../tools/shorts.js';
 import { shrink } from '../tools/shrink.js';
 import { thumb } from '../tools/thumb.js';
@@ -135,6 +137,20 @@ export const toolConfigs: ToolConfig[] = [
     icon: 'tv.ico',
     extensions: ['.mp4', '.mkv', '.avi', '.mov', '.webm'],
     description: 'Clean and enhance voice audio',
+  },
+  {
+    id: 'removesilence',
+    name: 'Remove Silence',
+    icon: 'tv.ico',
+    extensions: ['.mp4', '.mkv', '.avi', '.mov', '.webm'],
+    description: 'Remove silent segments from video',
+  },
+  {
+    id: 'autocleanup',
+    name: 'Auto Cleanup',
+    icon: 'tv.ico',
+    extensions: ['.mp4', '.mkv', '.avi', '.mov', '.webm'],
+    description: 'Denoise, remove silence, contrast, and compress',
   },
 ];
 
@@ -541,6 +557,29 @@ export const tools: Tool[] = [
         output: options.output as string | undefined,
         noiseReduction: options.noiseReduction as number | undefined,
         targetLoudness: options.targetLoudness as number | undefined,
+      });
+    },
+  },
+  {
+    config: toolConfigs[11],
+    run: async (input, options) => {
+      return removeSilence({
+        input,
+        output: options.output as string | undefined,
+        minSilenceDuration: options.minSilenceDuration as number | undefined,
+        silenceThreshold: options.silenceThreshold as number | undefined,
+      });
+    },
+  },
+  {
+    config: toolConfigs[12],
+    run: async (input, options) => {
+      return autoCleanup({
+        input,
+        output: options.output as string | undefined,
+        noiseReduction: options.noiseReduction as number | undefined,
+        minSilenceDuration: options.minSilenceDuration as number | undefined,
+        skipContrast: options.skipContrast as boolean | undefined,
       });
     },
   },

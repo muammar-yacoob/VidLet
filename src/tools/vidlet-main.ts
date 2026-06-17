@@ -9,12 +9,14 @@ import { getVideoInfo } from '../lib/ffmpeg.js';
 import { type VideoInfo, startGuiServer } from '../lib/gui-server.js';
 import { logToFile } from '../lib/logger.js';
 import { addAudio, extractAudio } from './audio.js';
+import { autoCleanup } from './autocleanup.js';
 import { caption } from './caption.js';
 import { analyzeVoice, cleanVoice, ensureDeepFilter } from './cleanvoice.js';
 import { compress } from './compress.js';
 import { filter } from './filter.js';
 import { findAllLoopPoints, findBestLoopStart, findMatchesFromEnd } from './loop.js';
 import { mkv2mp4 } from './mkv2mp4.js';
+import { removeSilence } from './removesilence.js';
 import { type PortraitSegment, portrait, portraitMultiSegment } from './shorts.js';
 import { shrink } from './shrink.js';
 import { thumb } from './thumb.js';
@@ -104,6 +106,12 @@ interface ToolOptions {
   srtContent?: string;
   captionFontSize?: number;
   captionPosition?: 'bottom' | 'center' | 'top';
+  // Remove silence options
+  minSilenceDuration?: number;
+  silenceThreshold?: number;
+  // Auto cleanup options
+  skipContrast?: boolean;
+  cleanupContrast?: number;
 }
 
 /** Process result */
@@ -333,6 +341,34 @@ async function runTool(input: string, opts: ToolOptions): Promise<ProcessResult>
         break;
       }
 
+      case 'removesilence': {
+        logs.push({ type: 'info', message: 'Removing silent segments...' });
+        output = await removeSilence({
+          input: actualInput,
+          minSilenceDuration: opts.minSilenceDuration,
+          silenceThreshold: opts.silenceThreshold,
+        });
+        logs.push({ type: 'success', message: 'Silence removed!' });
+        break;
+      }
+
+      case 'autocleanup': {
+        logs.push({ type: 'info', message: 'Running auto cleanup pipeline...' });
+        output = await autoCleanup({
+          input: actualInput,
+          noiseReduction: opts.noiseReduction,
+          minSilenceDuration: opts.minSilenceDuration,
+          contrast: opts.cleanupContrast,
+          skipContrast: opts.skipContrast,
+          onProgress: (stage) => {
+            setProcessStatus(stage);
+          },
+        });
+        setProcessStatus('');
+        logs.push({ type: 'success', message: 'Auto cleanup complete!' });
+        break;
+      }
+
       default:
         throw new Error(`Unknown tool: ${toolId}`);
     }
@@ -386,11 +422,15 @@ export async function runGUI(input: string): Promise<boolean> {
     togif: await getToolConfig('togif'),
     mkv2mp4: await getToolConfig('mkv2mp4'),
     shrink: await getToolConfig('shrink'),
+    cleanvoice: await getToolConfig('cleanvoice'),
+    removesilence: await getToolConfig('removesilence'),
+    autocleanup: await getToolConfig('autocleanup'),
     isMkv: ext === '.mkv',
     isLandscape,
     homepage: getHomepage(),
     hotkeyPreset: appConfig?.hotkeyPreset || 'premiere',
     frameSkip: appConfig?.frameSkip || 3,
+    sparkAiKey: appConfig?.sparkAiKey || '',
   };
 
   // Track current input for chained operations

@@ -24,3 +24,8 @@ export {
   type VoiceAnalysis,
 } from './cleanvoice.js';
 export { optimize, type OptimizeOptions } from './optimize.js';
+export { removeSilence, type RemoveSilenceOptions } from './removesilence.js';
+export { autoCleanup, type AutoCleanupOptions } from './autocleanup.js';
+export { trim, trimAccurate, type TrimOptions } from './trim.js';
+export { portrait, type PortraitOptions } from './shorts.js';
+export { slice, type SliceOptions, type SliceRegion } from './slice.js';

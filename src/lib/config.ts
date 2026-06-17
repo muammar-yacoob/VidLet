@@ -43,6 +43,22 @@ export const Mkv2Mp4ConfigSchema = z.object({
 
 export const ThumbConfigSchema = z.object({});
 
+export const CleanVoiceConfigSchema = z.object({
+  noiseReduction: z.number().min(1).max(10).default(5),
+  targetLoudness: z.number().min(-24).max(-10).default(-14),
+});
+
+export const RemoveSilenceConfigSchema = z.object({
+  minSilenceDuration: z.number().min(0.1).max(10).default(0.5),
+  silenceThreshold: z.number().min(-60).max(-10).default(-30),
+});
+
+export const AutoCleanupConfigSchema = z.object({
+  noiseReduction: z.number().min(1).max(10).default(3),
+  minSilenceDuration: z.number().min(0.1).max(10).default(0.5),
+  contrast: z.number().min(0).max(2).default(1.15),
+});
+
 // Hotkey preset options
 export const HotkeyPresetSchema = z
   .enum([
@@ -59,6 +75,7 @@ export const HotkeyPresetSchema = z
 export const AppSettingsSchema = z.object({
   hotkeyPreset: HotkeyPresetSchema.default('premiere'),
   frameSkip: z.number().min(2).max(6).default(3),
+  sparkAiKey: z.string().default(''),
 });
 
 // Combined config schema
@@ -69,6 +86,9 @@ export const ToolsConfigSchema = z.object({
   shrink: ShrinkConfigSchema.default({}),
   mkv2mp4: Mkv2Mp4ConfigSchema.default({}),
   thumb: ThumbConfigSchema.default({}),
+  cleanvoice: CleanVoiceConfigSchema.default({}),
+  removesilence: RemoveSilenceConfigSchema.default({}),
+  autocleanup: AutoCleanupConfigSchema.default({}),
   app: AppSettingsSchema.default({}),
 });
 
@@ -80,6 +100,9 @@ export type LoopConfig = z.infer<typeof LoopConfigSchema>;
 export type ShrinkConfig = z.infer<typeof ShrinkConfigSchema>;
 export type Mkv2Mp4Config = z.infer<typeof Mkv2Mp4ConfigSchema>;
 export type ThumbConfig = z.infer<typeof ThumbConfigSchema>;
+export type CleanVoiceConfig = z.infer<typeof CleanVoiceConfigSchema>;
+export type RemoveSilenceConfig = z.infer<typeof RemoveSilenceConfigSchema>;
+export type AutoCleanupConfig = z.infer<typeof AutoCleanupConfigSchema>;
 
 // Defaults
 const DEFAULT_CONFIG: ToolsConfig = {
@@ -89,7 +112,10 @@ const DEFAULT_CONFIG: ToolsConfig = {
   shrink: { targetDuration: 59.5 },
   mkv2mp4: { copyStreams: true, crf: 23 },
   thumb: {},
-  app: { hotkeyPreset: 'premiere', frameSkip: 3 },
+  cleanvoice: { noiseReduction: 5, targetLoudness: -14 },
+  removesilence: { minSilenceDuration: 0.5, silenceThreshold: -30 },
+  autocleanup: { noiseReduction: 3, minSilenceDuration: 0.5, contrast: 1.15 },
+  app: { hotkeyPreset: 'premiere', frameSkip: 3, sparkAiKey: '' },
 };
 
 /**

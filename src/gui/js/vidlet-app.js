@@ -30,6 +30,9 @@ async function init() {
   _currentFilePath = res.filePath;
   if (res.sparkAiKey && window.SparkAI) {
     window.SparkAI.configure({ apiKey: res.sparkAiKey });
+    // Show AI features when key is available
+    const aiBtn = $('ai-suggest-btn');
+    if (aiBtn) aiBtn.classList.remove('hidden');
   }
   updateFileDisplay();
 
@@ -59,6 +62,35 @@ async function init() {
   const aspectRatio = res.width / res.height;
   const isAlreadyPortrait = Math.abs(aspectRatio - 9 / 16) < 0.05;
   $('t-portrait').classList.toggle('hidden', isAlreadyPortrait);
+
+  // Hide audio-dependent tools when video has no audio
+  const noAudio = !res.hasAudio;
+  $('t-removesilence').classList.toggle('hidden', noAudio);
+  $('t-autocleanup').classList.toggle('hidden', noAudio);
+
+  // Apply saved config defaults for removesilence
+  if (res.defaults?.removesilence) {
+    $('silence-duration').value = res.defaults.removesilence.minSilenceDuration ?? 0.5;
+    $('silence-duration-val').textContent = `${$('silence-duration').value}s`;
+    $('silence-threshold').value = res.defaults.removesilence.silenceThreshold ?? -30;
+    $('silence-threshold-val').textContent = `${$('silence-threshold').value}dB`;
+  }
+
+  // Apply saved config defaults for autocleanup
+  if (res.defaults?.autocleanup) {
+    $('cleanup-denoise').value = res.defaults.autocleanup.noiseReduction ?? 3;
+    $('cleanup-denoise-val').textContent = $('cleanup-denoise').value;
+    $('cleanup-silence').value = res.defaults.autocleanup.minSilenceDuration ?? 0.5;
+    $('cleanup-silence-val').textContent = `${$('cleanup-silence').value}s`;
+  }
+
+  // Auto cleanup: set contrast toggle label based on video length
+  const isLongVideo = res.duration > 300;
+  if (isLongVideo) {
+    $('cleanup-contrast-toggle').classList.remove('on');
+    $('cleanup-skip-contrast').value = 'true';
+    $('cleanup-contrast-label').textContent = 'Off (video > 5min)';
+  }
 
   // Hide GIF export for long videos (>15s), show badge if available
   const canExportGif = res.duration <= 15;
@@ -744,10 +776,9 @@ async function process() {
     } else if (activeTool === 'mkv2mp4') {
       opts = { ...opts, ...window.VidLetMkvTool.getOptions() };
     } else if (activeTool === 'trim') {
-      const start = Number.parseFloat($('trim-start').value);
-      const end = Number.parseFloat($('trim-end').value);
-      const accurate = $('trim-accurate').value === 'true';
-      opts = { ...opts, start, end, accurate };
+      opts.trimStart = Number.parseFloat($('trim-start').value);
+      opts.trimEnd = Number.parseFloat($('trim-end').value);
+      opts.accurate = $('trim-accurate').value === 'true';
     } else if (activeTool === 'portrait') {
       opts = { ...opts, ...window.VidLet.portrait.getProcessOptions() };
     } else if (activeTool === 'audio') {
@@ -785,6 +816,14 @@ async function process() {
       opts = { ...opts, ...window.VidLetCaptionTool.getOptions() };
     } else if (activeTool === 'thumb') {
       opts = { ...opts, ...window.VidLetThumbTool.getOptions() };
+    } else if (activeTool === 'removesilence') {
+      opts.minSilenceDuration = Number.parseFloat($('silence-duration').value);
+      opts.silenceThreshold = Number.parseFloat($('silence-threshold').value);
+    } else if (activeTool === 'autocleanup') {
+      opts.noiseReduction = Number.parseInt($('cleanup-denoise').value);
+      opts.minSilenceDuration = Number.parseFloat($('cleanup-silence').value);
+      opts.skipContrast = $('cleanup-skip-contrast').value === 'true';
+      opts.cleanupContrast = 1.15;
     }
 
     // Poll for live processing status with animated dots
@@ -814,6 +853,24 @@ async function process() {
       celebrate();
       $('done').classList.add('on');
       $('output').textContent = res.output || 'Processing complete!';
+
+      // AI suggestions (non-blocking)
+      $('ai-rename-row').classList.add('hidden');
+      $('ai-caption-row').classList.add('hidden');
+      if (window.VidLetAI?.isAvailable()) {
+        window.VidLetAI.suggestRename(activeTool, info).then((name) => {
+          if (name) {
+            $('ai-rename-text').textContent = name;
+            $('ai-rename-row').classList.remove('hidden');
+          }
+        });
+        window.VidLetAI.generateDescription(info, activeTool).then((caption) => {
+          if (caption) {
+            $('ai-caption-text').textContent = caption;
+            $('ai-caption-row').classList.remove('hidden');
+          }
+        });
+      }
     } else {
       alert(`Error: ${res.error || 'Unknown error'}`);
     }
@@ -835,6 +892,67 @@ function continueEditing() {
 // biome-ignore lint/correctness/noUnusedVariables: Called from HTML
 function openOutput() {
   postJson('/api/open-folder', {}).catch(() => {});
+}
+
+// ============ AUTO CLEANUP ============
+
+// biome-ignore lint/correctness/noUnusedVariables: Called from HTML
+function toggleCleanupContrast() {
+  const toggle = $('cleanup-contrast-toggle');
+  const isOn = toggle.classList.toggle('on');
+  $('cleanup-skip-contrast').value = isOn ? 'false' : 'true';
+  $('cleanup-contrast-label').textContent = isOn ? 'On' : 'Off';
+}
+
+// ============ AI FEATURES ============
+
+// biome-ignore lint/correctness/noUnusedVariables: Called from HTML
+async function aiSuggestSettings() {
+  const btn = $('ai-suggest-btn');
+  btn.disabled = true;
+  btn.textContent = 'Thinking...';
+
+  const settings = await window.VidLetAI.suggestCleanupSettings(info);
+  if (settings) {
+    if (settings.noiseReduction != null) {
+      $('cleanup-denoise').value = settings.noiseReduction;
+      $('cleanup-denoise-val').textContent = String(settings.noiseReduction);
+    }
+    if (settings.minSilenceDuration != null) {
+      $('cleanup-silence').value = settings.minSilenceDuration;
+      $('cleanup-silence-val').textContent = `${settings.minSilenceDuration}s`;
+    }
+    if (settings.applyContrast === false) {
+      $('cleanup-contrast-toggle').classList.remove('on');
+      $('cleanup-skip-contrast').value = 'true';
+      $('cleanup-contrast-label').textContent = 'Off (AI)';
+    } else if (settings.applyContrast === true) {
+      $('cleanup-contrast-toggle').classList.add('on');
+      $('cleanup-skip-contrast').value = 'false';
+      $('cleanup-contrast-label').textContent = 'On (AI)';
+    }
+  }
+
+  btn.disabled = false;
+  btn.innerHTML = '<span class="ai-badge">AI</span> Suggest settings';
+}
+
+// biome-ignore lint/correctness/noUnusedVariables: Called from HTML
+function copyAiRename() {
+  const text = $('ai-rename-text').textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    $('ai-copy-btn').classList.add('copied');
+    setTimeout(() => $('ai-copy-btn').classList.remove('copied'), 1500);
+  });
+}
+
+// biome-ignore lint/correctness/noUnusedVariables: Called from HTML
+function copyAiCaption() {
+  const text = $('ai-caption-text').textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    $('ai-caption-copy').classList.add('copied');
+    setTimeout(() => $('ai-caption-copy').classList.remove('copied'), 1500);
+  });
 }
 
 // ============ START APP ============

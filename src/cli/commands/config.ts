@@ -1,5 +1,10 @@
 import type { Command } from 'commander';
-import { getConfigPath, loadToolsConfig, resetToolsConfig } from '../../lib/config.js';
+import {
+  getConfigPath,
+  loadToolsConfig,
+  resetToolsConfig,
+  saveToolsConfig,
+} from '../../lib/config.js';
 import { fmt } from '../../lib/logger.js';
 
 /**
@@ -14,7 +19,15 @@ export function registerConfigCommand(program: Command): void {
         const config = await loadToolsConfig();
         console.log(fmt.bold('\n  VidLet Configuration'));
         console.log(fmt.dim(`  ${getConfigPath()}\n`));
-        console.log(JSON.stringify(config, null, 2));
+        // Mask the AI key in display
+        const display = {
+          ...config,
+          app: {
+            ...config.app,
+            sparkAiKey: config.app.sparkAiKey ? `••••${config.app.sparkAiKey.slice(-4)}` : '',
+          },
+        };
+        console.log(JSON.stringify(display, null, 2));
       } catch (error) {
         console.error(fmt.red(`Error: ${(error as Error).message}`));
         process.exit(1);
@@ -28,6 +41,22 @@ export function registerConfigCommand(program: Command): void {
       try {
         await resetToolsConfig();
         console.log(fmt.green('Configuration reset to defaults.'));
+      } catch (error) {
+        console.error(fmt.red(`Error: ${(error as Error).message}`));
+        process.exit(1);
+      }
+    });
+
+  configCmd
+    .command('set-key <key>')
+    .description('Set Spark AI API key for AI features')
+    .action(async (key: string) => {
+      try {
+        const config = await loadToolsConfig();
+        config.app.sparkAiKey = key;
+        await saveToolsConfig(config);
+        console.log(fmt.green('Spark AI key saved.'));
+        console.log(fmt.dim(`Stored in ${getConfigPath()}`));
       } catch (error) {
         console.error(fmt.red(`Error: ${(error as Error).message}`));
         process.exit(1);
