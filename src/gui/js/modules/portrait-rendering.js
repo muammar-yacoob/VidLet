@@ -222,7 +222,7 @@
     const durationEl = V.$('portrait-total-duration');
     if (durationEl) {
       const outputDuration = segments.reduce((sum, s) => sum + (s.endTime - s.startTime), 0);
-      const totalDuration = V.state.info.duration || 1;
+      const totalDuration = V.state?.info?.duration || 1;
       const gapDuration = totalDuration - outputDuration;
 
       if (gapDuration > 0.5) {

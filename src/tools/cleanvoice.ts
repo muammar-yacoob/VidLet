@@ -153,6 +153,7 @@ export async function cleanVoice(options: CleanVoiceOptions): Promise<string> {
  */
 async function detectSilenceSegments(input: string): Promise<SilenceSegment[]> {
   const stderr = await executeFFmpegAnalysis(input, [
+    '-t', '120',
     '-af',
     `silencedetect=n=-30dB:d=${MIN_NOISE_PROFILE_DURATION}`,
   ]);

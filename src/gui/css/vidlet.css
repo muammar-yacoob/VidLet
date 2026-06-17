@@ -487,6 +487,7 @@ video::-webkit-media-controls-panel {
   white-space: nowrap;
 }
 .opts-row input[type="text"],
+.opts-row input[type="number"],
 .opts-row select {
   flex: 1;
   background: var(--bg2);
