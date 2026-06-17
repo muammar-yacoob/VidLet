@@ -34,10 +34,10 @@
     $('timeline-range').style.left = `${startPct}%`;
     $('timeline-range').style.width = `${rangePct}%`;
 
-    const { formatTime, formatDuration } = window.VidLetUtils;
+    const { formatTime } = window.VidLetUtils;
     $('trim-start-badge').textContent = formatTime(start);
     $('trim-end-badge').textContent = formatTime(end);
-    $('trim-duration-badge').textContent = formatDuration(Math.max(0, end - start));
+    $('trim-duration-badge').textContent = formatTime(Math.max(0, end - start));
   }
 
   /**

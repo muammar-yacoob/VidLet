@@ -57,9 +57,10 @@ export async function cleanVoice(options: CleanVoiceOptions): Promise<string> {
 
     const baseFilters = buildBaseFilters(voiceStart, noiseReduction);
 
-    // Pass 2: Measure loudness through the processing chain
+    // Pass 2: Measure loudness (lightweight — skip anlmdn to avoid double processing)
     spin = createSpinner('Measuring loudness...');
-    const measurements = await measureLoudness(input, baseFilters, targetLoudness);
+    const lightFilters = baseFilters.filter((f) => !f.startsWith('anlmdn'));
+    const measurements = await measureLoudness(input, lightFilters, targetLoudness);
     spin.stop();
 
     // Pass 3: Apply full chain with calibrated loudnorm
