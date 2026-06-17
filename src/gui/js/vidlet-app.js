@@ -770,14 +770,13 @@ async function process() {
     // Poll for live processing status
     const logEl = $('process-log');
     logEl.textContent = '';
+    let lastStatus = '';
     const statusPoll = setInterval(async () => {
       try {
         const s = await fetch('/api/process-status').then((r) => r.json());
-        if (s.status) {
-          const line = document.createElement('div');
-          line.textContent = `› ${s.status}`;
-          logEl.appendChild(line);
-          logEl.scrollTop = logEl.scrollHeight;
+        if (s.status && s.status !== lastStatus) {
+          lastStatus = s.status;
+          logEl.textContent = `› ${s.status}`;
         }
       } catch { /* ignore */ }
     }, 600);
