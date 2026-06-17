@@ -120,7 +120,7 @@
 
     // Use trim values if set, otherwise full video duration
     const trimStart = Number.parseFloat(V.$('trim-start')?.value) || 0;
-    const trimEnd = Number.parseFloat(V.$('trim-end')?.value) || V.state.info.duration || 10;
+    const trimEnd = Number.parseFloat(V.$('trim-end')?.value) || V.state?.info?.duration || 10;
 
     // Create default segment covering the trim range
     portraitSegments = [
@@ -166,7 +166,7 @@
 
     // Don't split if too close to edges (minimum 0.5s segments)
     if (currentTime - segment.startTime < 0.5 || segment.endTime - currentTime < 0.5) {
-      V.toast('Segment too small to split');
+      window.VidLetUtils?.showToast?.('Segment too small to split');
       return;
     }
 
@@ -288,7 +288,7 @@
     updateCropOverlay();
     window.VidLetPortraitRendering.updateUI({ segments: portraitSegments });
 
-    V.toast(`Split into ${portraitSegments.length} segments`);
+    window.VidLetUtils?.showToast?.(`Split into ${portraitSegments.length} segments`);
   }
 
   /**
@@ -373,7 +373,7 @@
     portraitKeyframes.sort((a, b) => a.time - b.time);
 
     keyframeAnimationEnabled = true;
-    V.toast(`Keyframe added at ${time.toFixed(1)}s`);
+    window.VidLetUtils?.showToast?.(`Keyframe added at ${time.toFixed(1)}s`);
     window.VidLetPortraitRendering.renderKeyframes(portraitKeyframes, (kf) => {
       V.$('videoPreview').currentTime = kf.time;
       portraitCropX = kf.cropX;
@@ -386,7 +386,7 @@
    */
   function clearKeyframes() {
     if (portraitKeyframes.length === 0) {
-      V.toast('No keyframes to clear');
+      window.VidLetUtils?.showToast?.('No keyframes to clear');
       return;
     }
     portraitKeyframes = [];
@@ -396,7 +396,7 @@
       portraitCropX = kf.cropX;
       updateCropOverlay();
     });
-    V.toast('Keyframes cleared');
+    window.VidLetUtils?.showToast?.('Keyframes cleared');
   }
 
   /**
@@ -453,7 +453,7 @@
 
           // Convert viewport position to time (relative to trim range)
           const trimStart = Number.parseFloat(V.$('trim-start')?.value) || 0;
-          const trimEnd = Number.parseFloat(V.$('trim-end')?.value) || V.state.info.duration || 1;
+          const trimEnd = Number.parseFloat(V.$('trim-end')?.value) || V.state?.info?.duration || 1;
           const trimDuration = trimEnd - trimStart;
           const newTime = trimStart + viewportRatio * trimDuration;
 
@@ -568,7 +568,7 @@
         e.stopPropagation();
 
         const rect = timeline.getBoundingClientRect();
-        const duration = V.state.info.duration || 1;
+        const duration = V.state?.info?.duration || 1;
 
         // Get cursor position as fraction of viewport (0-1)
         const cursorViewportPct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));

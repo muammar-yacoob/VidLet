@@ -24,7 +24,9 @@ window.videoInfo = info;
 async function init() {
   const res = await VidLet.fetchJson('/api/info');
   info = res;
-  window.videoInfo = info; // Make accessible to modules
+  window.videoInfo = info;
+  window.VidLet.state = window.VidLet.state || {};
+  window.VidLet.state.info = info;
   _currentFilePath = res.filePath;
   updateFileDisplay();
 
@@ -250,7 +252,7 @@ function selectTool(id) {
     // Tool-specific activation
     if (id === 'portrait') {
       $('cropOverlay').classList.add('active');
-      window.VidLet.portrait.show();
+      window.VidLet.portrait.init(info);
     }
 
     if (id === 'trim') {
@@ -504,9 +506,10 @@ async function analyzeAudioForCleanVoice() {
         $('clean-noise-end').value = res.noiseSampleEnd.toFixed(1);
       }
 
-      const sample = res.noiseSampleStart != null
-        ? `Sample: ${res.noiseSampleStart.toFixed(1)}→${res.noiseSampleEnd.toFixed(1)}s`
-        : 'No noise detected';
+      const sample =
+        res.noiseSampleStart != null
+          ? `Sample: ${res.noiseSampleStart.toFixed(1)}→${res.noiseSampleEnd.toFixed(1)}s`
+          : 'No noise detected';
       infoEl.textContent = `${sample} · ${res.currentLoudness.toFixed(1)} LUFS`;
     } else {
       if (infoEl) infoEl.textContent = 'Analysis failed — using defaults';
@@ -579,7 +582,7 @@ function initCropOverlay() {
 
 // biome-ignore lint/correctness/noUnusedVariables: Called from portrait module
 function updateCropOverlay() {
-  window.VidLet.portrait.updateCropOverlay();
+  window.VidLet.portrait.updateOverlay();
 }
 
 // Drop zones are now in drop-zones.js module
@@ -699,7 +702,7 @@ function getStateSnapshot() {
 
 function restoreState(snapshot) {
   if (snapshot.tool === 'portrait' && activeTool === 'portrait') {
-    window.VidLet.portrait.restoreState(snapshot);
+    window.VidLet.portrait.setState(snapshot);
   }
   if (snapshot.tool === 'trim' && activeTool === 'trim') {
     if (snapshot.trimStart !== undefined) $('trim-start').value = snapshot.trimStart;
@@ -743,7 +746,7 @@ async function process() {
       const accurate = $('trim-accurate').value === 'true';
       opts = { ...opts, start, end, accurate };
     } else if (activeTool === 'portrait') {
-      opts = { ...opts, ...window.VidLet.portrait.getOptions() };
+      opts = { ...opts, ...window.VidLet.portrait.getProcessOptions() };
     } else if (activeTool === 'audio') {
       if (audioMode === 'clean') {
         opts.tool = 'cleanvoice';
@@ -795,7 +798,9 @@ async function process() {
           dotCount = (dotCount % 3) + 1;
           logEl.textContent = `› ${lastStatus}${'.'.repeat(dotCount)}`;
         }
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }, 400);
 
     const res = await postJson('/api/process', opts);
@@ -826,7 +831,7 @@ function continueEditing() {
 
 // biome-ignore lint/correctness/noUnusedVariables: Called from HTML
 function openOutput() {
-  VidLet.openFolder();
+  postJson('/api/open-folder', {}).catch(() => {});
 }
 
 // ============ START APP ============

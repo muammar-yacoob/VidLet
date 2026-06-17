@@ -38,7 +38,7 @@
 
     // Get trim range - portrait timeline is normalized to this range
     const trimStart = Number.parseFloat(V.$('trim-start')?.value) || 0;
-    const trimEnd = Number.parseFloat(V.$('trim-end')?.value) || V.state.info.duration || 1;
+    const trimEnd = Number.parseFloat(V.$('trim-end')?.value) || V.state?.info?.duration || 1;
     const trimDuration = trimEnd - trimStart;
 
     // Render grid lines
@@ -152,7 +152,7 @@
       m.remove();
     }
 
-    const duration = V.state.info.duration || 1;
+    const duration = V.state?.info?.duration || 1;
     for (const kf of keyframes) {
       const marker = document.createElement('div');
       marker.className = 'keyframe-marker';
@@ -177,11 +177,11 @@
     const V = window.VidLet;
     const playhead = V.$('segment-playhead');
     const timeline = V.$('segment-timeline');
-    if (!playhead || !timeline || V.state.activeTool !== 'portrait') return null;
+    if (!playhead || !timeline || V.state?.activeTool !== 'portrait') return null;
 
     // Get trim range - playhead is relative to this
     const trimStart = Number.parseFloat(V.$('trim-start')?.value) || 0;
-    const trimEnd = Number.parseFloat(V.$('trim-end')?.value) || V.state.info.duration || 1;
+    const trimEnd = Number.parseFloat(V.$('trim-end')?.value) || V.state?.info?.duration || 1;
     const trimDuration = trimEnd - trimStart;
 
     // Calculate position relative to trim range

@@ -3,6 +3,7 @@
  * Simple command pattern for undo/redo operations
  */
 window.VidLet = window.VidLet || {};
+window.VidLet.state = window.VidLet.state || {};
 ((V) => {
   const MAX_HISTORY = 20;
   let undoStack = [];
@@ -12,12 +13,13 @@ window.VidLet = window.VidLet || {};
    * Get current state snapshot
    */
   function getSnapshot() {
+    const s = V.state || {};
     return {
-      tool: V.state.activeTool,
-      portraitSegments: JSON.parse(JSON.stringify(V.state.portraitSegments || [])),
-      selectedSegmentIndex: V.state.selectedSegmentIndex || 0,
-      portraitCropX: V.state.portraitCropX || 0.5,
-      portraitKeyframes: JSON.parse(JSON.stringify(V.state.portraitKeyframes || [])),
+      tool: s.activeTool,
+      portraitSegments: JSON.parse(JSON.stringify(s.portraitSegments || [])),
+      selectedSegmentIndex: s.selectedSegmentIndex || 0,
+      portraitCropX: s.portraitCropX || 0.5,
+      portraitKeyframes: JSON.parse(JSON.stringify(s.portraitKeyframes || [])),
       trimStart: V.$('trim-start')?.value,
       trimEnd: V.$('trim-end')?.value,
     };
@@ -33,16 +35,13 @@ window.VidLet = window.VidLet || {};
       V.state.portraitCropX = snapshot.portraitCropX;
       V.state.portraitKeyframes = snapshot.portraitKeyframes;
       if (V.portrait) {
-        V.portrait.renderSegments();
-        V.portrait.updateOverlay();
-        V.portrait.updateUI();
-        V.portrait.renderKeyframes();
+        V.portrait.setState(snapshot);
       }
     }
     if (snapshot.tool === 'trim') {
       if (snapshot.trimStart !== undefined) V.$('trim-start').value = snapshot.trimStart;
       if (snapshot.trimEnd !== undefined) V.$('trim-end').value = snapshot.trimEnd;
-      if (V.timeline) V.timeline.update();
+      window.VidLetTrimTimeline?.updateTimeline?.(V.state.info);
     }
   }
 
@@ -56,31 +55,22 @@ window.VidLet = window.VidLet || {};
     updateButtons();
   }
 
-  /**
-   * Undo last action
-   */
   function undo() {
     if (undoStack.length === 0) return;
     redoStack.push(getSnapshot());
     restore(undoStack.pop());
     updateButtons();
-    V.toast('Undo');
+    window.VidLetUtils?.showToast?.('Undo');
   }
 
-  /**
-   * Redo last undone action
-   */
   function redo() {
     if (redoStack.length === 0) return;
     undoStack.push(getSnapshot());
     restore(redoStack.pop());
     updateButtons();
-    V.toast('Redo');
+    window.VidLetUtils?.showToast?.('Redo');
   }
 
-  /**
-   * Update button states
-   */
   function updateButtons() {
     const undoBtn = V.$('undo-btn');
     const redoBtn = V.$('redo-btn');
@@ -88,15 +78,11 @@ window.VidLet = window.VidLet || {};
     if (redoBtn) redoBtn.disabled = redoStack.length === 0;
   }
 
-  /**
-   * Clear history
-   */
   function clear() {
     undoStack = [];
     redoStack = [];
     updateButtons();
   }
 
-  // Export to VidLet namespace
   V.undo = { save, undo, redo, clear, updateButtons };
 })(window.VidLet);

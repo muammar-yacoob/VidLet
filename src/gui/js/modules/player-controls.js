@@ -188,22 +188,12 @@
     if (activeTool === 'portrait') {
       if (matchesHotkey(e, hotkeys.split)) {
         e.preventDefault();
-        window.VidLet.portrait.splitAtCurrentTime();
+        window.VidLet.portrait.splitSegment();
         return;
       }
       if (matchesHotkey(e, hotkeys.delete)) {
         e.preventDefault();
-        window.VidLet.portrait.deleteSelectedSegment();
-        return;
-      }
-      if (matchesHotkey(e, hotkeys.selectPrev)) {
-        e.preventDefault();
-        window.VidLet.portrait.selectPreviousSegment();
-        return;
-      }
-      if (matchesHotkey(e, hotkeys.selectNext)) {
-        e.preventDefault();
-        window.VidLet.portrait.selectNextSegment();
+        window.VidLet.portrait.deleteSegment();
         return;
       }
     }
