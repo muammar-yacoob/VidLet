@@ -59,7 +59,9 @@ export async function cleanVoice(options: CleanVoiceOptions): Promise<string> {
 
     // Pass 2: Measure loudness (lightweight — skip anlmdn to avoid double processing)
     spin = createSpinner('Measuring loudness...');
-    const lightFilters = baseFilters.filter((f) => !f.startsWith('anlmdn'));
+    const lightFilters = baseFilters.filter(
+      (f) => !f.startsWith('anlmdn') && !f.startsWith('afftdn') && !f.startsWith('asendcmd')
+    );
     const measurements = await measureLoudness(input, lightFilters, targetLoudness);
     spin.stop();
 
@@ -155,10 +157,18 @@ function buildBaseFilters(voiceStart: number, noiseReduction: number): string[] 
   // Low-pass: remove hiss above speech range (16kHz preserves voice harmonics)
   filters.push('lowpass=f=16000');
 
-  // Noise reduction: non-local means (no FFT artifacts / robotic sound)
-  // Map user-facing scale (1-10) to anlmdn strength (0.0001 to 0.1 log scale)
-  const strength = 0.0001 * Math.pow(10, (noiseReduction - 1) / 3);
-  filters.push(`anlmdn=s=${strength}:p=0.015:r=0.05:m=15`);
+  // Noise reduction: FFT spectral denoising with noise profiling
+  // Map user-facing scale (1-10) to noise reduction in dB (6-33)
+  const nr = noiseReduction * 3 + 3;
+
+  if (voiceStart > 0) {
+    // Sample noise from leading silence [0 → voiceStart], then apply
+    filters.push(`asendcmd=c='0.0 afftdn sn start;${voiceStart.toFixed(3)} afftdn sn stop'`);
+    filters.push(`afftdn=nr=${nr}:nf=-30:tn=0`);
+  } else {
+    // No leading silence — use adaptive noise tracking
+    filters.push(`afftdn=nr=${nr}:nf=-30:tn=1`);
+  }
 
   return filters;
 }
@@ -179,7 +189,7 @@ export async function analyzeVoice(input: string): Promise<VoiceAnalysis> {
     currentLoudness = Number.parseFloat(data.input_i);
   }
 
-  // Suggest denoise strength (anlmdn scale: 1=subtle, 10=aggressive)
+  // Suggest denoise strength (afftdn scale: 1=subtle, 10=aggressive)
   let suggestedNoiseReduction = 3;
   if (voiceStart > 1.0) suggestedNoiseReduction = 7;
   else if (voiceStart >= MIN_NOISE_PROFILE_DURATION) suggestedNoiseReduction = 5;
