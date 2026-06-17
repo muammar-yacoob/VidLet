@@ -148,13 +148,13 @@ async function cleanWithDeepFilter(
   try {
     // Step 1: Extract audio as 48kHz WAV (DeepFilterNet requires 48kHz)
     progress('Extracting audio...');
-    await executeFFmpegRaw(['-y', '-i', input, '-vn', '-ar', '48000', '-ac', '1', '-f', 'wav', tmpWav]);
+    await executeFFmpegRaw(['-y', '-i', input, '-vn', '-ar', '48000', '-f', 'wav', tmpWav]);
     spin.stop();
 
     // Step 2: Run DeepFilterNet
     progress('Denoising with DeepFilterNet...');
     spin = createSpinner('Denoising with DeepFilterNet...');
-    const attenDb = Math.round(10 + noiseReduction * 9); // Scale 1-10 → 19-100 dB
+    const attenDb = Math.round(10 + noiseReduction * 4); // Scale 1-10 → 14-50 dB
     const { execaCommand } = await import('execa');
     await execaCommand(
       `"${DEEPFILTER_BIN}" "${tmpWav}" -o "${enhancedDir}" --pf --atten-lim-db ${attenDb}`,
@@ -168,13 +168,18 @@ async function cleanWithDeepFilter(
       throw new Error('DeepFilterNet did not produce output');
     }
 
-    // Step 3: Measure loudness on enhanced audio
+    // Step 3: Measure loudness on enhanced audio (through the pre-loudnorm chain)
     progress('Measuring loudness...');
     spin = createSpinner('Measuring loudness...');
-    const measurements = await measureLoudness(enhancedWav, ['highpass=f=80'], targetLoudness);
+    const preChain = [
+      'highpass=f=80',
+      'acompressor=threshold=0.089:ratio=3:attack=10:release=100:knee=4:makeup=2',
+    ];
+    const measurements = await measureLoudness(enhancedWav, preChain, targetLoudness);
     spin.stop();
 
-    // Step 4: Mux enhanced audio back with original video + loudnorm
+    // Step 4: Mux enhanced audio back with original video
+    // Chain: highpass → compressor → loudnorm → limiter (standard studio vocal chain)
     progress('Encoding final output...');
     spin = createSpinner('Encoding final output...');
     const loudnorm =
@@ -186,7 +191,12 @@ async function cleanWithDeepFilter(
       `:offset=${measurements.target_offset}` +
       ':linear=true';
 
-    const filters = `highpass=f=80,${loudnorm},alimiter=limit=0.95:attack=5:release=50:asc=1`;
+    const filters = [
+      'highpass=f=80',
+      'acompressor=threshold=0.089:ratio=3:attack=10:release=100:knee=4:makeup=2',
+      loudnorm,
+      'alimiter=limit=0.95:attack=5:release=50:asc=1',
+    ].join(',');
 
     await executeFFmpegRaw([
       '-y',
