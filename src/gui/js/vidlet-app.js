@@ -767,19 +767,22 @@ async function process() {
       opts = { ...opts, ...window.VidLetThumbTool.getOptions() };
     }
 
-    // Poll for live processing status
+    // Poll for live processing status with animated dots
     const logEl = $('process-log');
     logEl.textContent = '';
     let lastStatus = '';
+    let dotCount = 0;
     const statusPoll = setInterval(async () => {
       try {
         const s = await fetch('/api/process-status').then((r) => r.json());
-        if (s.status && s.status !== lastStatus) {
-          lastStatus = s.status;
-          logEl.textContent = `› ${s.status}`;
+        if (s.status) {
+          const base = s.status.replace(/\.+$/, '');
+          if (base !== lastStatus) lastStatus = base;
+          dotCount = (dotCount % 3) + 1;
+          logEl.textContent = `› ${lastStatus}${'.'.repeat(dotCount)}`;
         }
       } catch { /* ignore */ }
-    }, 600);
+    }, 400);
 
     const res = await postJson('/api/process', opts);
     clearInterval(statusPoll);
