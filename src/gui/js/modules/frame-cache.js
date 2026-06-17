@@ -1,6 +1,7 @@
 /**
  * VidLet Frame Cache Module
  * Caches video frames for smooth scrubbing preview
+ * Uses a hidden video element so caching doesn't interrupt playback
  */
 window.VidLet = window.VidLet || {};
 ((V) => {
@@ -8,14 +9,28 @@ window.VidLet = window.VidLet || {};
   let canvas = null;
   let ctx = null;
   let ready = false;
-  const INTERVAL = 0.25; // Cache frame every 0.25 seconds
+  const INTERVAL = 0.25;
 
   /**
-   * Build frame cache from video
+   * Build frame cache from video using a hidden clone
+   * @param {number} [_frameSkip] - unused, kept for API compat
+   * @param {Function} [onProgress] - called with percentage (0-100)
    */
-  async function build() {
-    const video = V.$('videoPreview');
-    if (!video || !video.duration) return;
+  async function build(_frameSkip, onProgress) {
+    const source = V.$('videoPreview');
+    if (!source || !source.duration) return;
+
+    // Create a hidden video element for background caching
+    const video = document.createElement('video');
+    video.src = source.currentSrc || source.src;
+    video.muted = true;
+    video.preload = 'auto';
+
+    await new Promise((resolve, reject) => {
+      video.addEventListener('canplay', resolve, { once: true });
+      video.addEventListener('error', reject, { once: true });
+      video.load();
+    });
 
     // Create offscreen canvas at half resolution
     canvas = document.createElement('canvas');
@@ -29,13 +44,6 @@ window.VidLet = window.VidLet || {};
 
     const duration = video.duration;
     const frameCount = Math.ceil(duration / INTERVAL);
-    const originalTime = video.currentTime;
-    const wasPlaying = !video.paused;
-
-    if (wasPlaying) video.pause();
-
-    const statusEl = V.$('scrub-cache-status');
-    if (statusEl) statusEl.style.display = 'block';
 
     for (let i = 0; i <= frameCount; i++) {
       const time = Math.min(i * INTERVAL, duration);
@@ -54,17 +62,25 @@ window.VidLet = window.VidLet || {};
         video.currentTime = time;
       });
 
+      const pct = Math.round((i / frameCount) * 100);
+      if (onProgress) onProgress(pct);
+
+      const statusEl = V.$('scrub-cache-status');
       if (statusEl) {
-        statusEl.textContent = `Caching ${Math.round((i / frameCount) * 100)}%`;
+        statusEl.style.display = 'block';
+        statusEl.textContent = `Caching ${pct}%`;
       }
     }
 
-    video.currentTime = originalTime;
-    if (wasPlaying) video.play();
+    // Cleanup hidden video
+    video.src = '';
+    video.load();
 
     ready = true;
+    const statusEl = V.$('scrub-cache-status');
     if (statusEl) statusEl.style.display = 'none';
-    V.log(`Frame cache ready: ${frames.length} frames`);
+    if (onProgress) onProgress(100);
+    console.log(`Frame cache ready: ${frames.length} frames`);
   }
 
   /**
@@ -73,7 +89,6 @@ window.VidLet = window.VidLet || {};
   function get(time) {
     if (!ready || frames.length === 0) return null;
 
-    // Binary search
     let left = 0;
     let right = frames.length - 1;
 
@@ -90,9 +105,6 @@ window.VidLet = window.VidLet || {};
     return frames[left];
   }
 
-  /**
-   * Show scrub overlay with cached frame
-   */
   function showFrame(time) {
     const overlay = V.$('scrub-overlay');
     const img = V.$('scrub-frame');
@@ -105,29 +117,19 @@ window.VidLet = window.VidLet || {};
     }
   }
 
-  /**
-   * Hide scrub overlay
-   */
   function hideFrame() {
     const overlay = V.$('scrub-overlay');
     if (overlay) overlay.style.display = 'none';
   }
 
-  /**
-   * Check if cache is ready
-   */
   function isReady() {
     return ready;
   }
 
-  /**
-   * Clear cache
-   */
   function clear() {
     frames = [];
     ready = false;
   }
 
-  // Export to VidLet namespace
   V.frameCache = { build, get, showFrame, hideFrame, isReady, clear };
 })(window.VidLet);
