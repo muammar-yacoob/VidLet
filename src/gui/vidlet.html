@@ -290,7 +290,7 @@
                 </div>
               </div>
               <div class="opts-row" style="justify-content:center">
-                <span id="clean-analysis-info" style="color:var(--text-dim);font-size:11px">Select to analyze audio...</span>
+                <span id="clean-analysis-info" class="slider-val">Select to analyze audio...</span>
               </div>
             </div>
           </div>
@@ -680,18 +680,18 @@
           <div class="modal-row">
             <label>Format</label>
             <div class="seg-btns" id="audio-format-btns">
-              <button type="button" class="seg-btn active" data-val="mp3" onclick="setAudioFormat('mp3')">MP3</button>
-              <button type="button" class="seg-btn" data-val="aac" onclick="setAudioFormat('aac')">AAC</button>
-              <button type="button" class="seg-btn" data-val="wav" onclick="setAudioFormat('wav')">WAV</button>
-              <button type="button" class="seg-btn" data-val="flac" onclick="setAudioFormat('flac')">FLAC</button>
+              <button type="button" class="active" data-val="mp3" onclick="setAudioFormat('mp3')">MP3</button>
+              <button type="button" data-val="aac" onclick="setAudioFormat('aac')">AAC</button>
+              <button type="button" data-val="wav" onclick="setAudioFormat('wav')">WAV</button>
+              <button type="button" data-val="flac" onclick="setAudioFormat('flac')">FLAC</button>
             </div>
           </div>
           <div class="modal-row" id="audio-bitrate-row">
             <label>Bitrate</label>
             <div class="seg-btns" id="audio-bitrate-btns">
-              <button type="button" class="seg-btn" data-val="128" onclick="setAudioBitrate(128)">128k</button>
-              <button type="button" class="seg-btn active" data-val="192" onclick="setAudioBitrate(192)">192k</button>
-              <button type="button" class="seg-btn" data-val="320" onclick="setAudioBitrate(320)">320k</button>
+              <button type="button" data-val="128" onclick="setAudioBitrate(128)">128k</button>
+              <button type="button" class="active" data-val="192" onclick="setAudioBitrate(192)">192k</button>
+              <button type="button" data-val="320" onclick="setAudioBitrate(320)">320k</button>
             </div>
           </div>
         </div>

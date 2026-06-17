@@ -1,8 +1,14 @@
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, unlinkSync } from 'node:fs';
-import { homedir, platform, arch, tmpdir } from 'node:os';
-import { basename, dirname, join } from 'node:path';
+import { arch, homedir, platform, tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { checkFFmpeg, executeFFmpeg, executeFFmpegAnalysis, executeFFmpegRaw, getVideoInfo } from '../lib/ffmpeg.js';
+import {
+  checkFFmpeg,
+  executeFFmpeg,
+  executeFFmpegAnalysis,
+  executeFFmpegRaw,
+  getVideoInfo,
+} from '../lib/ffmpeg.js';
 import { createSpinner, fmt, header, separator, success } from '../lib/logger.js';
 import { getOutputPath } from '../lib/paths.js';
 
@@ -47,6 +53,23 @@ interface SilenceSegment {
 
 type Engine = 'deepfilter' | 'rnnoise' | 'ffmpeg';
 
+// Shared filter constants — standard studio vocal chain
+const HIGHPASS = 'highpass=f=80';
+const COMPRESSOR = 'acompressor=threshold=0.089:ratio=3:attack=10:release=100:knee=4:makeup=2';
+const LIMITER = 'alimiter=limit=0.95:attack=5:release=50:asc=1';
+
+function buildLoudnorm(measurements: LoudnormMeasurements, targetLoudness: number): string {
+  return (
+    `loudnorm=I=${targetLoudness}:TP=-1.5:LRA=11` +
+    `:measured_I=${measurements.input_i}` +
+    `:measured_TP=${measurements.input_tp}` +
+    `:measured_LRA=${measurements.input_lra}` +
+    `:measured_thresh=${measurements.input_thresh}` +
+    `:offset=${measurements.target_offset}` +
+    ':linear=true'
+  );
+}
+
 // ============ ENGINE RESOLUTION ============
 
 function resolveEngine(): Engine {
@@ -59,10 +82,14 @@ function getDeepFilterUrl(): string | null {
   const p = platform();
   const a = arch();
   const base = `https://github.com/Rikorose/DeepFilterNet/releases/download/v${DEEPFILTER_VERSION}`;
-  if (p === 'linux' && a === 'x64') return `${base}/deep-filter-${DEEPFILTER_VERSION}-x86_64-unknown-linux-musl`;
-  if (p === 'linux' && a === 'arm64') return `${base}/deep-filter-${DEEPFILTER_VERSION}-aarch64-unknown-linux-gnu`;
-  if (p === 'darwin' && a === 'x64') return `${base}/deep-filter-${DEEPFILTER_VERSION}-x86_64-apple-darwin`;
-  if (p === 'darwin' && a === 'arm64') return `${base}/deep-filter-${DEEPFILTER_VERSION}-aarch64-apple-darwin`;
+  if (p === 'linux' && a === 'x64')
+    return `${base}/deep-filter-${DEEPFILTER_VERSION}-x86_64-unknown-linux-musl`;
+  if (p === 'linux' && a === 'arm64')
+    return `${base}/deep-filter-${DEEPFILTER_VERSION}-aarch64-unknown-linux-gnu`;
+  if (p === 'darwin' && a === 'x64')
+    return `${base}/deep-filter-${DEEPFILTER_VERSION}-x86_64-apple-darwin`;
+  if (p === 'darwin' && a === 'arm64')
+    return `${base}/deep-filter-${DEEPFILTER_VERSION}-aarch64-apple-darwin`;
   return null;
 }
 
@@ -80,7 +107,11 @@ export async function ensureDeepFilter(): Promise<boolean> {
     chmodSync(DEEPFILTER_BIN, 0o755);
     return true;
   } catch {
-    try { unlinkSync(DEEPFILTER_BIN); } catch { /* ignore */ }
+    try {
+      unlinkSync(DEEPFILTER_BIN);
+    } catch {
+      /* ignore */
+    }
     return false;
   }
 }
@@ -94,7 +125,14 @@ const ENGINE_LABELS: Record<Engine, string> = {
 // ============ MAIN ENTRY ============
 
 export async function cleanVoice(options: CleanVoiceOptions): Promise<string> {
-  const { input, output: customOutput, noiseReduction = 5, targetLoudness = -14, noiseSampleStart, noiseSampleEnd } = options;
+  const {
+    input,
+    output: customOutput,
+    noiseReduction = 5,
+    targetLoudness = -14,
+    noiseSampleStart,
+    noiseSampleEnd,
+  } = options;
   const progress = options.onProgress ?? (() => {});
 
   if (!(await checkFFmpeg())) {
@@ -119,10 +157,19 @@ export async function cleanVoice(options: CleanVoiceOptions): Promise<string> {
   if (engine === 'deepfilter') {
     await cleanWithDeepFilter(input, output, noiseReduction, targetLoudness, progress);
   } else {
-    const manualSample = noiseSampleStart != null && noiseSampleEnd != null && noiseSampleEnd > noiseSampleStart
-      ? { start: noiseSampleStart, end: noiseSampleEnd }
-      : undefined;
-    await cleanWithFFmpegFilters(input, output, noiseReduction, targetLoudness, engine, manualSample, progress);
+    const manualSample =
+      noiseSampleStart != null && noiseSampleEnd != null && noiseSampleEnd > noiseSampleStart
+        ? { start: noiseSampleStart, end: noiseSampleEnd }
+        : undefined;
+    await cleanWithFFmpegFilters(
+      input,
+      output,
+      noiseReduction,
+      targetLoudness,
+      engine,
+      manualSample,
+      progress
+    );
   }
 
   progress('Done!');
@@ -152,8 +199,8 @@ async function cleanWithDeepFilter(
     spin.stop();
 
     // Step 2: Run DeepFilterNet
-    progress('Denoising with DeepFilterNet...');
-    spin = createSpinner('Denoising with DeepFilterNet...');
+    progress('Denoising...');
+    spin = createSpinner('Denoising...');
     const attenDb = Math.round(10 + noiseReduction * 4); // Scale 1-10 → 14-50 dB
     const { execaCommand } = await import('execa');
     await execaCommand(
@@ -171,50 +218,44 @@ async function cleanWithDeepFilter(
     // Step 3: Measure loudness on enhanced audio (through the pre-loudnorm chain)
     progress('Measuring loudness...');
     spin = createSpinner('Measuring loudness...');
-    const preChain = [
-      'highpass=f=80',
-      'acompressor=threshold=0.089:ratio=3:attack=10:release=100:knee=4:makeup=2',
-    ];
-    const measurements = await measureLoudness(enhancedWav, preChain, targetLoudness);
+    const measurements = await measureLoudness(enhancedWav, [HIGHPASS, COMPRESSOR], targetLoudness);
     spin.stop();
 
     // Step 4: Mux enhanced audio back with original video
-    // Chain: highpass → compressor → loudnorm → limiter (standard studio vocal chain)
     progress('Encoding final output...');
     spin = createSpinner('Encoding final output...');
-    const loudnorm =
-      `loudnorm=I=${targetLoudness}:TP=-1.5:LRA=11` +
-      `:measured_I=${measurements.input_i}` +
-      `:measured_TP=${measurements.input_tp}` +
-      `:measured_LRA=${measurements.input_lra}` +
-      `:measured_thresh=${measurements.input_thresh}` +
-      `:offset=${measurements.target_offset}` +
-      ':linear=true';
-
-    const filters = [
-      'highpass=f=80',
-      'acompressor=threshold=0.089:ratio=3:attack=10:release=100:knee=4:makeup=2',
-      loudnorm,
-      'alimiter=limit=0.95:attack=5:release=50:asc=1',
-    ].join(',');
+    const filters = [HIGHPASS, COMPRESSOR, buildLoudnorm(measurements, targetLoudness), LIMITER].join(',');
 
     await executeFFmpegRaw([
       '-y',
-      '-i', input,
-      '-i', enhancedWav,
-      '-map', '0:v',
-      '-map', '1:a',
-      '-af', filters,
-      '-c:v', 'copy',
-      '-c:a', 'aac',
-      '-b:a', '256k',
-      '-movflags', '+faststart',
+      '-i',
+      input,
+      '-i',
+      enhancedWav,
+      '-map',
+      '0:v',
+      '-map',
+      '1:a',
+      '-af',
+      filters,
+      '-c:v',
+      'copy',
+      '-c:a',
+      'aac',
+      '-b:a',
+      '256k',
+      '-movflags',
+      '+faststart',
       output,
     ]);
     spin.stop();
   } finally {
     // Cleanup temp files
-    try { rmSync(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ }
+    try {
+      rmSync(tmpDir, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
   }
 }
 
@@ -237,14 +278,16 @@ async function cleanWithFFmpegFilters(
     const segments = await detectSilenceSegments(input);
     if (segments.length > 0) {
       noiseSample = segments.reduce((best, seg) =>
-        (seg.end - seg.start) > (best.end - best.start) ? seg : best
+        seg.end - seg.start > best.end - best.start ? seg : best
       );
     }
   }
 
   if (noiseSample) {
     const label = manualSample ? 'manual' : 'auto';
-    console.log(`Sample:   ${fmt.yellow(`${noiseSample.start.toFixed(1)}s → ${noiseSample.end.toFixed(1)}s (${label})`)}`);
+    console.log(
+      `Sample:   ${fmt.yellow(`${noiseSample.start.toFixed(1)}s → ${noiseSample.end.toFixed(1)}s (${label})`)}`
+    );
   }
   spin.stop();
 
@@ -258,28 +301,26 @@ async function cleanWithFFmpegFilters(
   const measurements = await measureLoudness(input, lightFilters, targetLoudness);
   spin.stop();
 
-  progress(engine === 'rnnoise' ? 'Denoising with RNNoise...' : 'Denoising audio...');
+  progress(engine === 'rnnoise' ? 'Denoising...' : 'Denoising audio...');
   spin = createSpinner('Processing audio...');
-  const loudnorm =
-    `loudnorm=I=${targetLoudness}:TP=-1.5:LRA=11` +
-    `:measured_I=${measurements.input_i}` +
-    `:measured_TP=${measurements.input_tp}` +
-    `:measured_LRA=${measurements.input_lra}` +
-    `:measured_thresh=${measurements.input_thresh}` +
-    `:offset=${measurements.target_offset}` +
-    ':linear=true';
-
-  const filters = [
-    ...baseFilters,
-    loudnorm,
-    'alimiter=limit=0.95:attack=5:release=50:asc=1',
-  ].join(',');
+  const filters = [...baseFilters, buildLoudnorm(measurements, targetLoudness), LIMITER].join(',');
 
   progress('Encoding final output...');
   await executeFFmpeg({
     input,
     output,
-    args: ['-af', filters, '-c:v', 'copy', '-c:a', 'aac', '-b:a', '256k', '-movflags', '+faststart'],
+    args: [
+      '-af',
+      filters,
+      '-c:v',
+      'copy',
+      '-c:a',
+      'aac',
+      '-b:a',
+      '256k',
+      '-movflags',
+      '+faststart',
+    ],
   });
   spin.stop();
 }
@@ -288,7 +329,8 @@ async function cleanWithFFmpegFilters(
 
 async function detectSilenceSegments(input: string): Promise<SilenceSegment[]> {
   const stderr = await executeFFmpegAnalysis(input, [
-    '-t', '120',
+    '-t',
+    '120',
     '-af',
     `silencedetect=n=-30dB:d=${MIN_NOISE_PROFILE_DURATION}`,
   ]);
@@ -342,7 +384,7 @@ function buildBaseFilters(
   noiseSample?: { start: number; end: number }
 ): string[] {
   const filters: string[] = [];
-  filters.push('highpass=f=80');
+  filters.push(HIGHPASS);
 
   if (noiseSample) {
     const nr = noiseReduction * 3 + 3;
@@ -369,9 +411,10 @@ function buildBaseFilters(
 export async function analyzeVoice(input: string): Promise<VoiceAnalysis> {
   const segments = await detectSilenceSegments(input);
   const voiceStart = segments.length > 0 && segments[0].start === 0 ? segments[0].end : 0;
-  const bestSegment = segments.length > 0
-    ? segments.reduce((best, seg) => (seg.end - seg.start) > (best.end - best.start) ? seg : best)
-    : null;
+  const bestSegment =
+    segments.length > 0
+      ? segments.reduce((best, seg) => (seg.end - seg.start > best.end - best.start ? seg : best))
+      : null;
 
   const stderr = await executeFFmpegAnalysis(input, [
     '-af',

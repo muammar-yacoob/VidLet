@@ -1919,7 +1919,7 @@ video::-webkit-media-controls-panel {
 .process-log {
   margin-top: 10px;
   font-size: 11px;
-  color: var(--fg2);
+  color: var(--txt2);
   font-family: monospace;
   max-height: 80px;
   overflow-y: auto;
