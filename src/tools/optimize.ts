@@ -9,7 +9,7 @@
  */
 
 import { exec, execFileSync, execSync } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getOutputPath } from '../lib/paths.js';
@@ -148,16 +148,13 @@ function resolveFiles(input: string): string[] {
  */
 async function optimizeGif(
   file: string,
-  options: { output?: string; lossy?: number; level?: number; colors?: number },
+  options: { output?: string; lossy?: number; level?: number; colors?: number }
 ): Promise<OptimizeResult> {
   const gifsicle = (await import('gifsicle')).default;
   const originalSize = statSync(file).size;
   const outPath = options.output ?? getOutputPath(file, '_optimized');
 
-  const args: string[] = [
-    `-O${options.level ?? 3}`,
-    `--lossy=${options.lossy ?? 80}`,
-  ];
+  const args: string[] = [`-O${options.level ?? 3}`, `--lossy=${options.lossy ?? 80}`];
   if (options.colors) {
     args.push(`--colors=${options.colors}`);
   }
@@ -205,8 +202,14 @@ let _wslTemp: string | null = null;
 function getWslTemp(): string | null {
   if (_wslTemp !== null) return _wslTemp;
   try {
-    const winTemp = execSync('cmd.exe /c echo %TEMP%', { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
-    _wslTemp = execSync(`wslpath -u "${winTemp}"`, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+    const winTemp = execSync('cmd.exe /c echo %TEMP%', {
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    }).trim();
+    _wslTemp = execSync(`wslpath -u "${winTemp}"`, {
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    }).trim();
   } catch {
     _wslTemp = '';
   }
@@ -217,12 +220,18 @@ function writeProgress(current: number, total: number, fileName: string): void {
   const tmp = getWslTemp();
   if (!tmp) return;
   try {
-    writeFileSync(join(tmp, 'vidlet-optimize-progress.tmp'), `${current}/${total}|${fileName}`, 'utf-8');
-  } catch { /* ignore */ }
+    writeFileSync(
+      join(tmp, 'vidlet-optimize-progress.tmp'),
+      `${current}/${total}|${fileName}`,
+      'utf-8'
+    );
+  } catch {
+    /* ignore */
+  }
 }
 
 /** Tiny preview server that serves lottie-web + animation data via HTTP */
-import { createServer, type Server } from 'node:http';
+import { type Server, createServer } from 'node:http';
 
 let _previewServer: Server | null = null;
 let _currentAnimJson = '{}';
@@ -270,7 +279,10 @@ load();setInterval(load,1200);
     const port = addr.port;
     const edgePath = '/mnt/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
     if (existsSync(edgePath)) {
-      exec(`"${edgePath}" --app="http://127.0.0.1:${port}" --window-size=300,300 --new-window`, () => {});
+      exec(
+        `"${edgePath}" --app="http://127.0.0.1:${port}" --window-size=300,300 --new-window`,
+        () => {}
+      );
     }
   });
 
@@ -286,7 +298,9 @@ function closePreviewServer(): Promise<void> {
   if (!_previewServer) return Promise.resolve();
   return new Promise((resolve) => {
     setTimeout(() => {
-      try { _previewServer?.close(); } catch {}
+      try {
+        _previewServer?.close();
+      } catch {}
       resolve();
     }, 10000);
   });
@@ -299,7 +313,9 @@ export async function optimize(options: OptimizeOptions): Promise<string> {
   const inputs = Array.isArray(options.input) ? options.input : [options.input];
   const allFiles = inputs.flatMap((i) => resolveFiles(i));
   const gifFiles = allFiles.filter((f) => extname(f).toLowerCase() === '.gif');
-  let lottieFiles = allFiles.filter((f) => extname(f).toLowerCase() === '.json' && isLottieFile(f));
+  const lottieFiles = allFiles.filter(
+    (f) => extname(f).toLowerCase() === '.json' && isLottieFile(f)
+  );
 
   if (gifFiles.length === 0 && lottieFiles.length === 0) {
     throw new Error('No Lottie JSON or GIF files found');
@@ -337,9 +353,10 @@ export async function optimize(options: OptimizeOptions): Promise<string> {
     let outPath: string;
 
     if (options.dotlottie) {
-      outPath = options.output && lottieFiles.length === 1
-        ? options.output
-        : file.replace(/\.json$/, '.lottie');
+      outPath =
+        options.output && lottieFiles.length === 1
+          ? options.output
+          : file.replace(/\.json$/, '.lottie');
       const jsonData = JSON.parse(optimized);
       finalSize = await toDotLottie(jsonData, outPath);
     } else {
@@ -366,7 +383,9 @@ export async function optimize(options: OptimizeOptions): Promise<string> {
 
   // Print per-file summary
   for (const r of results) {
-    console.log(`${r.file}: ${formatBytes(r.originalSize)} → ${formatBytes(r.optimizedSize)} (${r.savedPercent}% saved)`);
+    console.log(
+      `${r.file}: ${formatBytes(r.originalSize)} → ${formatBytes(r.optimizedSize)} (${r.savedPercent}% saved)`
+    );
   }
 
   const totalOriginal = results.reduce((s, r) => s + r.originalSize, 0);
@@ -375,7 +394,9 @@ export async function optimize(options: OptimizeOptions): Promise<string> {
   const totalPct = totalOriginal > 0 ? (totalSaved / totalOriginal) * 100 : 0;
 
   if (results.length > 1) {
-    console.log(`\nTotal: ${results.length} files, ${formatBytes(totalOriginal)} → ${formatBytes(totalOptimized)} (${totalPct.toFixed(1)}% saved)`);
+    console.log(
+      `\nTotal: ${results.length} files, ${formatBytes(totalOriginal)} → ${formatBytes(totalOptimized)} (${totalPct.toFixed(1)}% saved)`
+    );
   }
 
   // Signal toast HTA with detailed summary
@@ -384,17 +405,25 @@ export async function optimize(options: OptimizeOptions): Promise<string> {
     if (tmp) {
       const lines: string[] = [];
       for (const r of results) {
-        lines.push(`${r.file}: ${formatBytes(r.originalSize)} > ${formatBytes(r.optimizedSize)} (${r.savedPercent}%)`);
+        lines.push(
+          `${r.file}: ${formatBytes(r.originalSize)} > ${formatBytes(r.optimizedSize)} (${r.savedPercent}%)`
+        );
       }
       if (results.length > 1) {
         lines.push(`Total: ${formatBytes(totalSaved)} saved (${totalPct.toFixed(1)}%)`);
       }
       writeFileSync(join(tmp, 'vidlet-optimize-done.tmp'), lines.join('\n'), 'utf-8');
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 
   await closePreviewServer();
 
   const allProcessed = [...gifFiles, ...lottieFiles];
-  return allProcessed.length === 1 ? allProcessed[0] : (Array.isArray(options.input) ? options.input[0] : options.input);
+  return allProcessed.length === 1
+    ? allProcessed[0]
+    : Array.isArray(options.input)
+      ? options.input[0]
+      : options.input;
 }

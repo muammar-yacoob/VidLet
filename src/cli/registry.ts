@@ -37,12 +37,16 @@ async function getProgId(extension: string): Promise<string | null> {
     const { stdout } = await execAsync(`reg.exe query "HKCU\\Software\\Classes\\${extension}" /ve`);
     const match = stdout.match(/REG_SZ\s+(.+)/);
     if (match && match[1].trim()) return match[1].trim();
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
   try {
     const { stdout } = await execAsync(`reg.exe query "HKCR\\${extension}" /ve`);
     const match = stdout.match(/REG_SZ\s+(.+)/);
     if (match && match[1].trim()) return match[1].trim();
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
   return null;
 }
 

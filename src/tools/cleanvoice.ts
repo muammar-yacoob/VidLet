@@ -73,12 +73,27 @@ export async function cleanVoice(options: CleanVoiceOptions): Promise<string> {
       `:offset=${measurements.target_offset}` +
       ':linear=true';
 
-    const filters = [...baseFilters, loudnorm, 'alimiter=limit=0.85:attack=3:release=50:asc=1'].join(',');
+    const filters = [
+      ...baseFilters,
+      loudnorm,
+      'alimiter=limit=0.85:attack=3:release=50:asc=1',
+    ].join(',');
 
     await executeFFmpeg({
       input,
       output,
-      args: ['-af', filters, '-c:v', 'copy', '-c:a', 'aac', '-b:a', '256k', '-movflags', '+faststart'],
+      args: [
+        '-af',
+        filters,
+        '-c:v',
+        'copy',
+        '-c:a',
+        'aac',
+        '-b:a',
+        '256k',
+        '-movflags',
+        '+faststart',
+      ],
     });
     spin.stop();
   } catch (err) {

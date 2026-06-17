@@ -58,8 +58,8 @@
     const currentTime = video.currentTime;
 
     if (getActiveTool() === 'trim') {
-      const trimStart = parseFloat($('trim-start').value) || 0;
-      const trimEnd = parseFloat($('trim-end').value) || video.duration;
+      const trimStart = Number.parseFloat($('trim-start').value) || 0;
+      const trimEnd = Number.parseFloat($('trim-end').value) || video.duration;
       const trimDuration = trimEnd - trimStart;
       const relativeTime = Math.max(0, currentTime - trimStart);
       const pct = trimDuration > 0 ? (relativeTime / trimDuration) * 100 : 0;

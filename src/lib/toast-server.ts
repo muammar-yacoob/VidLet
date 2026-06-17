@@ -3,8 +3,8 @@
  * Serves the toast HTML + lottie-web and exposes API for progress/animation data.
  */
 import { exec } from 'node:child_process';
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { readFileSync } from 'node:fs';
+import { type IncomingMessage, type ServerResponse, createServer } from 'node:http';
 import { dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -77,7 +77,10 @@ export function startToast(): {
     // Open Edge in app mode with unique profile to ensure a new window
     const edgePath = '/mnt/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
     const tmpProfile = `/tmp/vidlet-edge-${port}`;
-    exec(`"${edgePath}" --app="${url}" --window-size=420,155 --user-data-dir="${tmpProfile}" --no-first-run --disable-extensions`, () => {});
+    exec(
+      `"${edgePath}" --app="${url}" --window-size=420,155 --user-data-dir="${tmpProfile}" --no-first-run --disable-extensions`,
+      () => {}
+    );
   });
 
   return {
@@ -92,13 +95,17 @@ export function startToast(): {
       // Keep process alive for Edge to load, show result, and fade out
       return new Promise<void>((resolve) => {
         setTimeout(() => {
-          try { server.close(); } catch {}
+          try {
+            server.close();
+          } catch {}
           resolve();
         }, 10000);
       });
     },
     close() {
-      try { server.close(); } catch {}
+      try {
+        server.close();
+      } catch {}
     },
   };
 }

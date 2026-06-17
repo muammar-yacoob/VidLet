@@ -497,9 +497,8 @@ async function analyzeAudioForCleanVoice() {
       $('clean-loudness').value = -14;
       $('clean-loudness-val').textContent = '-14 LUFS';
 
-      const profile = res.voiceStart > 0
-        ? `Profile: 0→${res.voiceStart.toFixed(1)}s`
-        : 'Profile: auto';
+      const profile =
+        res.voiceStart > 0 ? `Profile: 0→${res.voiceStart.toFixed(1)}s` : 'Profile: auto';
       infoEl.textContent = `${profile} · Current: ${res.currentLoudness.toFixed(1)} LUFS`;
     } else {
       if (infoEl) infoEl.textContent = 'Analysis failed — using defaults';
