@@ -65,6 +65,9 @@ window.VidLet = window.VidLet || {};
       const pct = Math.round((i / frameCount) * 100);
       if (onProgress) onProgress(pct);
 
+      const cachedBar = V.$('playerCached');
+      if (cachedBar) cachedBar.style.width = `${pct}%`;
+
       const statusEl = V.$('scrub-cache-status');
       if (statusEl) {
         statusEl.style.display = 'block';

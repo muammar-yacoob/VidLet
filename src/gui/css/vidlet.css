@@ -1218,6 +1218,15 @@ video::-webkit-media-controls-panel {
   cursor: pointer;
   position: relative;
 }
+.player-seek-cached {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 2px;
+  pointer-events: none;
+}
 .player-seek-progress {
   position: absolute;
   left: 0;
