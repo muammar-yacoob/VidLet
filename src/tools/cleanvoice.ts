@@ -25,6 +25,11 @@ interface LoudnormMeasurements {
 
 const MIN_NOISE_PROFILE_DURATION = 0.3;
 
+interface SilenceSegment {
+  start: number;
+  end: number;
+}
+
 export async function cleanVoice(options: CleanVoiceOptions): Promise<string> {
   const { input, output: customOutput, noiseReduction = 5, targetLoudness = -14 } = options;
 
@@ -47,15 +52,16 @@ export async function cleanVoice(options: CleanVoiceOptions): Promise<string> {
 
   let spin = createSpinner('Analyzing audio...');
   try {
-    // Pass 1: Detect where voice starts (noise profile boundary)
-    const voiceStart = await detectVoiceStart(input);
-    if (voiceStart > 0) {
-      spin.stop(`Profile:  ${fmt.yellow(`0 → ${voiceStart.toFixed(2)}s`)}`);
+    // Pass 1: Find all silence gaps (pauses, breaths, room tone) for noise profiling
+    const segments = await detectSilenceSegments(input);
+    if (segments.length > 0) {
+      const totalNoise = segments.reduce((s, seg) => s + (seg.end - seg.start), 0);
+      spin.stop(`Noise:    ${fmt.yellow(`${segments.length} segments (${totalNoise.toFixed(1)}s)`)}`);
     } else {
-      spin.stop(`Profile:  ${fmt.yellow('auto (no leading silence)')}`);
+      spin.stop(`Noise:    ${fmt.yellow('adaptive (no silence found)')}`);
     }
 
-    const baseFilters = buildBaseFilters(voiceStart, noiseReduction);
+    const baseFilters = buildBaseFilters(segments, noiseReduction);
 
     // Pass 2: Measure loudness (lightweight — skip anlmdn to avoid double processing)
     spin = createSpinner('Measuring loudness...');
@@ -108,14 +114,41 @@ export async function cleanVoice(options: CleanVoiceOptions): Promise<string> {
   return output;
 }
 
+/**
+ * Find all silence segments across the entire audio.
+ * These are gaps between speech (pauses, breaths, room tone) — ideal
+ * for building a noise profile since they contain noise but no voice.
+ */
+async function detectSilenceSegments(input: string): Promise<SilenceSegment[]> {
+  const stderr = await executeFFmpegAnalysis(input, [
+    '-af',
+    `silencedetect=n=-30dB:d=${MIN_NOISE_PROFILE_DURATION}`,
+  ]);
+
+  const segments: SilenceSegment[] = [];
+  let pendingStart: number | null = null;
+
+  for (const match of stderr.matchAll(/silence_(start|end):\s*([\d.]+)/g)) {
+    const time = Number.parseFloat(match[2]);
+    if (match[1] === 'start') {
+      pendingStart = time;
+    } else {
+      // silence_end with no prior start means leading silence from t=0
+      segments.push({ start: pendingStart ?? 0, end: time });
+      pendingStart = null;
+    }
+  }
+
+  return segments;
+}
+
+/** Derive voice start from first silence segment (for analyzeVoice) */
 async function detectVoiceStart(input: string): Promise<number> {
-  const stderr = await executeFFmpegAnalysis(input, ['-af', 'silencedetect=n=-30dB:d=0.2']);
-
-  const match = stderr.match(/silence_end:\s*([\d.]+)/);
-  if (!match) return 0;
-
-  const silenceEnd = Number.parseFloat(match[1]);
-  return silenceEnd >= MIN_NOISE_PROFILE_DURATION ? silenceEnd : 0;
+  const segments = await detectSilenceSegments(input);
+  if (segments.length > 0 && segments[0].start === 0) {
+    return segments[0].end;
+  }
+  return 0;
 }
 
 async function measureLoudness(
@@ -145,7 +178,7 @@ async function measureLoudness(
   };
 }
 
-function buildBaseFilters(voiceStart: number, noiseReduction: number): string[] {
+function buildBaseFilters(segments: SilenceSegment[], noiseReduction: number): string[] {
   const filters: string[] = [];
 
   // Downmix to mono first — all subsequent filters process one channel
@@ -161,12 +194,15 @@ function buildBaseFilters(voiceStart: number, noiseReduction: number): string[] 
   // Map user-facing scale (1-10) to noise reduction in dB (6-33)
   const nr = noiseReduction * 3 + 3;
 
-  if (voiceStart > 0) {
-    // Sample noise from leading silence [0 → voiceStart], then apply
-    filters.push(`asendcmd=c='0.0 afftdn sn start;${voiceStart.toFixed(3)} afftdn sn stop'`);
+  if (segments.length > 0) {
+    // Sample noise from every silence gap — afftdn accumulates the profile
+    const cmds = segments
+      .map((s) => `${s.start.toFixed(3)} afftdn sn start;${s.end.toFixed(3)} afftdn sn stop`)
+      .join(';');
+    filters.push(`asendcmd=c='${cmds}'`);
     filters.push(`afftdn=nr=${nr}:nf=-30:tn=0`);
   } else {
-    // No leading silence — use adaptive noise tracking
+    // No silence found — use adaptive noise tracking
     filters.push(`afftdn=nr=${nr}:nf=-30:tn=1`);
   }
 
