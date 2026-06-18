@@ -15,3 +15,4 @@ export { registerOptimizeCommand } from './optimize.js';
 export { registerRemoveSilenceCommand } from './removesilence.js';
 export { registerAutoCleanupCommand } from './autocleanup.js';
 export { registerCaptionCommand } from './caption.js';
+export { registerJumpcutCommand } from './jumpcut.js';

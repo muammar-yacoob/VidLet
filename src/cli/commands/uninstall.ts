@@ -54,12 +54,12 @@ export function registerUninstallCommand(program: Command): void {
       }
 
       // Display grouped results
-      let successCount = 0;
+      let _successCount = 0;
       for (const [toolName, { extensions, allSuccess }] of grouped) {
         const extList = extensions.join(', ');
         if (allSuccess) {
           console.log(`${fmt.green('✓')} ${toolName} ${fmt.dim(`[${extList}]`)}`);
-          successCount++;
+          _successCount++;
         } else {
           console.log(
             `${fmt.dim('○')} ${toolName} ${fmt.dim(`[${extList}]`)} ${fmt.dim('(not found)')}`

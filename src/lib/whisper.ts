@@ -92,9 +92,13 @@ export async function ensureWhisper(): Promise<boolean> {
     await execaFn('curl', ['-sL', dl.url, '-o', tempTar], { timeout: 300_000 });
 
     // Extract only the whisper-cli binary from the tarball
-    await execaFn('tar', ['-xzf', tempTar, '-C', WHISPER_DIR, '--strip-components=1', `${dl.innerDir}/whisper-cli`], {
-      timeout: 30_000,
-    });
+    await execaFn(
+      'tar',
+      ['-xzf', tempTar, '-C', WHISPER_DIR, '--strip-components=1', `${dl.innerDir}/whisper-cli`],
+      {
+        timeout: 30_000,
+      }
+    );
 
     chmodSync(WHISPER_BIN, 0o755);
     logToFile('Whisper: Binary installed successfully');
@@ -167,9 +171,7 @@ export async function transcribe(
   const hasBinary = await ensureWhisper();
   if (!hasBinary) {
     throw new Error(
-      'whisper.cpp binary not available for this platform. ' +
-        'Install whisper.cpp manually and place the binary at: ' +
-        WHISPER_BIN
+      `whisper.cpp binary not available for this platform. Install whisper.cpp manually and place the binary at: ${WHISPER_BIN}`
     );
   }
 

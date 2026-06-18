@@ -90,7 +90,7 @@ function parseSrt(content: string): SrtEntry[] {
     if (lines.length < 3) continue;
 
     const index = Number.parseInt(lines[0]);
-    if (isNaN(index)) continue;
+    if (Number.isNaN(index)) continue;
 
     const timeParts = lines[1].split(' --> ');
     if (timeParts.length !== 2) continue;

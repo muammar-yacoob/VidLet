@@ -31,7 +31,7 @@ export async function extractAudio(options: ExtractAudioOptions): Promise<string
   header('Extract Audio');
   console.log(`Input:    ${fmt.white(input)}`);
   console.log(`Format:   ${fmt.yellow(format.toUpperCase())}`);
-  console.log(`Bitrate:  ${fmt.yellow(bitrate + 'k')}`);
+  console.log(`Bitrate:  ${fmt.yellow(`${bitrate}k`)}`);
   separator();
   console.log(fmt.dim('Extracting audio...'));
 
@@ -90,7 +90,7 @@ export async function addAudio(options: AudioOptions): Promise<string> {
   header('Add Audio');
   console.log(`Video:    ${fmt.white(input)}`);
   console.log(`Audio:    ${fmt.white(audio)}`);
-  console.log(`Volume:   ${fmt.yellow((volume * 100).toFixed(0) + '%')}`);
+  console.log(`Volume:   ${fmt.yellow(`${(volume * 100).toFixed(0)}%`)}`);
   console.log(`Mode:     ${fmt.yellow(mix ? 'Mix with original' : 'Replace audio')}`);
   separator();
   console.log(fmt.dim('Processing...'));

@@ -63,14 +63,14 @@
       const trimDuration = trimEnd - trimStart;
       const relativeTime = Math.max(0, currentTime - trimStart);
       const pct = trimDuration > 0 ? (relativeTime / trimDuration) * 100 : 0;
-      $('playerProgress').style.width = Math.min(100, pct) + '%';
-      $('playerThumb').style.left = Math.min(100, pct) + '%';
-      $('playerTime').textContent = formatTime(relativeTime) + ' / ' + formatTime(trimDuration);
+      $('playerProgress').style.width = `${Math.min(100, pct)}%`;
+      $('playerThumb').style.left = `${Math.min(100, pct)}%`;
+      $('playerTime').textContent = `${formatTime(relativeTime)} / ${formatTime(trimDuration)}`;
     } else {
       const pct = (currentTime / video.duration) * 100;
-      $('playerProgress').style.width = pct + '%';
-      $('playerThumb').style.left = pct + '%';
-      $('playerTime').textContent = formatTime(currentTime) + ' / ' + formatTime(video.duration);
+      $('playerProgress').style.width = `${pct}%`;
+      $('playerThumb').style.left = `${pct}%`;
+      $('playerTime').textContent = `${formatTime(currentTime)} / ${formatTime(video.duration)}`;
     }
   }
 
@@ -79,7 +79,7 @@
     const playhead = $('timeline-playhead');
     if (!video.duration || !playhead) return;
     const pct = (video.currentTime / video.duration) * 100;
-    playhead.style.left = pct + '%';
+    playhead.style.left = `${pct}%`;
   }
 
   /**
@@ -108,7 +108,7 @@
     const muted = video.muted || video.volume === 0;
     $('volIcon').style.display = muted ? 'none' : 'block';
     $('mutedIcon').style.display = muted ? 'block' : 'none';
-    $('volumeLevel').style.width = (muted ? 0 : video.volume * 100) + '%';
+    $('volumeLevel').style.width = `${muted ? 0 : video.volume * 100}%`;
   }
 
   /**

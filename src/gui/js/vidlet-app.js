@@ -84,6 +84,20 @@ async function init() {
     $('cleanup-silence-val').textContent = `${$('cleanup-silence').value}s`;
   }
 
+  // Jump cut: wire seg-btn groups
+  for (const groupId of ['jumpcutPace', 'jumpcutZoom']) {
+    const group = $(groupId);
+    if (!group) continue;
+    const hiddenId = groupId === 'jumpcutPace' ? 'jumpcut-pace' : 'jumpcut-zoom';
+    for (const btn of group.querySelectorAll('button')) {
+      btn.onclick = () => {
+        for (const b of group.querySelectorAll('button')) b.classList.remove('active');
+        btn.classList.add('active');
+        $(hiddenId).value = btn.dataset.val;
+      };
+    }
+  }
+
   // Auto cleanup: disable contrast for long videos (>5min)
   const isLongVideo = res.duration > 300;
   if (isLongVideo) {
@@ -824,6 +838,9 @@ async function process() {
       opts.minSilenceDuration = Number.parseFloat($('cleanup-silence').value);
       opts.skipContrast = $('cleanup-skip-contrast').value === 'true';
       opts.cleanupContrast = 1.15;
+    } else if (activeTool === 'jumpcut') {
+      opts.jumpcutPace = $('jumpcut-pace')?.value || 'normal';
+      opts.jumpcutZoom = Number.parseInt($('jumpcut-zoom')?.value) || 3;
     }
 
     // Poll for live processing status with animated dots

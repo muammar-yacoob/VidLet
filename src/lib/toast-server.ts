@@ -51,7 +51,7 @@ function serve(req: IncomingMessage, res: ServerResponse) {
   }
 }
 
-let serverInstance: ReturnType<typeof createServer> | null = null;
+let _serverInstance: ReturnType<typeof createServer> | null = null;
 
 /**
  * Start the toast server and open Edge in app mode.
@@ -66,7 +66,7 @@ export function startToast(): {
   state = { progress: null, animationJson: null, doneMessage: null };
 
   const server = createServer(serve);
-  serverInstance = server;
+  _serverInstance = server;
 
   server.listen(0, '127.0.0.1', () => {
     const addr = server.address();

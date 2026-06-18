@@ -6,6 +6,7 @@ import { extractAudio } from '../tools/audio.js';
 import { autoCleanup } from '../tools/autocleanup.js';
 import { caption as captionTool } from '../tools/caption.js';
 import { cleanVoice } from '../tools/cleanvoice.js';
+import { jumpcut } from '../tools/jumpcut.js';
 import { compress } from '../tools/compress.js';
 import { loop } from '../tools/loop.js';
 import { mkv2mp4 } from '../tools/mkv2mp4.js';
@@ -139,6 +140,13 @@ export const toolConfigs: ToolConfig[] = [
     icon: 'tv.ico',
     extensions: ['.mp4', '.mkv', '.avi', '.mov', '.webm'],
     description: 'Auto-transcribe and burn styled captions',
+  },
+  {
+    id: 'jumpcut',
+    name: 'Jump Cut',
+    icon: 'tv.ico',
+    extensions: ['.mp4', '.mkv', '.avi', '.mov', '.webm'],
+    description: 'Auto-edit: cut silence + punch-in zoom',
   },
 ];
 
@@ -585,6 +593,17 @@ export const tools: Tool[] = [
         fontSize: options.fontSize as number | undefined,
         fontName: options.fontName as string | undefined,
         position: options.position as 'bottom' | 'center' | 'top' | undefined,
+      });
+    },
+  },
+  {
+    config: toolConfigs[14],
+    run: async (input, options) => {
+      return jumpcut({
+        input,
+        output: options.output as string | undefined,
+        pace: options.pace as 'tight' | 'normal' | 'loose' | undefined,
+        zoom: options.zoom as number | undefined,
       });
     },
   },

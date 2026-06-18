@@ -4,6 +4,7 @@ import {
   registerAutoCleanupCommand,
   registerCaptionCommand,
   registerCleanVoiceCommand,
+  registerJumpcutCommand,
   registerCompressCommand,
   registerConfigCommand,
   registerExtractAudioCommand,
@@ -57,6 +58,7 @@ export function createProgram(): Command {
   registerRemoveSilenceCommand(program);
   registerAutoCleanupCommand(program);
   registerCaptionCommand(program);
+  registerJumpcutCommand(program);
   registerVidletCommand(program);
 
   return program;

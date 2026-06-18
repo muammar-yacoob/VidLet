@@ -6,11 +6,12 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getToolConfig } from '../lib/config.js';
 import { getVideoInfo } from '../lib/ffmpeg.js';
-import { type VideoInfo, getVideoInfoForGui, startGuiServer } from '../lib/gui-server.js';
+import { getVideoInfoForGui, startGuiServer } from '../lib/gui-server.js';
 import { logToFile } from '../lib/logger.js';
 import { addAudio, extractAudio } from './audio.js';
 import { autoCleanup } from './autocleanup.js';
 import { caption } from './caption.js';
+import { jumpcut } from './jumpcut.js';
 import { analyzeVoice, cleanVoice, ensureDeepFilter } from './cleanvoice.js';
 import { compress } from './compress.js';
 import { filter } from './filter.js';
@@ -110,6 +111,9 @@ interface ToolOptions {
   captionColor?: string;
   captionAutoTranscribe?: boolean;
   captionWhisperModel?: 'tiny.en' | 'base.en' | 'small.en';
+  // Jump cut options
+  jumpcutPace?: 'tight' | 'normal' | 'loose';
+  jumpcutZoom?: number;
   // Remove silence options
   minSilenceDuration?: number;
   silenceThreshold?: number;
@@ -329,6 +333,21 @@ async function runTool(input: string, opts: ToolOptions): Promise<ProcessResult>
         break;
       }
 
+      case 'jumpcut': {
+        logs.push({ type: 'info', message: 'Creating jump cuts...' });
+        output = await jumpcut({
+          input: actualInput,
+          pace: opts.jumpcutPace,
+          zoom: opts.jumpcutZoom,
+          onProgress: (stage) => {
+            setProcessStatus(stage);
+          },
+        });
+        setProcessStatus('');
+        logs.push({ type: 'success', message: 'Jump cuts complete!' });
+        break;
+      }
+
       case 'cleanvoice': {
         logs.push({ type: 'info', message: 'Cleaning voice audio...' });
         await ensureDeepFilter().catch(() => {});
@@ -424,6 +443,7 @@ export async function runGUI(input: string): Promise<boolean> {
     removesilence: await getToolConfig('removesilence'),
     autocleanup: await getToolConfig('autocleanup'),
     caption: await getToolConfig('caption'),
+    jumpcut: await getToolConfig('jumpcut'),
     isMkv: ext === '.mkv',
     isLandscape,
     homepage: getHomepage(),

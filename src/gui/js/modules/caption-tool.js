@@ -218,7 +218,8 @@ Words light up as they play
     }
 
     // Sanitize text to prevent XSS from user-uploaded SRT content
-    const escapeHtml = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const escapeHtml = (s) =>
+      s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     const words = previewText.split(' ').map(escapeHtml);
     const hlColor = PREVIEW_COLORS[captionColorVal] || PREVIEW_COLORS.yellow;
 

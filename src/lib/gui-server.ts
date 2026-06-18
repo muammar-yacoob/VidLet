@@ -391,11 +391,15 @@ export function startGuiServer(options: GuiServerOptions): Promise<boolean> {
         return;
       }
       // Use Start-Process with -ArgumentList to avoid string interpolation injection
-      spawn('powershell.exe', ['-WindowStyle', 'Hidden', '-Command', 'Start-Process', parsed.href], {
-        detached: true,
-        stdio: 'ignore',
-        windowsHide: true,
-      }).unref();
+      spawn(
+        'powershell.exe',
+        ['-WindowStyle', 'Hidden', '-Command', 'Start-Process', parsed.href],
+        {
+          detached: true,
+          stdio: 'ignore',
+          windowsHide: true,
+        }
+      ).unref();
       res.json({ success: true });
     });
 

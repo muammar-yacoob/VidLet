@@ -59,15 +59,7 @@ const COMPRESSOR = 'acompressor=threshold=0.089:ratio=3:attack=10:release=100:kn
 const LIMITER = 'alimiter=limit=0.95:attack=5:release=50:asc=1';
 
 function buildLoudnorm(measurements: LoudnormMeasurements, targetLoudness: number): string {
-  return (
-    `loudnorm=I=${targetLoudness}:TP=-1.5:LRA=11` +
-    `:measured_I=${measurements.input_i}` +
-    `:measured_TP=${measurements.input_tp}` +
-    `:measured_LRA=${measurements.input_lra}` +
-    `:measured_thresh=${measurements.input_thresh}` +
-    `:offset=${measurements.target_offset}` +
-    ':linear=true'
-  );
+  return `loudnorm=I=${targetLoudness}:TP=-1.5:LRA=11:measured_I=${measurements.input_i}:measured_TP=${measurements.input_tp}:measured_LRA=${measurements.input_lra}:measured_thresh=${measurements.input_thresh}:offset=${measurements.target_offset}:linear=true`;
 }
 
 // ============ ENGINE RESOLUTION ============

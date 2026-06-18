@@ -23,7 +23,7 @@ export function registerInstallCommand(program: Command): void {
         const regPath = await generateRegFile();
         const winPath = wslToWindows(regPath);
         console.log(fmt.green('✓ Generated:'), winPath);
-        console.log(fmt.dim('  Double-click to install, or: reg import "' + winPath + '"'));
+        console.log(fmt.dim(`  Double-click to install, or: reg import "${winPath}"`));
         return;
       }
 
