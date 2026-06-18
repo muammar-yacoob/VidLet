@@ -30,6 +30,9 @@ export function showHelp(): void {
   console.log(`    ${cmd('thumb')} ${arg('<file> <image>')}     Embed thumbnail image`);
   console.log(`    ${cmd('loop')} ${arg('<file>')}              Create seamless loop`);
   console.log();
+  console.log(head('  AI Tools'));
+  console.log(`    ${cmd('caption')} ${arg('<file>')}           Auto-transcribe + burn captions`);
+  console.log();
   console.log(head('  Audio Tools'));
   console.log(`    ${cmd('cleanvoice')} ${arg('<file>')}        Denoise and enhance voice`);
   console.log(`    ${cmd('removesilence')} ${arg('<file>')}     Cut silent segments`);
@@ -43,7 +46,9 @@ export function showHelp(): void {
   console.log(`    ${cmd('uninstall')}              Remove right-click menu`);
   console.log(`    ${cmd('config')}                 Display current settings`);
   console.log(`    ${cmd('config reset')}           Restore defaults`);
-  console.log(`    ${cmd('config set-key')} ${arg('<key>')}    Set Spark AI key ${fmt.dim('(sparkbrain.app)')}`);
+  console.log(
+    `    ${cmd('config set-key')} ${arg('<key>')}    Set Spark AI key ${fmt.dim('(sparkbrain.app)')}`
+  );
   console.log();
   console.log(head('  Options'));
   console.log(`    ${opt('-g, --gui')}              Open GUI window`);

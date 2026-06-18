@@ -14,3 +14,4 @@ export { registerCleanVoiceCommand } from './cleanvoice.js';
 export { registerOptimizeCommand } from './optimize.js';
 export { registerRemoveSilenceCommand } from './removesilence.js';
 export { registerAutoCleanupCommand } from './autocleanup.js';
+export { registerCaptionCommand } from './caption.js';

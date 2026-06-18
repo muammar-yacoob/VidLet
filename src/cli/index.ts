@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { showHelp } from '../lib/help.js';
 import {
   registerAutoCleanupCommand,
+  registerCaptionCommand,
   registerCleanVoiceCommand,
   registerCompressCommand,
   registerConfigCommand,
@@ -55,6 +56,7 @@ export function createProgram(): Command {
   registerOptimizeCommand(program);
   registerRemoveSilenceCommand(program);
   registerAutoCleanupCommand(program);
+  registerCaptionCommand(program);
   registerVidletCommand(program);
 
   return program;

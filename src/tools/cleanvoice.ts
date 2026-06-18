@@ -101,9 +101,9 @@ export async function ensureDeepFilter(): Promise<boolean> {
 
   mkdirSync(DEEPFILTER_DIR, { recursive: true });
 
-  const { execaCommand } = await import('execa');
+  const { execa: execaFn } = await import('execa');
   try {
-    await execaCommand(`curl -sL "${url}" -o "${DEEPFILTER_BIN}"`, { shell: true });
+    await execaFn('curl', ['-sL', url, '-o', DEEPFILTER_BIN], { timeout: 300_000 });
     chmodSync(DEEPFILTER_BIN, 0o755);
     return true;
   } catch {
@@ -202,10 +202,11 @@ async function cleanWithDeepFilter(
     progress('Denoising...');
     spin = createSpinner('Denoising...');
     const attenDb = Math.round(10 + noiseReduction * 4); // Scale 1-10 → 14-50 dB
-    const { execaCommand } = await import('execa');
-    await execaCommand(
-      `"${DEEPFILTER_BIN}" "${tmpWav}" -o "${enhancedDir}" --pf --atten-lim-db ${attenDb}`,
-      { shell: true, timeout: 600_000 }
+    const { execa: execaFn } = await import('execa');
+    await execaFn(
+      DEEPFILTER_BIN,
+      [tmpWav, '-o', enhancedDir, '--pf', '--atten-lim-db', String(attenDb)],
+      { timeout: 600_000 }
     );
     spin.stop();
 

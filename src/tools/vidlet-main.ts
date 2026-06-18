@@ -6,7 +6,7 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getToolConfig } from '../lib/config.js';
 import { getVideoInfo } from '../lib/ffmpeg.js';
-import { type VideoInfo, startGuiServer } from '../lib/gui-server.js';
+import { type VideoInfo, getVideoInfoForGui, startGuiServer } from '../lib/gui-server.js';
 import { logToFile } from '../lib/logger.js';
 import { addAudio, extractAudio } from './audio.js';
 import { autoCleanup } from './autocleanup.js';
@@ -106,6 +106,10 @@ interface ToolOptions {
   srtContent?: string;
   captionFontSize?: number;
   captionPosition?: 'bottom' | 'center' | 'top';
+  captionStyle?: 'classic' | 'hormozi' | 'karaoke' | 'minimal';
+  captionColor?: string;
+  captionAutoTranscribe?: boolean;
+  captionWhisperModel?: 'tiny.en' | 'base.en' | 'small.en';
   // Remove silence options
   minSilenceDuration?: number;
   silenceThreshold?: number;
@@ -298,16 +302,29 @@ async function runTool(input: string, opts: ToolOptions): Promise<ProcessResult>
       }
 
       case 'caption': {
-        if (!opts.srtContent) {
-          throw new Error('No subtitle content provided');
+        if (!opts.srtContent && !opts.captionAutoTranscribe) {
+          throw new Error('No subtitle source: provide SRT content or enable auto-transcribe');
         }
-        logs.push({ type: 'info', message: 'Adding captions...' });
+        logs.push({
+          type: 'info',
+          message: opts.captionAutoTranscribe
+            ? 'Transcribing and adding captions...'
+            : 'Adding captions...',
+        });
         output = await caption({
           input: actualInput,
           srtContent: opts.srtContent,
+          autoTranscribe: opts.captionAutoTranscribe,
+          whisperModel: opts.captionWhisperModel,
+          style: opts.captionStyle,
+          highlightColor: opts.captionColor,
           fontSize: opts.captionFontSize,
           position: opts.captionPosition,
+          onProgress: (stage) => {
+            setProcessStatus(stage);
+          },
         });
+        setProcessStatus('');
         logs.push({ type: 'success', message: 'Captions added!' });
         break;
       }
@@ -384,25 +401,6 @@ async function runTool(input: string, opts: ToolOptions): Promise<ProcessResult>
 }
 
 /**
- * Get video info for GUI
- */
-async function getVideoInfoForGui(filePath: string): Promise<VideoInfo> {
-  const info = await getVideoInfo(filePath);
-  const stats = fs.statSync(filePath);
-  return {
-    filePath,
-    fileName: path.basename(filePath),
-    width: info.width,
-    height: info.height,
-    duration: info.duration,
-    fps: info.fps ?? 30,
-    bitrate: info.bitrate ?? 0,
-    fileSize: stats.size,
-    hasAudio: info.hasAudio,
-  };
-}
-
-/**
  * Run unified VidLet GUI
  */
 export async function runGUI(input: string): Promise<boolean> {
@@ -425,6 +423,7 @@ export async function runGUI(input: string): Promise<boolean> {
     cleanvoice: await getToolConfig('cleanvoice'),
     removesilence: await getToolConfig('removesilence'),
     autocleanup: await getToolConfig('autocleanup'),
+    caption: await getToolConfig('caption'),
     isMkv: ext === '.mkv',
     isLandscape,
     homepage: getHomepage(),
@@ -537,6 +536,33 @@ export async function runGUI(input: string): Promise<boolean> {
         return { success: true, ...result };
       } catch (err) {
         logToFile(`VidLet: Audio analysis failed: ${(err as Error).message}`);
+        return { success: false, error: (err as Error).message };
+      }
+    },
+    onTranscribe: async () => {
+      try {
+        logToFile('VidLet: Starting transcription...');
+        const { transcribe, segmentsToSrt, ensureWhisper, ensureWhisperModel } = await import(
+          '../lib/whisper.js'
+        );
+        setProcessStatus('Downloading whisper...');
+        const hasWhisper = await ensureWhisper();
+        if (!hasWhisper) {
+          throw new Error('Could not download whisper.cpp binary for this platform');
+        }
+        setProcessStatus('Downloading model...');
+        await ensureWhisperModel();
+        setProcessStatus('Transcribing audio...');
+        const result = await transcribe(currentInput, {
+          onProgress: (stage) => setProcessStatus(stage),
+        });
+        setProcessStatus('');
+        const srtContent = segmentsToSrt(result.segments);
+        logToFile(`VidLet: Transcribed ${result.segments.length} segments`);
+        return { success: true, segments: result.segments, srtContent };
+      } catch (err) {
+        setProcessStatus('');
+        logToFile(`VidLet: Transcription failed: ${(err as Error).message}`);
         return { success: false, error: (err as Error).message };
       }
     },

@@ -1,7 +1,7 @@
 {
   "name": "@spark-apps/vidlet",
   "version": "1.0.1",
-  "description": "Video utility toolkit with Windows shell integration - compress, convert, GIF, loops, and more",
+  "description": "Free local auto-captions, video compression, voice cleanup, GIF conversion & more - right-click context menu for Windows (WSL)",
   "type": "module",
   "bin": {
     "vidlet": "./dist/cli.js"
@@ -28,13 +28,19 @@
   "keywords": [
     "video",
     "ffmpeg",
+    "auto-captions",
+    "subtitles",
+    "whisper",
+    "transcribe",
     "compress",
     "gif",
-    "loop",
-    "convert",
+    "capcut-alternative",
+    "voice-cleanup",
+    "denoise",
     "wsl",
     "windows",
-    "context-menu"
+    "context-menu",
+    "video-editor"
   ],
   "author": "spark-apps",
   "license": "MIT",

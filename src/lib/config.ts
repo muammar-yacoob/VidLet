@@ -59,6 +59,15 @@ export const AutoCleanupConfigSchema = z.object({
   contrast: z.number().min(0).max(2).default(1.15),
 });
 
+export const CaptionConfigSchema = z.object({
+  style: z.enum(['classic', 'hormozi', 'karaoke', 'minimal']).default('hormozi'),
+  highlightColor: z.string().default('yellow'),
+  fontSize: z.number().min(16).max(120).default(48),
+  fontName: z.string().default('Arial Black'),
+  position: z.enum(['bottom', 'center', 'top']).default('bottom'),
+  whisperModel: z.enum(['tiny.en', 'base.en', 'small.en']).default('base.en'),
+});
+
 // Hotkey preset options
 export const HotkeyPresetSchema = z
   .enum([
@@ -89,6 +98,7 @@ export const ToolsConfigSchema = z.object({
   cleanvoice: CleanVoiceConfigSchema.default({}),
   removesilence: RemoveSilenceConfigSchema.default({}),
   autocleanup: AutoCleanupConfigSchema.default({}),
+  caption: CaptionConfigSchema.default({}),
   app: AppSettingsSchema.default({}),
 });
 
@@ -103,6 +113,7 @@ export type ThumbConfig = z.infer<typeof ThumbConfigSchema>;
 export type CleanVoiceConfig = z.infer<typeof CleanVoiceConfigSchema>;
 export type RemoveSilenceConfig = z.infer<typeof RemoveSilenceConfigSchema>;
 export type AutoCleanupConfig = z.infer<typeof AutoCleanupConfigSchema>;
+export type CaptionConfig = z.infer<typeof CaptionConfigSchema>;
 
 // Defaults
 const DEFAULT_CONFIG: ToolsConfig = {
@@ -115,6 +126,14 @@ const DEFAULT_CONFIG: ToolsConfig = {
   cleanvoice: { noiseReduction: 5, targetLoudness: -14 },
   removesilence: { minSilenceDuration: 0.5, silenceThreshold: -30 },
   autocleanup: { noiseReduction: 3, minSilenceDuration: 0.5, contrast: 1.15 },
+  caption: {
+    style: 'hormozi',
+    highlightColor: 'yellow',
+    fontSize: 48,
+    fontName: 'Arial Black',
+    position: 'bottom',
+    whisperModel: 'base.en',
+  },
   app: { hotkeyPreset: 'premiere', frameSkip: 3, sparkAiKey: '' },
 };
 

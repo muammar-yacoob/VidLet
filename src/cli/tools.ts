@@ -1,10 +1,10 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { getToolConfig as getToolSettings } from '../lib/config.js';
-import { getVideoInfo } from '../lib/ffmpeg.js';
-import { type VideoInfo, startGuiServer } from '../lib/gui-server.js';
+import { type VideoInfo, getVideoInfoForGui, startGuiServer } from '../lib/gui-server.js';
 import { extractAudio } from '../tools/audio.js';
 import { autoCleanup } from '../tools/autocleanup.js';
+import { caption as captionTool } from '../tools/caption.js';
 import { cleanVoice } from '../tools/cleanvoice.js';
 import { compress } from '../tools/compress.js';
 import { loop } from '../tools/loop.js';
@@ -36,25 +36,6 @@ export interface Tool {
   config: ToolConfig;
   run: (input: string, options: Record<string, unknown>) => Promise<string>;
   runGUI?: (input: string) => Promise<void>;
-}
-
-/**
- * Get video info for GUI mode
- */
-async function getVideoInfoForGui(filePath: string): Promise<VideoInfo> {
-  const info = await getVideoInfo(filePath);
-  const stats = fs.statSync(filePath);
-  return {
-    filePath,
-    fileName: path.basename(filePath),
-    width: info.width,
-    height: info.height,
-    duration: info.duration,
-    fps: info.fps ?? 30,
-    bitrate: info.bitrate ?? 0,
-    fileSize: stats.size,
-    hasAudio: info.hasAudio,
-  };
 }
 
 /**
@@ -151,6 +132,13 @@ export const toolConfigs: ToolConfig[] = [
     icon: 'tv.ico',
     extensions: ['.mp4', '.mkv', '.avi', '.mov', '.webm'],
     description: 'Denoise, remove silence, contrast, and compress',
+  },
+  {
+    id: 'caption',
+    name: 'Auto Captions',
+    icon: 'tv.ico',
+    extensions: ['.mp4', '.mkv', '.avi', '.mov', '.webm'],
+    description: 'Auto-transcribe and burn styled captions',
   },
 ];
 
@@ -580,6 +568,23 @@ export const tools: Tool[] = [
         noiseReduction: options.noiseReduction as number | undefined,
         minSilenceDuration: options.minSilenceDuration as number | undefined,
         skipContrast: options.skipContrast as boolean | undefined,
+      });
+    },
+  },
+  {
+    config: toolConfigs[13],
+    run: async (input, options) => {
+      return captionTool({
+        input,
+        output: options.output as string | undefined,
+        srtContent: options.srtContent as string | undefined,
+        autoTranscribe: options.autoTranscribe as boolean | undefined,
+        whisperModel: options.whisperModel as 'tiny.en' | 'base.en' | 'small.en' | undefined,
+        style: options.style as 'classic' | 'hormozi' | 'karaoke' | 'minimal' | undefined,
+        highlightColor: options.highlightColor as string | undefined,
+        fontSize: options.fontSize as number | undefined,
+        fontName: options.fontName as string | undefined,
+        position: options.position as 'bottom' | 'center' | 'top' | undefined,
       });
     },
   },

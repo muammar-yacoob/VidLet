@@ -277,14 +277,14 @@
                 <span class="thumb-info" id="thumbFrameTime">0:00.0</span>
               </div>
               <div class="thumb-divider">or</div>
-              <div class="thumb-option" id="thumbUpload" onclick="handleThumbClick()">
+              <div class="thumb-option" id="thumbUpload" onclick="VidLetThumbTool.handleClick()">
                 <div class="thumb-preview-box">
                   <img id="thumbPreview" src="" alt="">
                   <span class="thumb-drop-hint" id="thumbDropHint">Drop or click</span>
                 </div>
                 <span class="thumb-label">Use custom image</span>
                 <a href="#" class="thumb-replace" id="thumbReplace" onclick="event.stopPropagation();$('thumbFileInput').click()">Replace</a>
-                <input type="file" id="thumbFileInput" accept="image/*" style="display:none" onchange="handleThumbFile(this)">
+                <input type="file" id="thumbFileInput" accept="image/*" style="display:none" onchange="VidLetThumbTool.handleFile(this)">
               </div>
             </div>
             <input type="hidden" id="thumb-image" value="">
@@ -303,7 +303,7 @@
               <div class="opts-row">
                 <div class="drop-zone" id="audioDropZone" onclick="$('audioFileInput').click()">
                   <span id="audioFileName">Drop audio file or click to browse</span>
-                  <input type="file" id="audioFileInput" accept="audio/*" style="display:none" onchange="handleAudioFile(this)">
+                  <input type="file" id="audioFileInput" accept="audio/*" style="display:none" onchange="VidLetAudioTool.handleFile(this)">
                 </div>
               </div>
               <div class="opts-row"><label>Volume</label>
@@ -484,36 +484,81 @@
 
           <div class="opts" id="opts-caption">
             <div class="caption-panel">
-              <div class="caption-upload">
+              <!-- Transcription source toggle -->
+              <div class="caption-row">
+                <label>Source</label>
+                <div class="seg-btns" id="captionSource">
+                  <button type="button" data-val="auto" class="active">Auto-Transcribe</button>
+                  <button type="button" data-val="file">Upload SRT</button>
+                </div>
+              </div>
+
+              <!-- Auto-transcribe controls -->
+              <div id="captionAutoPanel">
+                <button class="btn-secondary caption-transcribe-btn" id="transcribeBtn">
+                  <span id="transcribeBtnText">Transcribe Audio</span>
+                </button>
+              </div>
+
+              <!-- File upload (hidden by default) -->
+              <div class="hidden" id="captionFilePanel">
                 <div class="drop-zone" id="srtDropZone" onclick="$('srtFileInput').click()">
                   <span id="srtFileName">Drop .srt file or click to browse</span>
-                  <input type="file" id="srtFileInput" accept=".srt" style="display:none" onchange="handleSrtFile(this)">
+                  <input type="file" id="srtFileInput" accept=".srt" style="display:none" onchange="VidLetCaptionTool.handleFile(this)">
                 </div>
               </div>
-              <div class="caption-settings">
-                <div class="caption-row">
-                  <label>Position</label>
-                  <div class="seg-btns caption-pos-btns" id="captionPosition">
-                    <button type="button" data-val="top">Top</button>
-                    <button type="button" data-val="center">Center</button>
-                    <button type="button" data-val="bottom" class="active">Bottom</button>
-                  </div>
-                </div>
-                <div class="caption-row">
-                  <label>Size</label>
-                  <div class="seg-btns caption-size-btns" id="captionSize">
-                    <button type="button" data-val="36">S</button>
-                    <button type="button" data-val="48" class="active">M</button>
-                    <button type="button" data-val="64">L</button>
-                  </div>
+
+              <!-- Style presets -->
+              <div class="caption-row">
+                <label>Style</label>
+                <div class="seg-btns" id="captionStyle">
+                  <button type="button" data-val="classic">Classic</button>
+                  <button type="button" data-val="hormozi" class="active">Hormozi</button>
+                  <button type="button" data-val="karaoke">Karaoke</button>
+                  <button type="button" data-val="minimal">Minimal</button>
                 </div>
               </div>
+
+              <!-- Highlight color (for hormozi/karaoke) -->
+              <div class="caption-row" id="captionColorRow">
+                <label>Color</label>
+                <div class="caption-color-picker" id="captionColorPicker">
+                  <button class="color-swatch active" data-color="yellow" style="background:#FFE500" title="Yellow"></button>
+                  <button class="color-swatch" data-color="cyan" style="background:#00E5FF" title="Cyan"></button>
+                  <button class="color-swatch" data-color="red" style="background:#FF4444" title="Red"></button>
+                  <button class="color-swatch" data-color="green" style="background:#44FF44" title="Green"></button>
+                  <button class="color-swatch" data-color="white" style="background:#FFFFFF; border:1px solid var(--brd)" title="White"></button>
+                </div>
+              </div>
+
+              <!-- Position -->
+              <div class="caption-row">
+                <label>Position</label>
+                <div class="seg-btns caption-pos-btns" id="captionPosition">
+                  <button type="button" data-val="top">Top</button>
+                  <button type="button" data-val="center">Center</button>
+                  <button type="button" data-val="bottom" class="active">Bottom</button>
+                </div>
+              </div>
+
+              <!-- Font size -->
+              <div class="caption-row">
+                <label>Size</label>
+                <div class="seg-btns caption-size-btns" id="captionSize">
+                  <button type="button" data-val="36">S</button>
+                  <button type="button" data-val="48" class="active">M</button>
+                  <button type="button" data-val="64">L</button>
+                </div>
+              </div>
+
+              <!-- Status -->
               <div class="caption-info">
-                <span id="captionStatus">Using test subtitle</span>
-                <span class="render-only-badge">Render only</span>
+                <span id="captionStatus">Ready</span>
               </div>
             </div>
             <input type="hidden" id="caption-srt" value="">
+            <input type="hidden" id="caption-style" value="hormozi">
+            <input type="hidden" id="caption-color" value="yellow">
             <input type="hidden" id="caption-position" value="bottom">
             <input type="hidden" id="caption-size" value="48">
           </div>

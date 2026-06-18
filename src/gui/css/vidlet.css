@@ -2586,14 +2586,9 @@ video::-webkit-media-controls-panel {
   flex-direction: column;
   gap: 10px;
 }
-.caption-upload .drop-zone {
+.caption-panel .drop-zone {
   padding: 10px;
   font-size: 10px;
-}
-.caption-settings {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
 }
 .caption-row {
   display: flex;
@@ -2621,12 +2616,45 @@ video::-webkit-media-controls-panel {
   font-size: 9px;
   color: var(--acc2);
 }
-.render-only-badge {
-  background: rgba(139, 92, 246, 0.15);
-  color: var(--acc);
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 8px;
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
+.caption-transcribe-btn {
+  width: 100%;
+  padding: 8px;
+  font-size: 11px;
+  cursor: pointer;
+}
+.caption-transcribe-btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+.caption-color-picker {
+  display: flex;
+  gap: 6px;
+  flex: 1;
+}
+.color-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: all .15s;
+  padding: 0;
+}
+.color-swatch:hover {
+  transform: scale(1.15);
+}
+.color-swatch.active {
+  border-color: var(--acc);
+  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.4);
+}
+/* Caption overlay style variants */
+.caption-overlay.style-minimal {
+  text-align: left;
+  padding: 0 12px;
+}
+.caption-overlay.pos-bottom-left {
+  bottom: 8%;
+  top: auto;
+  transform: none;
+  text-align: left;
 }

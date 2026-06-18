@@ -5,7 +5,7 @@ import { exec, spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import { createServer } from 'node:http';
 import * as os from 'node:os';
-import { dirname, extname, join } from 'node:path';
+import { basename, dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { loadToolsConfig, saveToolsConfig } from './config.js';
@@ -39,6 +39,26 @@ export interface VideoInfo {
   bitrate: number;
   fileSize: number;
   hasAudio: boolean;
+}
+
+/**
+ * Get video info formatted for GUI consumption
+ */
+export async function getVideoInfoForGui(filePath: string): Promise<VideoInfo> {
+  const { getVideoInfo } = await import('./ffmpeg.js');
+  const stats = fs.statSync(filePath);
+  const info = await getVideoInfo(filePath);
+  return {
+    filePath,
+    fileName: basename(filePath),
+    width: info.width,
+    height: info.height,
+    duration: info.duration,
+    fps: info.fps ?? 30,
+    bitrate: info.bitrate ?? 0,
+    fileSize: stats.size,
+    hasAudio: info.hasAudio,
+  };
 }
 
 export interface GuiServerOptions {
@@ -101,6 +121,17 @@ export interface GuiServerOptions {
     voiceStart?: number;
     currentLoudness?: number;
     suggestedNoiseReduction?: number;
+    error?: string;
+  }>;
+  onTranscribe?: () => Promise<{
+    success: boolean;
+    srtContent?: string;
+    segments?: Array<{
+      start: number;
+      end: number;
+      text: string;
+      words: Array<{ word: string; start: number; end: number }>;
+    }>;
     error?: string;
   }>;
 }
@@ -292,6 +323,19 @@ export function startGuiServer(options: GuiServerOptions): Promise<boolean> {
       }
     });
 
+    app.post('/api/transcribe', async (_req, res) => {
+      if (!options.onTranscribe) {
+        res.json({ success: false, error: 'Transcription not supported' });
+        return;
+      }
+      try {
+        const result = await options.onTranscribe();
+        res.json(result);
+      } catch (err) {
+        res.json({ success: false, error: (err as Error).message });
+      }
+    });
+
     // Upload file (audio/image) and return temp path
     app.post('/api/upload', (req, res) => {
       try {
@@ -301,8 +345,9 @@ export function startGuiServer(options: GuiServerOptions): Promise<boolean> {
           return;
         }
 
-        // Decode base64 and save to temp file
-        const ext = extname(fileName) || (type === 'audio' ? '.mp3' : '.png');
+        // Sanitize filename to prevent path traversal
+        const safeName = basename(fileName).replace(/[^a-zA-Z0-9._-]/g, '_');
+        const ext = extname(safeName) || (type === 'audio' ? '.mp3' : '.png');
         const tempPath = join(os.tmpdir(), `vidlet_${type}_${Date.now()}${ext}`);
         const buffer = Buffer.from(data.split(',').pop() || data, 'base64');
         fs.writeFileSync(tempPath, buffer);
@@ -333,7 +378,20 @@ export function startGuiServer(options: GuiServerOptions): Promise<boolean> {
         res.json({ success: false, error: 'Missing URL' });
         return;
       }
-      spawn('powershell.exe', ['-WindowStyle', 'Hidden', '-Command', `Start-Process '${url}'`], {
+      // Validate URL scheme to prevent command injection via PowerShell
+      let parsed: URL;
+      try {
+        parsed = new URL(url);
+      } catch {
+        res.json({ success: false, error: 'Invalid URL' });
+        return;
+      }
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        res.json({ success: false, error: 'Only HTTP/HTTPS URLs are allowed' });
+        return;
+      }
+      // Use Start-Process with -ArgumentList to avoid string interpolation injection
+      spawn('powershell.exe', ['-WindowStyle', 'Hidden', '-Command', 'Start-Process', parsed.href], {
         detached: true,
         stdio: 'ignore',
         windowsHide: true,
