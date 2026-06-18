@@ -43,6 +43,7 @@ export function showHelp(): void {
   console.log(`    ${cmd('uninstall')}              Remove right-click menu`);
   console.log(`    ${cmd('config')}                 Display current settings`);
   console.log(`    ${cmd('config reset')}           Restore defaults`);
+  console.log(`    ${cmd('config set-key')} ${arg('<key>')}    Set Spark AI key ${fmt.dim('(sparkbrain.app)')}`);
   console.log();
   console.log(head('  Options'));
   console.log(`    ${opt('-g, --gui')}              Open GUI window`);

@@ -49,7 +49,7 @@ export function registerConfigCommand(program: Command): void {
 
   configCmd
     .command('set-key <key>')
-    .description('Set Spark AI API key for AI features')
+    .description('Set Spark AI API key (get yours at sparkbrain.app)')
     .action(async (key: string) => {
       try {
         const config = await loadToolsConfig();
