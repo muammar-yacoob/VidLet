@@ -1,7 +1,12 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { checkFFmpeg, executeFFmpeg, executeFFmpegAnalysis, getVideoInfo } from '../lib/ffmpeg.js';
+import {
+  checkFFmpeg,
+  executeFFmpegAnalysis,
+  executeFFmpegRaw,
+  getVideoInfo,
+} from '../lib/ffmpeg.js';
 import { fmt, header, separator, success } from '../lib/logger.js';
 import { getOutputPath } from '../lib/paths.js';
 
@@ -161,21 +166,22 @@ export async function removeSilence(options: RemoveSilenceOptions): Promise<stri
 
       console.log(fmt.dim(`Extracting segment ${i + 1}/${keepSegments.length}...`));
 
-      const duration = seg.end - seg.start;
-      await executeFFmpeg({
+      const segDuration = seg.end - seg.start;
+      // -ss before -i: fast seek with timestamps starting at 0
+      await executeFFmpegRaw([
+        '-y',
+        '-ss',
+        seg.start.toString(),
+        '-i',
         input,
-        output: segFile,
-        args: [
-          '-ss',
-          seg.start.toString(),
-          '-t',
-          duration.toString(),
-          '-c',
-          'copy',
-          '-avoid_negative_ts',
-          '1',
-        ],
-      });
+        '-t',
+        segDuration.toString(),
+        '-c',
+        'copy',
+        '-avoid_negative_ts',
+        'make_zero',
+        segFile,
+      ]);
     }
 
     // Step 4: Concatenate
@@ -184,11 +190,20 @@ export async function removeSilence(options: RemoveSilenceOptions): Promise<stri
     fs.writeFileSync(concatFile, concatContent);
 
     console.log(fmt.dim('Stitching segments...'));
-    await executeFFmpeg({
-      input: concatFile,
+    await executeFFmpegRaw([
+      '-y',
+      '-f',
+      'concat',
+      '-safe',
+      '0',
+      '-i',
+      concatFile,
+      '-c',
+      'copy',
+      '-movflags',
+      '+faststart',
       output,
-      args: ['-f', 'concat', '-safe', '0', '-c', 'copy', '-movflags', '+faststart'],
-    });
+    ]);
 
     const kept = info.duration - totalSilence;
     console.log(

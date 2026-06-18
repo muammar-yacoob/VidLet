@@ -84,12 +84,12 @@ async function init() {
     $('cleanup-silence-val').textContent = `${$('cleanup-silence').value}s`;
   }
 
-  // Auto cleanup: set contrast toggle label based on video length
+  // Auto cleanup: disable contrast for long videos (>5min)
   const isLongVideo = res.duration > 300;
   if (isLongVideo) {
     $('cleanup-contrast-toggle').classList.remove('on');
     $('cleanup-skip-contrast').value = 'true';
-    $('cleanup-contrast-label').textContent = 'Off (video > 5min)';
+    $('cleanup-contrast-label').textContent = 'Off';
   }
 
   // Hide GIF export for long videos (>15s), show badge if available

@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { checkFFmpeg, executeFFmpeg, getVideoInfo } from '../lib/ffmpeg.js';
+import { checkFFmpeg, executeFFmpegRaw, getVideoInfo } from '../lib/ffmpeg.js';
 import { fmt, header, separator, success } from '../lib/logger.js';
 import { getOutputPath } from '../lib/paths.js';
 
@@ -85,9 +85,9 @@ export async function slice(options: SliceOptions): Promise<string> {
 
   header('Slice Video');
   console.log(`Input:    ${fmt.white(input)}`);
-  console.log(`Duration: ${fmt.white(info.duration.toFixed(1) + 's')}`);
-  console.log(`Cuts:     ${fmt.yellow(cuts.length + ' region(s)')}`);
-  console.log(`Keeping:  ${fmt.yellow(keepSegments.length + ' segment(s)')}`);
+  console.log(`Duration: ${fmt.white(`${info.duration.toFixed(1)}s`)}`);
+  console.log(`Cuts:     ${fmt.yellow(`${cuts.length} region(s)`)}`);
+  console.log(`Keeping:  ${fmt.yellow(`${keepSegments.length} segment(s)`)}`);
   separator();
 
   try {
@@ -103,21 +103,21 @@ export async function slice(options: SliceOptions): Promise<string> {
 
       console.log(fmt.dim(`Extracting segment ${i + 1}/${keepSegments.length}...`));
 
-      const duration = seg.end - seg.start;
-      await executeFFmpeg({
+      const segDuration = seg.end - seg.start;
+      await executeFFmpegRaw([
+        '-y',
+        '-ss',
+        seg.start.toString(),
+        '-i',
         input,
-        output: segFile,
-        args: [
-          '-ss',
-          seg.start.toString(),
-          '-t',
-          duration.toString(),
-          '-c',
-          'copy',
-          '-avoid_negative_ts',
-          '1',
-        ],
-      });
+        '-t',
+        segDuration.toString(),
+        '-c',
+        'copy',
+        '-avoid_negative_ts',
+        'make_zero',
+        segFile,
+      ]);
     }
 
     // Create concat file
@@ -127,11 +127,20 @@ export async function slice(options: SliceOptions): Promise<string> {
 
     // Concatenate segments
     console.log(fmt.dim('Stitching segments...'));
-    await executeFFmpeg({
-      input: concatFile,
+    await executeFFmpegRaw([
+      '-y',
+      '-f',
+      'concat',
+      '-safe',
+      '0',
+      '-i',
+      concatFile,
+      '-c',
+      'copy',
+      '-movflags',
+      '+faststart',
       output,
-      args: ['-f', 'concat', '-safe', '0', '-c', 'copy', '-movflags', '+faststart'],
-    });
+    ]);
 
     success(`Output: ${output}`);
     return output;
