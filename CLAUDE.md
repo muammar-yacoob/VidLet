@@ -20,6 +20,12 @@ VidLet is a Windows video utility toolkit that adds right-click context menu opt
 - `src/lib/` - Shared utilities (FFmpeg wrapper, config, paths, GUI server)
 - `src/gui/` - HTML/CSS/JS for the GUI interface
 
+### AI Tools
+| Tool | Purpose |
+|------|---------|
+| `caption` | Auto-transcribe (whisper.cpp) + burn styled captions (hormozi/karaoke/classic/minimal) |
+| `jumpcut` | Auto-edit: cut silence + alternating punch-in zoom |
+
 ### Video Tools
 | Tool | Purpose |
 |------|---------|
@@ -32,6 +38,22 @@ VidLet is a Windows video utility toolkit that adds right-click context menu opt
 | `loop` | Create seamless loops using frame similarity |
 | `portrait` | Convert landscape to 9:16 portrait |
 | `audio` | Add/mix audio tracks |
+
+### Audio Tools
+| Tool | Purpose |
+|------|---------|
+| `cleanvoice` | Multi-engine neural denoising (DeepFilterNet/RNNoise/FFmpeg) |
+| `removesilence` | Cut silent segments with configurable threshold |
+| `extractaudio` | Pull audio track to MP3/WAV/AAC/FLAC |
+| `autocleanup` | Pipeline: denoise + remove silence + contrast + compress |
+
+### Key Modules
+| Module | Location | Purpose |
+|--------|----------|---------|
+| `whisper.ts` | `src/lib/` | whisper.cpp binary/model management + transcription |
+| `ffmpeg.ts` | `src/lib/` | FFmpeg wrapper (execute, analyze, extract frames) |
+| `gui-server.ts` | `src/lib/` | Express server for GUI with API endpoints |
+| `config.ts` | `src/lib/` | Zod-validated tool configuration |
 
 ### Output Directory
 All processed videos are saved to a `VidLet` subdirectory next to the input file.
