@@ -32,6 +32,25 @@ export async function checkFFmpeg(): Promise<boolean> {
   }
 }
 
+let nvencChecked = false;
+let nvencAvailable = false;
+
+/**
+ * Check if NVENC GPU encoding is available
+ */
+export async function checkNvenc(): Promise<boolean> {
+  if (nvencChecked) return nvencAvailable;
+  try {
+    const { stdout } = await execa('ffmpeg', ['-hide_banner', '-encoders']);
+    nvencAvailable = stdout.includes('h264_nvenc');
+    nvencChecked = true;
+    return nvencAvailable;
+  } catch {
+    nvencChecked = true;
+    return false;
+  }
+}
+
 /**
  * Get video information using ffprobe
  */

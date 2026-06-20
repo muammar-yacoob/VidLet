@@ -1,5 +1,5 @@
 import { type SpeedupConfig, getToolConfig } from '../lib/config.js';
-import { checkFFmpeg, executeFFmpeg, getVideoInfo } from '../lib/ffmpeg.js';
+import { checkFFmpeg, checkNvenc, executeFFmpeg, getVideoInfo } from '../lib/ffmpeg.js';
 import { fmt, header, separator, success } from '../lib/logger.js';
 import { getOutputPath } from '../lib/paths.js';
 
@@ -28,6 +28,8 @@ export async function speedup(options: SpeedupOptions): Promise<string> {
   const newDuration = info.duration / speed;
   const pitchFactor = 1 + pitchShift / 100;
 
+  const useGpu = await checkNvenc();
+
   header('Video Speedup');
   console.log(`Input:    ${fmt.white(input)}`);
   console.log(
@@ -35,12 +37,17 @@ export async function speedup(options: SpeedupOptions): Promise<string> {
   );
   console.log(`Speed:    ${fmt.yellow(speed.toFixed(2))}x`);
   console.log(`Pitch:    ${fmt.yellow(`${pitchShift > 0 ? '+' : ''}${pitchShift}%`)}`);
+  console.log(`Encoder:  ${useGpu ? fmt.green('NVENC (GPU)') : fmt.dim('libx264 (CPU)')}`);
   separator();
   console.log(fmt.dim('Processing...'));
 
   const videoFilter = `setpts=PTS/${speed}`;
   const sampleRate = info.sampleRate || 48000;
   const audioFilters = buildSpeedupAudioFilters(speed, pitchFactor, sampleRate);
+
+  const videoEnc = useGpu
+    ? ['-c:v', 'h264_nvenc', '-preset', 'p5', '-cq', '23', '-spatial-aq', '1']
+    : ['-c:v', 'libx264', '-preset', 'medium', '-crf', '23'];
 
   const args = info.hasAudio
     ? [
@@ -50,18 +57,13 @@ export async function speedup(options: SpeedupOptions): Promise<string> {
         '[v]',
         '-map',
         '[a]',
-        '-c:v',
-        'libx264',
-        '-preset',
-        'medium',
-        '-crf',
-        '23',
+        ...videoEnc,
         '-c:a',
         'aac',
         '-b:a',
         '128k',
       ]
-    : ['-vf', videoFilter, '-c:v', 'libx264', '-preset', 'medium', '-crf', '23', '-an'];
+    : ['-vf', videoFilter, ...videoEnc, '-an'];
 
   await executeFFmpeg({ input, output, args });
 
