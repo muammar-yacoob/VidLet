@@ -39,7 +39,8 @@ export async function speedup(options: SpeedupOptions): Promise<string> {
   console.log(fmt.dim('Processing...'));
 
   const videoFilter = `setpts=PTS/${speed}`;
-  const audioFilters = buildSpeedupAudioFilters(speed, pitchFactor);
+  const sampleRate = info.sampleRate || 48000;
+  const audioFilters = buildSpeedupAudioFilters(speed, pitchFactor, sampleRate);
 
   const args = info.hasAudio
     ? [
@@ -72,7 +73,7 @@ export async function speedup(options: SpeedupOptions): Promise<string> {
 /**
  * Build audio filter chain: atempo for speed, asetrate+aresample for pitch shift
  */
-function buildSpeedupAudioFilters(speed: number, pitchFactor: number): string {
+function buildSpeedupAudioFilters(speed: number, pitchFactor: number, sampleRate: number): string {
   const filters: string[] = [];
 
   // atempo changes tempo without affecting pitch (range 0.5-2.0 per instance)
@@ -89,9 +90,10 @@ function buildSpeedupAudioFilters(speed: number, pitchFactor: number): string {
     filters.push(`atempo=${remaining}`);
   }
 
-  // Apply subtle pitch shift via sample rate manipulation
+  // Apply subtle pitch shift via sample rate manipulation using actual sample rate
   if (pitchFactor !== 1.0) {
-    filters.push(`asetrate=44100*${pitchFactor}`, 'aresample=44100');
+    const shifted = Math.round(sampleRate * pitchFactor);
+    filters.push(`asetrate=${shifted}`, `aresample=${sampleRate}`);
   }
 
   return filters.join(',');

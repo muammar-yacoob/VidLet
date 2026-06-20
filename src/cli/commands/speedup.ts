@@ -4,6 +4,14 @@ import { setUseDefaults } from '../../lib/prompts.js';
 import { getToolById } from '../tools.js';
 import { resolveInputPath } from '../utils.js';
 
+/** Parse pitch value: "5%" → 0.05, "-0.03" → -0.03 */
+function parsePitch(val: string): number {
+  if (val.endsWith('%')) {
+    return Number.parseFloat(val.slice(0, -1)) / 100;
+  }
+  return Number.parseFloat(val);
+}
+
 /**
  * Register the speedup command
  */
@@ -14,7 +22,7 @@ export function registerSpeedupCommand(program: Command): void {
     .option('-g, --gui', 'Open GUI window')
     .option('-y, --yes', 'Use defaults, skip prompts')
     .option('-s <factor>', 'Speed multiplier (default: 1.5)')
-    .option('-p <percent>', 'Pitch shift in percent (default: -0.03)')
+    .option('-p <percent>', 'Pitch shift: -0.03 or -0.03% (default: -0.03)')
     .option('-o <path>', 'Output file path')
     .action(async (file: string, options) => {
       try {
@@ -33,7 +41,7 @@ export function registerSpeedupCommand(program: Command): void {
           await tool.run(input, {
             output: options.o,
             speed: options.s ? Number.parseFloat(options.s) : undefined,
-            pitchShift: options.p ? Number.parseFloat(options.p) : undefined,
+            pitchShift: options.p ? parsePitch(options.p) : undefined,
           });
         }
       } catch (error) {

@@ -17,6 +17,7 @@ export interface VideoInfo {
   codec: string;
   bitrate: number; // in kbps
   hasAudio: boolean;
+  sampleRate: number;
 }
 
 /**
@@ -66,8 +67,9 @@ export async function getVideoInfo(inputPath: string): Promise<VideoInfo> {
   const bitrate = Math.round((streamBitrate || formatBitrate) / 1000);
 
   // Check for audio stream
-  const hasAudio =
-    data.streams?.some((s: { codec_type: string }) => s.codec_type === 'audio') ?? false;
+  const audioStream = data.streams?.find((s: { codec_type: string }) => s.codec_type === 'audio');
+  const hasAudio = !!audioStream;
+  const sampleRate = hasAudio ? Number.parseInt(audioStream.sample_rate || '0', 10) : 0;
 
   return {
     duration: Number.parseFloat(data.format?.duration || '0'),
@@ -77,6 +79,7 @@ export async function getVideoInfo(inputPath: string): Promise<VideoInfo> {
     codec: videoStream.codec_name || 'unknown',
     bitrate,
     hasAudio,
+    sampleRate,
   };
 }
 
