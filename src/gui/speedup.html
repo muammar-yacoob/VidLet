@@ -32,6 +32,8 @@
         <span>%</span>
       </div>
 
+      <div class="warn-box" id="warn"></div>
+
       <div class="meta" style="padding-top:8px">
         <div>New Duration: <b id="newDuration">-</b></div>
         <div>Pitch: <b id="pitchLabel">-</b></div>
@@ -88,6 +90,13 @@
 
       $('newDuration').textContent = formatDuration(newDur);
       $('pitchLabel').textContent = `${pitch > 0 ? '+' : ''}${pitch}%`;
+
+      if (Math.abs(pitch) > 1) {
+        $('warn').textContent = `Pitch shift of ${pitch}% is unusually high. Voice will sound noticeably ${pitch < 0 ? 'deeper' : 'higher'}.`;
+        $('warn').classList.add('on');
+      } else {
+        $('warn').classList.remove('on');
+      }
     }
 
     async function process() {

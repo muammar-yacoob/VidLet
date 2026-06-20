@@ -1,6 +1,6 @@
 import { type SpeedupConfig, getToolConfig } from '../lib/config.js';
 import { checkFFmpeg, checkNvenc, executeFFmpeg, getVideoInfo } from '../lib/ffmpeg.js';
-import { fmt, header, separator, success } from '../lib/logger.js';
+import { fmt, header, separator, success, warn } from '../lib/logger.js';
 import { getOutputPath } from '../lib/paths.js';
 
 export interface SpeedupOptions extends Partial<SpeedupConfig> {
@@ -27,6 +27,13 @@ export async function speedup(options: SpeedupOptions): Promise<string> {
 
   const newDuration = info.duration / speed;
   const pitchFactor = 1 + pitchShift / 100;
+
+  const absPitch = Math.abs(pitchShift);
+  if (absPitch > 1) {
+    warn(
+      `Pitch shift of ${pitchShift}% is unusually high (typical range: -1% to 1%). Voice will sound noticeably ${pitchShift < 0 ? 'deeper' : 'higher'}.`
+    );
+  }
 
   const useGpu = await checkNvenc();
 
