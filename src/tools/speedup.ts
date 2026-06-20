@@ -1,5 +1,5 @@
 import { type SpeedupConfig, getToolConfig } from '../lib/config.js';
-import { checkFFmpeg, checkNvenc, executeFFmpeg, getVideoInfo } from '../lib/ffmpeg.js';
+import { checkFFmpeg, checkNvenc, executeFFmpegWithProgress, getVideoInfo } from '../lib/ffmpeg.js';
 import { fmt, header, separator, success, warn } from '../lib/logger.js';
 import { getOutputPath } from '../lib/paths.js';
 
@@ -53,7 +53,7 @@ export async function speedup(options: SpeedupOptions): Promise<string> {
   const audioFilters = buildSpeedupAudioFilters(speed, pitchFactor, sampleRate);
 
   const videoEnc = useGpu
-    ? ['-c:v', 'h264_nvenc', '-preset', 'p5', '-cq', '23', '-spatial-aq', '1']
+    ? ['-c:v', 'h264_nvenc', '-preset', 'p4', '-rc', 'vbr', '-cq', '23', '-spatial-aq', '1']
     : ['-c:v', 'libx264', '-preset', 'medium', '-crf', '23'];
 
   const args = info.hasAudio
@@ -72,7 +72,7 @@ export async function speedup(options: SpeedupOptions): Promise<string> {
       ]
     : ['-vf', videoFilter, ...videoEnc, '-an'];
 
-  await executeFFmpeg({ input, output, args });
+  await executeFFmpegWithProgress({ input, output, args, expectedDuration: newDuration });
 
   success(`Output: ${output}`);
 

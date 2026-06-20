@@ -163,6 +163,83 @@ export async function executeFFmpeg(options: FFmpegOptions): Promise<void> {
 }
 
 /**
+ * Execute an ffmpeg command with a progress bar.
+ * expectedDuration is the output video duration in seconds.
+ */
+export async function executeFFmpegWithProgress(
+  options: FFmpegOptions & { expectedDuration: number }
+): Promise<void> {
+  const { input, output, args = [], overwrite = true, expectedDuration } = options;
+
+  try {
+    await fs.access(input);
+  } catch {
+    throw new Error(`Input file not found: ${input}`);
+  }
+
+  const ffmpegArgs = [
+    '-nostdin',
+    ...(overwrite ? ['-y'] : ['-n']),
+    '-i',
+    input,
+    ...args,
+    '-progress',
+    'pipe:1',
+    '-loglevel',
+    'error',
+    output,
+  ];
+
+  logToFile(`FFmpeg progress: ffmpeg ${ffmpegArgs.join(' ')}`);
+
+  const proc = execa('ffmpeg', ffmpegArgs, {
+    reject: false,
+    timeout: 30 * 60 * 1000,
+  });
+
+  let speed = '';
+  let buffer = '';
+
+  proc.stdout?.on('data', (chunk: Buffer) => {
+    buffer += chunk.toString();
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+    for (const line of lines) {
+      if (line.startsWith('out_time_us=')) {
+        const us = Number.parseInt(line.split('=')[1], 10);
+        if (us > 0 && expectedDuration > 0) {
+          const pct = Math.min(100, (us / 1_000_000 / expectedDuration) * 100);
+          renderProgressBar(pct, speed);
+        }
+      } else if (line.startsWith('speed=')) {
+        speed = line.split('=')[1].trim();
+      }
+    }
+  });
+
+  const result = await proc;
+
+  // Clear progress line
+  process.stdout.write('\r\x1b[K');
+
+  logToFile(`FFmpeg completed with exit code: ${result.exitCode}`);
+  if (result.exitCode !== 0) {
+    const errorMsg = result.stderr?.trim() || `Exit code ${result.exitCode}`;
+    logToFile(`FFmpeg error: ${errorMsg}`);
+    throw new Error(`FFmpeg failed: ${errorMsg}`);
+  }
+  logToFile(`FFmpeg success: Output at ${output}`);
+}
+
+function renderProgressBar(pct: number, speed: string): void {
+  const width = 30;
+  const filled = Math.round((pct / 100) * width);
+  const bar = '\u2588'.repeat(filled) + '\u2591'.repeat(width - filled);
+  const speedStr = speed && speed !== 'N/A' ? ` | ${speed}` : '';
+  process.stdout.write(`\r  [${bar}] ${pct.toFixed(0).padStart(3)}%${speedStr}`);
+}
+
+/**
  * Execute ffmpeg with multiple inputs
  */
 export async function executeFFmpegMultiInput(
