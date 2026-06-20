@@ -6,14 +6,15 @@ import { extractAudio } from '../tools/audio.js';
 import { autoCleanup } from '../tools/autocleanup.js';
 import { caption as captionTool } from '../tools/caption.js';
 import { cleanVoice } from '../tools/cleanvoice.js';
-import { jumpcut } from '../tools/jumpcut.js';
 import { compress } from '../tools/compress.js';
+import { jumpcut } from '../tools/jumpcut.js';
 import { loop } from '../tools/loop.js';
 import { mkv2mp4 } from '../tools/mkv2mp4.js';
 import { optimize } from '../tools/optimize.js';
 import { removeSilence } from '../tools/removesilence.js';
 import { portrait } from '../tools/shorts.js';
 import { shrink } from '../tools/shrink.js';
+import { speedup as speedupTool } from '../tools/speedup.js';
 import { thumb } from '../tools/thumb.js';
 import { togif } from '../tools/togif.js';
 import { trim, trimAccurate } from '../tools/trim.js';
@@ -147,6 +148,13 @@ export const toolConfigs: ToolConfig[] = [
     icon: 'tv.ico',
     extensions: ['.mp4', '.mkv', '.avi', '.mov', '.webm'],
     description: 'Auto-edit: cut silence + punch-in zoom',
+  },
+  {
+    id: 'speedup',
+    name: 'Speedup',
+    icon: 'tv.ico',
+    extensions: ['.mp4', '.mkv', '.avi', '.mov', '.webm'],
+    description: 'Speed up tempo while preserving pitch',
   },
 ];
 
@@ -604,6 +612,43 @@ export const tools: Tool[] = [
         output: options.output as string | undefined,
         pace: options.pace as 'tight' | 'normal' | 'loose' | undefined,
         zoom: options.zoom as number | undefined,
+      });
+    },
+  },
+  {
+    config: toolConfigs[15],
+    run: async (input, options) => {
+      return speedupTool({
+        input,
+        output: options.output as string | undefined,
+        speed: options.speed as number | undefined,
+        pitchShift: options.pitchShift as number | undefined,
+      });
+    },
+    runGUI: async (input) => {
+      const videoInfo = await getVideoInfoForGui(input);
+      const config = await getToolSettings('speedup');
+      await startGuiServer({
+        htmlFile: 'speedup.html',
+        title: 'Speedup Video',
+        videoInfo,
+        defaults: config,
+        onProcess: async (opts) => {
+          const logs: Array<{ type: string; message: string }> = [];
+          try {
+            logs.push({ type: 'info', message: 'Speeding up video...' });
+            const output = await speedupTool({
+              input,
+              speed: opts.speed as number,
+              pitchShift: opts.pitchShift as number,
+            });
+            logs.push({ type: 'success', message: 'Speedup complete!' });
+            return { success: true, output, logs };
+          } catch (err) {
+            logs.push({ type: 'error', message: (err as Error).message });
+            return { success: false, error: (err as Error).message, logs };
+          }
+        },
       });
     },
   },

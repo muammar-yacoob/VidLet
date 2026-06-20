@@ -4,17 +4,18 @@ import {
   registerAutoCleanupCommand,
   registerCaptionCommand,
   registerCleanVoiceCommand,
-  registerJumpcutCommand,
   registerCompressCommand,
   registerConfigCommand,
   registerExtractAudioCommand,
   registerHelpCommand,
   registerInstallCommand,
+  registerJumpcutCommand,
   registerLoopCommand,
   registerMkv2mp4Command,
   registerOptimizeCommand,
   registerRemoveSilenceCommand,
   registerShrinkCommand,
+  registerSpeedupCommand,
   registerThumbCommand,
   registerTogifCommand,
   registerUninstallCommand,
@@ -59,6 +60,7 @@ export function createProgram(): Command {
   registerAutoCleanupCommand(program);
   registerCaptionCommand(program);
   registerJumpcutCommand(program);
+  registerSpeedupCommand(program);
   registerVidletCommand(program);
 
   return program;

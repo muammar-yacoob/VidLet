@@ -64,6 +64,11 @@ export const JumpcutConfigSchema = z.object({
   zoom: z.number().min(0).max(8).default(3),
 });
 
+export const SpeedupConfigSchema = z.object({
+  speed: z.number().min(0.25).max(4).default(1.5),
+  pitchShift: z.number().min(-5).max(5).default(-0.03),
+});
+
 export const CaptionConfigSchema = z.object({
   style: z.enum(['classic', 'hormozi', 'karaoke', 'minimal']).default('hormozi'),
   highlightColor: z.string().default('yellow'),
@@ -105,6 +110,7 @@ export const ToolsConfigSchema = z.object({
   autocleanup: AutoCleanupConfigSchema.default({}),
   caption: CaptionConfigSchema.default({}),
   jumpcut: JumpcutConfigSchema.default({}),
+  speedup: SpeedupConfigSchema.default({}),
   app: AppSettingsSchema.default({}),
 });
 
@@ -121,6 +127,7 @@ export type RemoveSilenceConfig = z.infer<typeof RemoveSilenceConfigSchema>;
 export type AutoCleanupConfig = z.infer<typeof AutoCleanupConfigSchema>;
 export type CaptionConfig = z.infer<typeof CaptionConfigSchema>;
 export type JumpcutConfig = z.infer<typeof JumpcutConfigSchema>;
+export type SpeedupConfig = z.infer<typeof SpeedupConfigSchema>;
 
 // Defaults
 const DEFAULT_CONFIG: ToolsConfig = {
@@ -134,6 +141,7 @@ const DEFAULT_CONFIG: ToolsConfig = {
   removesilence: { minSilenceDuration: 0.5, silenceThreshold: -30 },
   autocleanup: { noiseReduction: 3, minSilenceDuration: 0.5, contrast: 1.15 },
   jumpcut: { pace: 'normal', zoom: 3 },
+  speedup: { speed: 1.5, pitchShift: -0.03 },
   caption: {
     style: 'hormozi',
     highlightColor: 'yellow',

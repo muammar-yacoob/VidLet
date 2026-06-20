@@ -38,12 +38,14 @@ interface Segment {
 }
 
 // Pace presets: minSilence, threshold, padding
-const PACE_PRESETS: Record<JumpcutPace, { minSilence: number; threshold: number; padding: number }> =
-  {
-    tight: { minSilence: 0.25, threshold: -28, padding: 0.03 },
-    normal: { minSilence: 0.4, threshold: -30, padding: 0.08 },
-    loose: { minSilence: 0.8, threshold: -35, padding: 0.15 },
-  };
+const PACE_PRESETS: Record<
+  JumpcutPace,
+  { minSilence: number; threshold: number; padding: number }
+> = {
+  tight: { minSilence: 0.25, threshold: -28, padding: 0.03 },
+  normal: { minSilence: 0.4, threshold: -30, padding: 0.08 },
+  loose: { minSilence: 0.8, threshold: -35, padding: 0.15 },
+};
 
 // ============ SILENCE DETECTION ============
 
@@ -126,13 +128,7 @@ function calculateSpeechSegments(
 // ============ MAIN ============
 
 export async function jumpcut(options: JumpcutOptions): Promise<string> {
-  const {
-    input,
-    output: customOutput,
-    pace = 'normal',
-    zoom: zoomPct = 3,
-    onProgress,
-  } = options;
+  const { input, output: customOutput, pace = 'normal', zoom: zoomPct = 3, onProgress } = options;
 
   const progress = onProgress ?? (() => {});
 
