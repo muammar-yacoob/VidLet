@@ -85,14 +85,8 @@ export async function thumb(options: ThumbOptions): Promise<string> {
     throw new Error('FFmpeg not found. Please install ffmpeg: sudo apt install ffmpeg');
   }
 
-  // Need either image or timestamp
-  if (!image && timestamp === undefined) {
-    throw new Error('Either image path or timestamp is required');
-  }
-
-  let imagePath = image;
-
-  // Extract frame from video if timestamp provided
+  // Determine the thumbnail source: an extracted frame or a provided image
+  let imagePath: string;
   if (timestamp !== undefined) {
     imagePath = await extractFrame(input, timestamp);
   } else if (image) {
@@ -102,6 +96,9 @@ export async function thumb(options: ThumbOptions): Promise<string> {
     } catch {
       throw new Error(`Image file not found: ${image}`);
     }
+    imagePath = image;
+  } else {
+    throw new Error('Either image path or timestamp is required');
   }
 
   const output = customOutput ?? getOutputPath(input, '_thumb');
@@ -112,14 +109,14 @@ export async function thumb(options: ThumbOptions): Promise<string> {
   if (timestamp !== undefined) {
     console.log(`Frame: ${fmt.white(`${timestamp.toFixed(2)}s`)}`);
   } else {
-    console.log(`Image: ${fmt.white(imagePath!)}`);
+    console.log(`Image: ${fmt.white(imagePath)}`);
   }
   console.log(`Size:  ${fmt.white(`${info.width}x${info.height}`)}`);
   separator();
   console.log(fmt.dim('Embedding thumbnail...'));
 
   // Convert image to JPEG for MP4 compatibility
-  const jpegImage = await convertToJpeg(imagePath!);
+  const jpegImage = await convertToJpeg(imagePath);
   logToFile(`Using thumbnail image: ${jpegImage}`);
 
   // Embed image as attached picture (thumbnail)

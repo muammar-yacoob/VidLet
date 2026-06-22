@@ -251,10 +251,30 @@ export async function transcribe(
   }
 }
 
+/** Shape of the relevant fields in whisper.cpp's JSON output. */
+interface WhisperOffsets {
+  from?: number;
+  to?: number;
+}
+interface WhisperToken {
+  text?: string;
+  offsets?: WhisperOffsets;
+  t0?: number;
+  t1?: number;
+}
+interface WhisperSegment extends WhisperToken {
+  timestamps?: WhisperToken[];
+  tokens?: WhisperToken[];
+}
+interface WhisperJson {
+  transcription?: WhisperSegment[];
+  result?: WhisperSegment[];
+}
+
 /**
  * Parse whisper.cpp full JSON output into our segment format
  */
-function parseWhisperJson(data: any): TranscriptSegment[] {
+function parseWhisperJson(data: WhisperJson): TranscriptSegment[] {
   const segments: TranscriptSegment[] = [];
 
   // whisper.cpp JSON format: { transcription: [{ offsets: { from, to }, text, timestamps: [{ offsets: { from, to }, text }] }] }

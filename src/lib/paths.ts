@@ -40,29 +40,6 @@ export async function toWSLPath(windowsPath: string): Promise<string> {
 }
 
 /**
- * Convert WSL path to Windows path
- * @example toWindowsPath('/mnt/c/Users/test.mp4') => 'C:\\Users\\test.mp4'
- */
-export async function toWindowsPath(wslPath: string): Promise<string> {
-  if (!wslPath) {
-    throw new Error('Path is required');
-  }
-
-  // If already a Windows path, return as-is
-  if (/^[A-Za-z]:/.test(wslPath)) {
-    return wslPath;
-  }
-
-  try {
-    const { stdout } = await execa('wslpath', ['-w', wslPath]);
-    return stdout.trim();
-  } catch {
-    // Fallback manual conversion
-    return manualToWindowsPath(wslPath);
-  }
-}
-
-/**
  * Manual Windows to WSL path conversion (fallback)
  */
 function manualToWSLPath(windowsPath: string): string {
@@ -101,34 +78,6 @@ export function wslToWindows(wslPath: string): string {
       return `\\\\wsl.localhost\\${distro}${wslPath.replace(/\//g, '\\')}`;
     }
   }
-  return wslPath;
-}
-
-/**
- * Synchronous Windows to WSL path conversion
- * @example windowsToWsl('C:\\Users\\test.mp4') => '/mnt/c/Users/test.mp4'
- */
-export function windowsToWsl(winPath: string): string {
-  const match = winPath.match(/^([A-Za-z]):\\(.*)$/);
-  if (match) {
-    const drive = match[1].toLowerCase();
-    const rest = match[2].replace(/\\/g, '/');
-    return `/mnt/${drive}/${rest}`;
-  }
-  return winPath;
-}
-
-/**
- * Manual WSL to Windows path conversion (fallback)
- */
-function manualToWindowsPath(wslPath: string): string {
-  // Handle /mnt/c/... paths
-  const match = wslPath.match(/^\/mnt\/([a-z])(\/.*)?$/);
-  if (match) {
-    const [, drive, rest = ''] = match;
-    return `${drive.toUpperCase()}:${rest.replace(/\//g, '\\')}`;
-  }
-
   return wslPath;
 }
 

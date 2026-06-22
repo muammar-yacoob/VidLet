@@ -1,7 +1,7 @@
 import type { Command } from 'commander';
-import { fmt } from '../../lib/logger.js';
 import { optimize } from '../../tools/optimize.js';
-import { resolveInputPath } from '../utils.js';
+import { getToolById } from '../tools.js';
+import { handleError, resolveInputPath } from '../utils.js';
 
 /**
  * Register the optimize command
@@ -20,7 +20,6 @@ export function registerOptimizeCommand(program: Command): void {
       try {
         // GUI mode: single file only
         if (options.gui && files.length === 1) {
-          const { getToolById } = await import('../tools.js');
           const tool = getToolById('optimize');
           if (tool) {
             const input = await resolveInputPath(files[0]);
@@ -45,8 +44,7 @@ export function registerOptimizeCommand(program: Command): void {
           colors: options.colors,
         });
       } catch (error) {
-        console.error(fmt.red(`Error: ${(error as Error).message}`));
-        process.exit(1);
+        handleError(error);
       }
     });
 }
