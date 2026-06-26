@@ -1,7 +1,13 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { checkFFmpeg, executeFFmpeg, executeFFmpegRaw, getVideoInfo } from '../lib/ffmpeg.js';
+import {
+  buildConcatFileContent,
+  checkFFmpeg,
+  executeFFmpeg,
+  executeFFmpegRaw,
+  getVideoInfo,
+} from '../lib/ffmpeg.js';
 import { fmt, header, separator, success } from '../lib/logger.js';
 import { getOutputPath } from '../lib/paths.js';
 
@@ -274,10 +280,7 @@ export async function portraitMultiSegment(options: PortraitMultiSegmentOptions)
     } else {
       // No transitions - use concat demuxer (faster, no re-encoding)
       const concatFile = path.join(tempDir, 'concat.txt');
-      const concatContent = segmentFiles
-        .map((f) => `file '${f.replace(/'/g, "'\\''")}'`)
-        .join('\n');
-      fs.writeFileSync(concatFile, concatContent);
+      fs.writeFileSync(concatFile, buildConcatFileContent(segmentFiles));
 
       console.log(fmt.dim('Concatenating segments...'));
 

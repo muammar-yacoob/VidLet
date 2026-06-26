@@ -6,13 +6,14 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import {
+  buildConcatFileContent,
   checkFFmpeg,
-  executeFFmpegAnalysis,
   executeFFmpegRaw,
   getVideoInfo,
 } from '../lib/ffmpeg.js';
 import { createSpinner, fmt, header, separator, success } from '../lib/logger.js';
 import { getOutputPath } from '../lib/paths.js';
+import { detectSilence, invertSegments } from '../lib/segments.js';
 
 export type JumpcutPace = 'tight' | 'normal' | 'loose';
 
@@ -32,11 +33,6 @@ export interface JumpcutOptions {
   onProgress?: (stage: string) => void;
 }
 
-interface Segment {
-  start: number;
-  end: number;
-}
-
 // Pace presets: minSilence, threshold, padding
 const PACE_PRESETS: Record<
   JumpcutPace,
@@ -46,84 +42,6 @@ const PACE_PRESETS: Record<
   normal: { minSilence: 0.4, threshold: -30, padding: 0.08 },
   loose: { minSilence: 0.8, threshold: -35, padding: 0.15 },
 };
-
-// ============ SILENCE DETECTION ============
-
-async function detectSilence(
-  input: string,
-  minDuration: number,
-  thresholdDb: number,
-  videoDuration: number
-): Promise<Segment[]> {
-  const stderr = await executeFFmpegAnalysis(input, [
-    '-af',
-    `silencedetect=n=${thresholdDb}dB:d=${minDuration}`,
-  ]);
-
-  const segments: Segment[] = [];
-  let pendingStart: number | null = null;
-
-  for (const match of stderr.matchAll(/silence_(start|end):\s*([\d.]+)/g)) {
-    const time = Number.parseFloat(match[2]);
-    if (match[1] === 'start') {
-      pendingStart = time;
-    } else {
-      segments.push({ start: pendingStart ?? 0, end: time });
-      pendingStart = null;
-    }
-  }
-
-  if (pendingStart !== null && videoDuration - pendingStart >= minDuration) {
-    segments.push({ start: pendingStart, end: videoDuration });
-  }
-
-  return segments;
-}
-
-// ============ SEGMENT MATH ============
-
-function calculateSpeechSegments(
-  duration: number,
-  silentSegments: Segment[],
-  padding: number
-): Segment[] {
-  if (silentSegments.length === 0) return [{ start: 0, end: duration }];
-
-  const sorted = [...silentSegments].sort((a, b) => a.start - b.start);
-
-  // Merge overlapping
-  const merged: Segment[] = [];
-  for (const seg of sorted) {
-    if (merged.length === 0) {
-      merged.push({ ...seg });
-    } else {
-      const last = merged[merged.length - 1];
-      if (seg.start <= last.end) {
-        last.end = Math.max(last.end, seg.end);
-      } else {
-        merged.push({ ...seg });
-      }
-    }
-  }
-
-  // Invert to speech segments with padding
-  const speech: Segment[] = [];
-  let pos = 0;
-  for (const gap of merged) {
-    const start = Math.max(0, pos - padding);
-    const end = Math.min(duration, gap.start + padding);
-    if (end > start + 0.05) {
-      speech.push({ start, end });
-    }
-    pos = gap.end;
-  }
-  if (pos < duration) {
-    const start = Math.max(0, pos - padding);
-    speech.push({ start, end: duration });
-  }
-
-  return speech;
-}
 
 // ============ MAIN ============
 
@@ -159,7 +77,11 @@ export async function jumpcut(options: JumpcutOptions): Promise<string> {
   // Step 1: Detect silence
   progress('Detecting silence...');
   const spin = createSpinner('Detecting silence...');
-  const silentSegments = await detectSilence(input, minSilence, threshold, info.duration);
+  const silentSegments = await detectSilence(input, {
+    minDuration: minSilence,
+    thresholdDb: threshold,
+    videoDuration: info.duration,
+  });
   spin.stop();
 
   if (silentSegments.length === 0) {
@@ -177,7 +99,10 @@ export async function jumpcut(options: JumpcutOptions): Promise<string> {
   );
 
   // Step 2: Calculate speech segments
-  const speechSegments = calculateSpeechSegments(info.duration, silentSegments, padding);
+  const speechSegments = invertSegments(info.duration, silentSegments, {
+    padding,
+    minLength: 0.05,
+  });
   if (speechSegments.length === 0) {
     throw new Error('Removing all silence would leave no content.');
   }
@@ -263,8 +188,7 @@ export async function jumpcut(options: JumpcutOptions): Promise<string> {
     console.log(fmt.dim('Stitching segments...'));
 
     const concatFile = path.join(tempDir, 'concat.txt');
-    const concatContent = segmentFiles.map((f) => `file '${f.replace(/'/g, "'\\''")}'`).join('\n');
-    fs.writeFileSync(concatFile, concatContent);
+    fs.writeFileSync(concatFile, buildConcatFileContent(segmentFiles));
 
     if (zoomFactor > 0) {
       // Re-encode concat to normalize codec params between copy/zoom segments

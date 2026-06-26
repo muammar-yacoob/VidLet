@@ -1,7 +1,6 @@
 import type { Command } from 'commander';
-import { fmt } from '../../lib/logger.js';
 import { runGUI } from '../../tools/vidlet-main.js';
-import { resolveInputPath } from '../utils.js';
+import { handleError, resolveInputPath } from '../utils.js';
 
 /**
  * Register the unified vidlet GUI command
@@ -17,8 +16,7 @@ export function registerVidletCommand(program: Command): void {
         const success = await runGUI(input);
         process.exit(success ? 0 : 1);
       } catch (error) {
-        console.error(fmt.red(`Error: ${(error as Error).message}`));
-        process.exit(1);
+        handleError(error);
       }
     });
 }

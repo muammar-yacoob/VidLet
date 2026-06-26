@@ -2,6 +2,18 @@ import * as fs from 'node:fs/promises';
 import { type ExecaError, execa } from 'execa';
 import { logToFile } from './logger.js';
 
+/** Maximum time a single ffmpeg invocation may run before being killed. */
+const FFMPEG_TIMEOUT_MS = 30 * 60 * 1000;
+
+/** Error thrown when an ffmpeg invocation fails. */
+export class FFmpegError extends Error {
+  readonly isFFmpegError = true;
+  constructor(message: string) {
+    super(message);
+    this.name = 'FFmpegError';
+  }
+}
+
 export interface FFmpegOptions {
   input: string;
   output: string;
@@ -110,29 +122,31 @@ export async function getVideoDuration(inputPath: string): Promise<number> {
   return info.duration;
 }
 
+/** Throw an FFmpegError if the ffmpeg result exited with a non-zero code. */
+function assertFFmpegOk(result: { exitCode?: number; stderr?: unknown }): void {
+  logToFile(`FFmpeg completed with exit code: ${result.exitCode}`);
+  if (result.exitCode !== 0) {
+    const stderr = typeof result.stderr === 'string' ? result.stderr.trim() : '';
+    const errorMsg = stderr || `Exit code ${result.exitCode}`;
+    logToFile(`FFmpeg error: ${errorMsg}`);
+    throw new FFmpegError(`FFmpeg failed: ${errorMsg}`);
+  }
+}
+
 /** Run FFmpeg with standard error handling and logging */
 async function runFFmpeg(args: string[], label: string) {
   logToFile(`FFmpeg ${label}: ffmpeg ${args.join(' ')}`);
-  try {
-    const result = await execa('ffmpeg', args, {
-      reject: false,
-      timeout: 30 * 60 * 1000,
-    });
-    logToFile(`FFmpeg completed with exit code: ${result.exitCode}`);
-    if (result.exitCode !== 0) {
-      const errorMsg = result.stderr?.trim() || `Exit code ${result.exitCode}`;
-      logToFile(`FFmpeg error: ${errorMsg}`);
-      const err = new Error(`FFmpeg failed: ${errorMsg}`);
-      (err as any).isFFmpegError = true;
-      throw err;
-    }
-    return result;
-  } catch (error) {
-    if ((error as any).isFFmpegError) throw error;
-    const execaError = error as ExecaError;
-    logToFile(`FFmpeg exception: ${execaError.message}`);
-    throw new Error(`FFmpeg failed: ${execaError.message}`);
-  }
+  // reject:false means execa only throws on spawn failure (e.g. ffmpeg missing),
+  // not on a non-zero exit code - that is handled by assertFFmpegOk.
+  const result = await execa('ffmpeg', args, {
+    reject: false,
+    timeout: FFMPEG_TIMEOUT_MS,
+  }).catch((error: ExecaError) => {
+    logToFile(`FFmpeg exception: ${error.message}`);
+    throw new FFmpegError(`FFmpeg failed: ${error.message}`);
+  });
+  assertFFmpegOk(result);
+  return result;
 }
 
 /**
@@ -194,7 +208,7 @@ export async function executeFFmpegWithProgress(
 
   const proc = execa('ffmpeg', ffmpegArgs, {
     reject: false,
-    timeout: 30 * 60 * 1000,
+    timeout: FFMPEG_TIMEOUT_MS,
   });
 
   let speed = '';
@@ -222,12 +236,7 @@ export async function executeFFmpegWithProgress(
   // Clear progress line
   process.stdout.write('\r\x1b[K');
 
-  logToFile(`FFmpeg completed with exit code: ${result.exitCode}`);
-  if (result.exitCode !== 0) {
-    const errorMsg = result.stderr?.trim() || `Exit code ${result.exitCode}`;
-    logToFile(`FFmpeg error: ${errorMsg}`);
-    throw new Error(`FFmpeg failed: ${errorMsg}`);
-  }
+  assertFFmpegOk(result);
   logToFile(`FFmpeg success: Output at ${output}`);
 }
 
@@ -319,6 +328,14 @@ export async function extractFrames(
     output: outputPattern,
     args,
   });
+}
+
+/**
+ * Build the content of an ffmpeg concat-demuxer list file from segment paths,
+ * escaping single quotes so arbitrary paths are handled safely.
+ */
+export function buildConcatFileContent(files: string[]): string {
+  return files.map((f) => `file '${f.replace(/'/g, "'\\''")}'`).join('\n');
 }
 
 /**

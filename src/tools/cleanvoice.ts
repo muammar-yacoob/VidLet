@@ -11,6 +11,7 @@ import {
 } from '../lib/ffmpeg.js';
 import { createSpinner, fmt, header, separator, success } from '../lib/logger.js';
 import { getOutputPath } from '../lib/paths.js';
+import { detectSilence } from '../lib/segments.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const RNNOISE_MODEL = join(__dirname, 'models', 'rnnoise.rnnn');
@@ -45,11 +46,8 @@ interface LoudnormMeasurements {
 }
 
 const MIN_NOISE_PROFILE_DURATION = 0.3;
-
-interface SilenceSegment {
-  start: number;
-  end: number;
-}
+const NOISE_SILENCE_THRESHOLD_DB = -30;
+const NOISE_ANALYSIS_WINDOW_SEC = 120;
 
 type Engine = 'deepfilter' | 'rnnoise' | 'ffmpeg';
 
@@ -273,7 +271,7 @@ async function cleanWithFFmpegFilters(
   let spin = createSpinner('Detecting noise...');
   let noiseSample = manualSample;
   if (!noiseSample) {
-    const segments = await detectSilenceSegments(input);
+    const segments = await detectNoiseSilence(input);
     if (segments.length > 0) {
       noiseSample = segments.reduce((best, seg) =>
         seg.end - seg.start > best.end - best.start ? seg : best
@@ -325,28 +323,13 @@ async function cleanWithFFmpegFilters(
 
 // ============ SHARED HELPERS ============
 
-async function detectSilenceSegments(input: string): Promise<SilenceSegment[]> {
-  const stderr = await executeFFmpegAnalysis(input, [
-    '-t',
-    '120',
-    '-af',
-    `silencedetect=n=-30dB:d=${MIN_NOISE_PROFILE_DURATION}`,
-  ]);
-
-  const segments: SilenceSegment[] = [];
-  let pendingStart: number | null = null;
-
-  for (const match of stderr.matchAll(/silence_(start|end):\s*([\d.]+)/g)) {
-    const time = Number.parseFloat(match[2]);
-    if (match[1] === 'start') {
-      pendingStart = time;
-    } else {
-      segments.push({ start: pendingStart ?? 0, end: time });
-      pendingStart = null;
-    }
-  }
-
-  return segments;
+/** Find silent gaps suitable for sampling the room's noise profile. */
+function detectNoiseSilence(input: string) {
+  return detectSilence(input, {
+    minDuration: MIN_NOISE_PROFILE_DURATION,
+    thresholdDb: NOISE_SILENCE_THRESHOLD_DB,
+    analyzeDuration: NOISE_ANALYSIS_WINDOW_SEC,
+  });
 }
 
 async function measureLoudness(
@@ -407,7 +390,7 @@ function buildBaseFilters(
 // ============ ANALYSIS (GUI) ============
 
 export async function analyzeVoice(input: string): Promise<VoiceAnalysis> {
-  const segments = await detectSilenceSegments(input);
+  const segments = await detectNoiseSilence(input);
   const voiceStart = segments.length > 0 && segments[0].start === 0 ? segments[0].end : 0;
   const bestSegment =
     segments.length > 0

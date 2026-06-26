@@ -1,62 +1,23 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { checkFFmpeg, executeFFmpegRaw, getVideoInfo } from '../lib/ffmpeg.js';
+import {
+  buildConcatFileContent,
+  checkFFmpeg,
+  executeFFmpegRaw,
+  getVideoInfo,
+} from '../lib/ffmpeg.js';
 import { fmt, header, separator, success } from '../lib/logger.js';
 import { getOutputPath } from '../lib/paths.js';
+import { type TimeSegment, invertSegments } from '../lib/segments.js';
 
-export interface SliceRegion {
-  start: number;
-  end: number;
-}
+export type SliceRegion = TimeSegment;
 
 export interface SliceOptions {
   input: string;
   output?: string;
   /** Regions to REMOVE from the video */
   cuts: SliceRegion[];
-}
-
-/**
- * Calculate segments to KEEP after removing cut regions
- */
-function calculateKeepSegments(duration: number, cuts: SliceRegion[]): SliceRegion[] {
-  if (cuts.length === 0) return [{ start: 0, end: duration }];
-
-  // Sort cuts by start time
-  const sortedCuts = [...cuts].sort((a, b) => a.start - b.start);
-
-  // Merge overlapping cuts
-  const mergedCuts: SliceRegion[] = [];
-  for (const cut of sortedCuts) {
-    if (mergedCuts.length === 0) {
-      mergedCuts.push({ ...cut });
-    } else {
-      const last = mergedCuts[mergedCuts.length - 1];
-      if (cut.start <= last.end) {
-        last.end = Math.max(last.end, cut.end);
-      } else {
-        mergedCuts.push({ ...cut });
-      }
-    }
-  }
-
-  // Calculate keep segments (inverse of cuts)
-  const keepSegments: SliceRegion[] = [];
-  let currentStart = 0;
-
-  for (const cut of mergedCuts) {
-    if (cut.start > currentStart) {
-      keepSegments.push({ start: currentStart, end: cut.start });
-    }
-    currentStart = cut.end;
-  }
-
-  if (currentStart < duration) {
-    keepSegments.push({ start: currentStart, end: duration });
-  }
-
-  return keepSegments;
 }
 
 /**
@@ -74,7 +35,7 @@ export async function slice(options: SliceOptions): Promise<string> {
   }
 
   const info = await getVideoInfo(input);
-  const keepSegments = calculateKeepSegments(info.duration, cuts);
+  const keepSegments = invertSegments(info.duration, cuts);
 
   if (keepSegments.length === 0) {
     throw new Error('Cannot remove entire video');
@@ -122,8 +83,7 @@ export async function slice(options: SliceOptions): Promise<string> {
 
     // Create concat file
     const concatFile = path.join(tempDir, 'concat.txt');
-    const concatContent = segmentFiles.map((f) => `file '${f.replace(/'/g, "'\\''")}'`).join('\n');
-    fs.writeFileSync(concatFile, concatContent);
+    fs.writeFileSync(concatFile, buildConcatFileContent(segmentFiles));
 
     // Concatenate segments
     console.log(fmt.dim('Stitching segments...'));

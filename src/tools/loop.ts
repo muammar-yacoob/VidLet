@@ -244,11 +244,10 @@ export async function findAllLoopPoints(
 
     // Convert to array, limit to 10 start points
     const startPoints: LoopStartPoint[] = [];
-    const sortedStarts = Array.from(startMatches.keys()).sort((a, b) => a - b);
+    const sortedStarts = Array.from(startMatches.entries()).sort((a, b) => a[0] - b[0]);
 
-    for (const startFrame of sortedStarts) {
+    for (const [startFrame, matches] of sortedStarts) {
       if (startPoints.length >= 10) break;
-      const matches = startMatches.get(startFrame)!;
       startPoints.push({
         id: startPoints.length,
         time: startFrame / fps,
