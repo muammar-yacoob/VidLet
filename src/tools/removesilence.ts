@@ -2,13 +2,14 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import {
+  buildConcatFileContent,
   checkFFmpeg,
-  executeFFmpegAnalysis,
   executeFFmpegRaw,
   getVideoInfo,
 } from '../lib/ffmpeg.js';
 import { fmt, header, separator, success } from '../lib/logger.js';
 import { getOutputPath } from '../lib/paths.js';
+import { detectSilence, invertSegments } from '../lib/segments.js';
 
 export interface RemoveSilenceOptions {
   input: string;
@@ -17,86 +18,6 @@ export interface RemoveSilenceOptions {
   minSilenceDuration?: number;
   /** Silence detection threshold in dB (default: -30) */
   silenceThreshold?: number;
-}
-
-interface SilenceSegment {
-  start: number;
-  end: number;
-}
-
-/**
- * Detect silent segments in a video's audio track.
- * Pass `duration` so trailing silence (video ends mid-silence) is captured.
- */
-async function detectSilence(
-  input: string,
-  minDuration: number,
-  thresholdDb: number,
-  videoDuration: number
-): Promise<SilenceSegment[]> {
-  const stderr = await executeFFmpegAnalysis(input, [
-    '-af',
-    `silencedetect=n=${thresholdDb}dB:d=${minDuration}`,
-  ]);
-
-  const segments: SilenceSegment[] = [];
-  let pendingStart: number | null = null;
-
-  for (const match of stderr.matchAll(/silence_(start|end):\s*([\d.]+)/g)) {
-    const time = Number.parseFloat(match[2]);
-    if (match[1] === 'start') {
-      pendingStart = time;
-    } else {
-      segments.push({ start: pendingStart ?? 0, end: time });
-      pendingStart = null;
-    }
-  }
-
-  // If video ends during silence, close the pending segment at the video's end
-  if (pendingStart !== null && videoDuration - pendingStart >= minDuration) {
-    segments.push({ start: pendingStart, end: videoDuration });
-  }
-
-  return segments;
-}
-
-/**
- * Calculate segments to KEEP after removing silent regions
- */
-function calculateKeepSegments(duration: number, cuts: SilenceSegment[]): SilenceSegment[] {
-  if (cuts.length === 0) return [{ start: 0, end: duration }];
-
-  const sortedCuts = [...cuts].sort((a, b) => a.start - b.start);
-
-  // Merge overlapping cuts
-  const merged: SilenceSegment[] = [];
-  for (const cut of sortedCuts) {
-    if (merged.length === 0) {
-      merged.push({ ...cut });
-    } else {
-      const last = merged[merged.length - 1];
-      if (cut.start <= last.end) {
-        last.end = Math.max(last.end, cut.end);
-      } else {
-        merged.push({ ...cut });
-      }
-    }
-  }
-
-  // Invert: keep everything that isn't a cut
-  const keep: SilenceSegment[] = [];
-  let pos = 0;
-  for (const cut of merged) {
-    if (cut.start > pos) {
-      keep.push({ start: pos, end: cut.start });
-    }
-    pos = cut.end;
-  }
-  if (pos < duration) {
-    keep.push({ start: pos, end: duration });
-  }
-
-  return keep;
 }
 
 /**
@@ -125,12 +46,11 @@ export async function removeSilence(options: RemoveSilenceOptions): Promise<stri
 
   // Step 1: Detect silence
   console.log(fmt.dim('Detecting silence...'));
-  const silentSegments = await detectSilence(
-    input,
-    minSilenceDuration,
-    silenceThreshold,
-    info.duration
-  );
+  const silentSegments = await detectSilence(input, {
+    minDuration: minSilenceDuration,
+    thresholdDb: silenceThreshold,
+    videoDuration: info.duration,
+  });
 
   if (silentSegments.length === 0) {
     console.log(fmt.yellow('No silence detected — copying input as-is.'));
@@ -147,7 +67,7 @@ export async function removeSilence(options: RemoveSilenceOptions): Promise<stri
   );
 
   // Step 2: Calculate keep segments
-  const keepSegments = calculateKeepSegments(info.duration, silentSegments);
+  const keepSegments = invertSegments(info.duration, silentSegments);
   if (keepSegments.length === 0) {
     throw new Error('Removing all silence would leave no content.');
   }
@@ -186,8 +106,7 @@ export async function removeSilence(options: RemoveSilenceOptions): Promise<stri
 
     // Step 4: Concatenate
     const concatFile = path.join(tempDir, 'concat.txt');
-    const concatContent = segmentFiles.map((f) => `file '${f.replace(/'/g, "'\\''")}'`).join('\n');
-    fs.writeFileSync(concatFile, concatContent);
+    fs.writeFileSync(concatFile, buildConcatFileContent(segmentFiles));
 
     console.log(fmt.dim('Stitching segments...'));
     await executeFFmpegRaw([

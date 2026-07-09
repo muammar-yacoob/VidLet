@@ -34,6 +34,7 @@ try {
 
 /** Strip ANSI codes from string */
 function stripAnsi(str: string): string {
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: the ESC control char is required to match ANSI color codes
   return str.replace(/\x1b\[[0-9;]*m/g, '');
 }
 
