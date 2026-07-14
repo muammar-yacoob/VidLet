@@ -25,8 +25,12 @@ jobs:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
 
+      # --ignore-scripts: the postinstall hook runs `node dist/cli.js install`,
+      # which doesn't exist until the build step below. Without this, CI dies
+      # during install and never publishes (broken for 26+ days). End users are
+      # unaffected — the published tarball ships a prebuilt dist/.
       - name: Install dependencies
-        run: npm install
+        run: npm install --ignore-scripts
 
       - name: Build
         run: npm run build
