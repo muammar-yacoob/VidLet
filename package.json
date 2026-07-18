@@ -4,11 +4,13 @@
   "description": "Free local auto-captions, video compression, voice cleanup, GIF conversion & more - right-click context menu for Windows (WSL)",
   "type": "module",
   "bin": {
-    "vidlet": "./dist/cli.js"
+    "vidlet": "./dist/cli.js",
+    "vidlet-mcp": "./mcp.js"
   },
   "files": [
     "dist",
     "icons",
+    "mcp.js",
     "README.md"
   ],
   "scripts": {
@@ -54,6 +56,7 @@
   },
   "dependencies": {
     "@dotlottie/dotlottie-js": "^1.6.3",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "commander": "^13.1.0",
     "execa": "^9.5.2",
     "express": "^5.2.1",
