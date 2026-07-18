@@ -80,6 +80,16 @@ node dist/cli.js --help
 npm link && vidlet --help
 ```
 
+## MCP Server
+
+`mcp.js` (repo root, bin `vidlet-mcp`) exposes 8 tools over stdio for AI agents: `list_capabilities`,
+`probe_video` (read-only), `generate_captions`, `auto_jump_cut`, `trim_video`, `compress_video`,
+`extract_audio`, `convert_to_gif`. It imports real tool functions from `dist/mcp-lib.js` (built from
+`src/mcp-lib.ts`, a second tsup entry) rather than shelling out to the CLI. No delete/move tools by
+design; every write defaults to the `VidLet/` subdirectory and never overwrites an existing file
+(numbered `-1`, `-2`, ... via an atomic reserve-then-write, since a plain existsSync check races
+under concurrent tool calls).
+
 ## Release Process
 
 Uses semantic-release on the `main` branch via GitHub Actions. Published to npm as `@spark-apps/vidlet`.
