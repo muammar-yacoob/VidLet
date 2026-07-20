@@ -1,6 +1,6 @@
 {
   "name": "@spark-apps/vidlet",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "Free local auto-captions, video compression, voice cleanup, GIF conversion & more - right-click context menu for Windows (WSL)",
   "type": "module",
   "bin": {

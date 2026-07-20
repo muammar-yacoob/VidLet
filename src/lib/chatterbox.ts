@@ -37,6 +37,14 @@ cfg = json.load(open(sys.argv[1]))
 
 import torch
 import torchaudio
+
+# perth's watermarker silently becomes None when pkg_resources is missing
+# (setuptools >= 81 removed it); fall back to the no-op watermarker instead
+# of crashing inside ChatterboxTTS.__init__.
+import perth
+if getattr(perth, "PerthImplicitWatermarker", None) is None:
+    perth.PerthImplicitWatermarker = perth.DummyWatermarker
+
 from chatterbox.tts import ChatterboxTTS
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -110,7 +118,9 @@ export async function ensureChatterbox(onProgress?: (stage: string) => void): Pr
   progress('installing chatterbox-tts (one-time, several GB — grab a coffee)');
   try {
     await execa(VENV_PYTHON, ['-m', 'pip', 'install', '--upgrade', 'pip'], { timeout: 300_000 });
-    await execa(VENV_PYTHON, ['-m', 'pip', 'install', 'chatterbox-tts'], {
+    // setuptools<81 keeps pkg_resources, which perth (Chatterbox's
+    // watermarker) still imports at runtime.
+    await execa(VENV_PYTHON, ['-m', 'pip', 'install', 'setuptools<81', 'chatterbox-tts'], {
       timeout: 3_600_000, // torch download can genuinely take this long
     });
   } catch (err) {
@@ -155,7 +165,9 @@ export async function synthesizeClone(options: CloneOptions): Promise<void> {
     await proc;
   } catch (err) {
     logToFile(`chatterbox synthesis failed: ${(err as Error).message}`);
-    throw new Error(`Voice cloning failed: ${(err as Error).message.slice(0, 400)}`);
+    // The traceback lives at the END of stderr - keep the tail, not the head.
+    const stderr = (err as { stderr?: string }).stderr ?? (err as Error).message;
+    throw new Error(`Voice cloning failed:\n...${stderr.slice(-600)}`);
   }
 
   if (!existsSync(output)) {
