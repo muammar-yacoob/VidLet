@@ -33,3 +33,7 @@ npm-debug.log*
 # Coverage
 coverage/
 /vidlet-web
+
+# Local tooling artifacts
+.taskmaster/
+.playwright-mcp/

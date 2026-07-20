@@ -180,9 +180,12 @@ const postSchema = z.object({
 
 /**
  * Ready-to-paste YouTube/TikTok post copy from the picked clips.
- * Written to `<output>.post.txt`.
+ * Written to `<output>.post.txt`. Also reused by the demo tool.
  */
-async function generatePostCopy(segments: SidecarSegment[], output: string): Promise<string> {
+export async function generatePostCopy(
+  segments: { text?: string; reason?: string }[],
+  output: string
+): Promise<string> {
   const content = segments
     .map((s) => `- ${s.text ?? ''}${s.reason ? ` (${s.reason})` : ''}`)
     .join('\n');

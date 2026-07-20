@@ -844,6 +844,13 @@ async function process() {
     } else if (activeTool === 'short') {
       opts.maxDuration = Number.parseInt($('short-duration').value) || 57;
       opts.captions = $('short-captions').value === 'true';
+    } else if (activeTool === 'demo') {
+      opts.about = $('demo-about').value.trim() || undefined;
+      opts.gender = $('demo-gender').value;
+      opts.makeShort = $('demo-short').value === 'true';
+      opts.captions = opts.makeShort;
+      const demoClone = $('demo-clone').value.trim();
+      if (demoClone) opts.cloneRef = demoClone;
     } else if (activeTool === 'voiceover') {
       const voText = $('vo-text').value.trim();
       if (!voText) {

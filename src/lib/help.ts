@@ -39,6 +39,9 @@ export function showHelp(): void {
   console.log(
     `    ${cmd('short')} ${arg('<file>')}             AI Short: highlights + action-tracking crop`
   );
+  console.log(
+    `    ${cmd('demo')} ${arg('<file>')}              Silent recording → narrated demo + Short`
+  );
   console.log();
   console.log(head('  Audio Tools'));
   console.log(`    ${cmd('cleanvoice')} ${arg('<file>')}        Denoise and enhance voice`);

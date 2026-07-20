@@ -5,6 +5,14 @@ AI Shorts (highlight picking + action-tracking crop), voiceover with local
 voice cloning, MCP server for agent-driven editing, plus the browser app
 (vidlet.app) with in-browser recording and the same AI Short pipeline.
 
+Shipped since first draft: `vidlet demo` (the quiet-creator pipeline: silent
+recording → idle-trim → AI-written narration → TTS → full video + Short) and
+NVENC GPU encoding with automatic fallback.
+
+Note on vision: keyframe understanding uses whichever multimodal model the
+Groq org has enabled (see VISION_CANDIDATES in src/tools/demo.ts) and degrades
+gracefully to --about-only scripting. Web-app demo parity waits on the same.
+
 Prioritized next steps (impact ÷ effort, top first):
 
 ## Near term (each ≤ a day)

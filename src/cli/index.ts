@@ -6,6 +6,7 @@ import {
   registerCleanVoiceCommand,
   registerCompressCommand,
   registerConfigCommand,
+  registerDemoCommand,
   registerExtractAudioCommand,
   registerHelpCommand,
   registerInstallCommand,
@@ -62,6 +63,7 @@ export function createProgram(): Command {
   registerAutoCleanupCommand(program);
   registerCaptionCommand(program);
   registerJumpcutCommand(program);
+  registerDemoCommand(program);
   registerShortCommand(program);
   registerSpeedupCommand(program);
   registerVoiceoverCommand(program);

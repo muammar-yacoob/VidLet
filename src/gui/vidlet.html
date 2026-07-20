@@ -86,6 +86,10 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.5 4h-5L7 7H2v13h20V7h-5l-2.5-3z"/><circle cx="12" cy="14" r="3"/></svg>
             <span>Jump Cut</span>
           </div>
+          <div class="tool" id="t-demo" onclick="selectTool('demo')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 18v3"/><path d="m9.5 8.5 5 2.5-5 2.5v-5z"/></svg>
+            <span>AI Demo</span>
+          </div>
           <div class="tool" id="t-short" onclick="selectTool('short')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="7" y="2" width="10" height="20" rx="2"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
             <span>AI Short</span>
@@ -600,6 +604,36 @@
             </div>
             <input type="hidden" id="jumpcut-pace" value="normal">
             <input type="hidden" id="jumpcut-zoom" value="3">
+          </div>
+
+          <div class="opts" id="opts-demo">
+            <div class="caption-panel">
+              <div class="caption-row">
+                <label>About (optional)</label>
+                <input type="text" id="demo-about" maxlength="200" placeholder="e.g. Bottled, an email tool for indie makers" style="width:100%;">
+              </div>
+              <div class="caption-row">
+                <label>Voice</label>
+                <select id="demo-gender">
+                  <option value="female" selected>Female</option>
+                  <option value="male">Male</option>
+                </select>
+              </div>
+              <div class="caption-row">
+                <label>Clone (optional)</label>
+                <input type="text" id="demo-clone" placeholder="/path/to/your-voice.wav" style="width:100%;">
+              </div>
+              <div class="caption-row">
+                <label>Also make Short</label>
+                <select id="demo-short">
+                  <option value="true" selected>Yes (9:16 + captions)</option>
+                  <option value="false">No, full video only</option>
+                </select>
+              </div>
+              <div class="caption-info">
+                <span>For silent screen recordings: trims idle spans, AI watches keyframes and writes + speaks the narration. No mic needed. Requires GROQ_API_KEY.</span>
+              </div>
+            </div>
           </div>
 
           <div class="opts" id="opts-short">
