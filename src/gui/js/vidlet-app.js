@@ -841,6 +841,21 @@ async function process() {
     } else if (activeTool === 'jumpcut') {
       opts.jumpcutPace = $('jumpcut-pace')?.value || 'normal';
       opts.jumpcutZoom = Number.parseInt($('jumpcut-zoom')?.value) || 3;
+    } else if (activeTool === 'short') {
+      opts.maxDuration = Number.parseInt($('short-duration').value) || 57;
+      opts.captions = $('short-captions').value === 'true';
+    } else if (activeTool === 'voiceover') {
+      const voText = $('vo-text').value.trim();
+      if (!voText) {
+        alert('Please type the narration script first');
+        $('loading').classList.remove('on');
+        return;
+      }
+      opts.text = voText;
+      opts.language = $('vo-lang').value;
+      opts.gender = $('vo-gender').value;
+      const voClone = $('vo-clone').value.trim();
+      if (voClone) opts.cloneRef = voClone;
     }
 
     // Poll for live processing status with animated dots
