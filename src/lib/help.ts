@@ -33,6 +33,12 @@ export function showHelp(): void {
   console.log(head('  AI Tools'));
   console.log(`    ${cmd('caption')} ${arg('<file>')}           Auto-transcribe + burn captions`);
   console.log(`    ${cmd('jumpcut')} ${arg('<file>')}           Auto-edit: cut silence + zoom`);
+  console.log(
+    `    ${cmd('voiceover')} ${arg('<script>')}        Narration: free TTS or clone your voice`
+  );
+  console.log(
+    `    ${cmd('short')} ${arg('<file>')}             AI Short: highlights + action-tracking crop`
+  );
   console.log();
   console.log(head('  Audio Tools'));
   console.log(`    ${cmd('cleanvoice')} ${arg('<file>')}        Denoise and enhance voice`);

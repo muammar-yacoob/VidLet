@@ -9,3 +9,5 @@ export { extractAudio, type ExtractAudioOptions } from './tools/audio.js';
 export { caption, type CaptionOptions } from './tools/caption.js';
 export { jumpcut, type JumpcutOptions } from './tools/jumpcut.js';
 export { togif, type ToGifOptions } from './tools/togif.js';
+export { voiceover, type VoiceoverOptions } from './tools/voiceover.js';
+export { short, type ShortOptions } from './tools/short.js';

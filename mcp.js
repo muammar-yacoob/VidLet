@@ -22,8 +22,10 @@ import {
   getOutputPath,
   getVideoInfo,
   jumpcut,
+  short,
   togif,
   trim,
+  voiceover,
 } from './dist/mcp-lib.js';
 
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
@@ -158,6 +160,57 @@ const TOOLS = [
         ...PATH_PROPERTY,
         fps: { type: 'number', description: 'Frames per second, default 15.' },
         width: { type: 'number', description: 'Output width in px (height auto-scaled), default 480.' },
+        output_path: { type: 'string', description: 'Optional explicit output path.' },
+      },
+      required: ['path'],
+    },
+  },
+  {
+    name: 'generate_voiceover',
+    description:
+      'Generate narration audio from a script. Default engine is free Edge neural TTS (no API ' +
+      'key). Pass clone_ref (a ~10s voice recording) to clone that voice locally with Chatterbox ' +
+      '(MIT) — first use installs several GB. Optionally mixes the narration over video_path, ' +
+      'auto-ducking its original audio. Never overwrites existing files.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        text: { type: 'string', description: 'The narration script (max 5000 chars).' },
+        language: {
+          type: 'string',
+          description: 'Voice language code (en, es, fr, de, it, pt, ja, ko, zh, ar, hi, ru, tr, nl). Default en.',
+        },
+        gender: { type: 'string', enum: ['female', 'male'], description: 'Voice gender, default female.' },
+        clone_ref: {
+          type: 'string',
+          description: 'Path to a ~10s reference recording — switches to the local voice-cloning engine.',
+        },
+        video_path: {
+          type: 'string',
+          description: 'Optional video to mix the narration over (original audio auto-ducked).',
+        },
+        output_path: { type: 'string', description: 'Optional explicit output path (.mp3/.wav).' },
+      },
+      required: ['text'],
+    },
+  },
+  {
+    name: 'create_short',
+    description:
+      'Turn a full landscape video into a 9:16 YouTube Short: whisper.cpp transcribes locally, ' +
+      'Groq AI picks the most engaging moments (requires GROQ_API_KEY in the server env), and ' +
+      'the crop follows the on-screen action/cursor via motion tracking. Writes a ' +
+      '"<output>.segments.json" sidecar for manual crop/time tweaks. Never overwrites input.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...PATH_PROPERTY,
+        max_duration: { type: 'number', description: 'Target length in seconds (default 57, max 60).' },
+        captions: { type: 'boolean', description: 'Burn hormozi-style captions into the short.' },
+        from_segments: {
+          type: 'string',
+          description: 'Path to an edited .segments.json to re-render from (skips transcription + AI).',
+        },
         output_path: { type: 'string', description: 'Optional explicit output path.' },
       },
       required: ['path'],
@@ -369,6 +422,51 @@ async function handleExtractAudio({ path, format, output_path }) {
   );
 }
 
+async function handleGenerateVoiceover({ text, language, gender, clone_ref, video_path, output_path }) {
+  if (typeof text !== 'string' || !text.trim()) throw new Error('`text` is required');
+  const cloneRef = clone_ref ? resolveInputPath(clone_ref) : undefined;
+  const video = video_path ? resolveInputPath(video_path) : undefined;
+
+  // Narration audio: beside the video (VidLet/ subfolder) when mixing, else CWD.
+  const desiredAudio = output_path
+    ? resolve(output_path)
+    : video
+      ? changeExtension(video, '.mp3')
+      : resolve('voiceover.mp3');
+  const output = reserveUniqueOutputPath(desiredAudio);
+  const videoOutput = video ? safeOutputPath(video, getOutputPath(video, '_voiceover')) : undefined;
+
+  return runWriteTool(output, () =>
+    withSilencedStdout(async () => {
+      try {
+        const result = await voiceover({ input: text, output, language, gender, cloneRef, video, videoOutput });
+        return jsonContent({ output: result, narration_audio: output });
+      } catch (e) {
+        if (videoOutput) releaseIfEmpty(videoOutput);
+        throw e;
+      }
+    }),
+  );
+}
+
+async function handleCreateShort({ path, max_duration, captions, from_segments, output_path }) {
+  const input = resolveInputPath(path);
+  const desired = output_path ? resolve(output_path) : getOutputPath(input, '_short');
+  const output = safeOutputPath(input, desired);
+  return runWriteTool(output, () =>
+    withSilencedStdout(async () => {
+      const result = await short({
+        input,
+        output,
+        maxDuration: max_duration ? Math.min(60, max_duration) : undefined,
+        captions,
+        fromSegments: from_segments,
+      });
+      return jsonContent({ output: result, segments_sidecar: `${output}.segments.json` });
+    }),
+  );
+}
+
 async function handleConvertToGif({ path, fps, width, output_path }) {
   const input = resolveInputPath(path);
   const desired = output_path ? resolve(output_path) : changeExtension(input, '.gif');
@@ -390,6 +488,8 @@ const TOOL_HANDLERS = {
   compress_video: handleCompressVideo,
   extract_audio: handleExtractAudio,
   convert_to_gif: handleConvertToGif,
+  generate_voiceover: handleGenerateVoiceover,
+  create_short: handleCreateShort,
 };
 
 const server = new Server({ name: 'vidlet', version: pkg.version }, { capabilities: { tools: {} } });

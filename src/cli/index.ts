@@ -14,12 +14,14 @@ import {
   registerMkv2mp4Command,
   registerOptimizeCommand,
   registerRemoveSilenceCommand,
+  registerShortCommand,
   registerShrinkCommand,
   registerSpeedupCommand,
   registerThumbCommand,
   registerTogifCommand,
   registerUninstallCommand,
   registerVidletCommand,
+  registerVoiceoverCommand,
 } from './commands/index.js';
 
 /**
@@ -60,7 +62,9 @@ export function createProgram(): Command {
   registerAutoCleanupCommand(program);
   registerCaptionCommand(program);
   registerJumpcutCommand(program);
+  registerShortCommand(program);
   registerSpeedupCommand(program);
+  registerVoiceoverCommand(program);
   registerVidletCommand(program);
 
   return program;
