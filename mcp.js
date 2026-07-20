@@ -207,6 +207,10 @@ const TOOLS = [
         ...PATH_PROPERTY,
         max_duration: { type: 'number', description: 'Target length in seconds (default 57, max 60).' },
         captions: { type: 'boolean', description: 'Burn hormozi-style captions into the short.' },
+        generate_post: {
+          type: 'boolean',
+          description: 'Also write viral title/description/hashtags to "<output>.post.txt".',
+        },
         from_segments: {
           type: 'string',
           description: 'Path to an edited .segments.json to re-render from (skips transcription + AI).',
@@ -449,7 +453,14 @@ async function handleGenerateVoiceover({ text, language, gender, clone_ref, vide
   );
 }
 
-async function handleCreateShort({ path, max_duration, captions, from_segments, output_path }) {
+async function handleCreateShort({
+  path,
+  max_duration,
+  captions,
+  generate_post,
+  from_segments,
+  output_path,
+}) {
   const input = resolveInputPath(path);
   const desired = output_path ? resolve(output_path) : getOutputPath(input, '_short');
   const output = safeOutputPath(input, desired);
@@ -460,9 +471,14 @@ async function handleCreateShort({ path, max_duration, captions, from_segments, 
         output,
         maxDuration: max_duration ? Math.min(60, max_duration) : undefined,
         captions,
+        post: generate_post,
         fromSegments: from_segments,
       });
-      return jsonContent({ output: result, segments_sidecar: `${output}.segments.json` });
+      return jsonContent({
+        output: result,
+        segments_sidecar: `${output}.segments.json`,
+        ...(generate_post ? { post_copy: `${output}.post.txt` } : {}),
+      });
     }),
   );
 }
