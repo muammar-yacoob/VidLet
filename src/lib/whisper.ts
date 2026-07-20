@@ -288,7 +288,13 @@ function parseWhisperJson(data: WhisperJson): TranscriptSegment[] {
     if (!text) continue;
 
     const words: TranscriptWord[] = [];
-    const timestamps = seg.timestamps || seg.tokens || [];
+    // whisper.cpp ≥1.9 puts word tokens in `tokens`; its `timestamps` field is
+    // a {from,to} OBJECT (segment-level strings), so it must never be iterated.
+    const timestamps = Array.isArray(seg.tokens)
+      ? seg.tokens
+      : Array.isArray(seg.timestamps)
+        ? seg.timestamps
+        : [];
 
     for (const token of timestamps) {
       const word = (token.text || '').trim();

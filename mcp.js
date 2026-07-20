@@ -22,6 +22,7 @@ import {
   getOutputPath,
   getVideoInfo,
   jumpcut,
+  short,
   togif,
   trim,
   voiceover,
@@ -191,6 +192,28 @@ const TOOLS = [
         output_path: { type: 'string', description: 'Optional explicit output path (.mp3/.wav).' },
       },
       required: ['text'],
+    },
+  },
+  {
+    name: 'create_short',
+    description:
+      'Turn a full landscape video into a 9:16 YouTube Short: whisper.cpp transcribes locally, ' +
+      'Groq AI picks the most engaging moments (requires GROQ_API_KEY in the server env), and ' +
+      'the crop follows the on-screen action/cursor via motion tracking. Writes a ' +
+      '"<output>.segments.json" sidecar for manual crop/time tweaks. Never overwrites input.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...PATH_PROPERTY,
+        max_duration: { type: 'number', description: 'Target length in seconds (default 57, max 60).' },
+        captions: { type: 'boolean', description: 'Burn hormozi-style captions into the short.' },
+        from_segments: {
+          type: 'string',
+          description: 'Path to an edited .segments.json to re-render from (skips transcription + AI).',
+        },
+        output_path: { type: 'string', description: 'Optional explicit output path.' },
+      },
+      required: ['path'],
     },
   },
 ];
@@ -426,6 +449,24 @@ async function handleGenerateVoiceover({ text, language, gender, clone_ref, vide
   );
 }
 
+async function handleCreateShort({ path, max_duration, captions, from_segments, output_path }) {
+  const input = resolveInputPath(path);
+  const desired = output_path ? resolve(output_path) : getOutputPath(input, '_short');
+  const output = safeOutputPath(input, desired);
+  return runWriteTool(output, () =>
+    withSilencedStdout(async () => {
+      const result = await short({
+        input,
+        output,
+        maxDuration: max_duration ? Math.min(60, max_duration) : undefined,
+        captions,
+        fromSegments: from_segments,
+      });
+      return jsonContent({ output: result, segments_sidecar: `${output}.segments.json` });
+    }),
+  );
+}
+
 async function handleConvertToGif({ path, fps, width, output_path }) {
   const input = resolveInputPath(path);
   const desired = output_path ? resolve(output_path) : changeExtension(input, '.gif');
@@ -448,6 +489,7 @@ const TOOL_HANDLERS = {
   extract_audio: handleExtractAudio,
   convert_to_gif: handleConvertToGif,
   generate_voiceover: handleGenerateVoiceover,
+  create_short: handleCreateShort,
 };
 
 const server = new Server({ name: 'vidlet', version: pkg.version }, { capabilities: { tools: {} } });
