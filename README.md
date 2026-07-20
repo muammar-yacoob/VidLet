@@ -51,6 +51,19 @@ vidlet voiceover script.txt --video raw.mp4        # mix over video, auto-ducks 
 
 Narration is loudness-normalized to -16 LUFS. Cloning runs on CPU (slow, fine for short scripts) or CUDA automatically. Everything stays on your machine.
 
+## AI Demo — For People Who Hate Editing (and Microphones)
+
+Record your screen. That's it — that's your whole job. `vidlet demo` trims the idle spans (motion-based, no audio needed), an AI **watches** keyframes and writes the narration itself, a natural TTS voice speaks it (or your cloned voice), and you get **both** the full 16:9 demo and a 9:16 Short with captions.
+
+```bash
+vidlet demo recording.mp4                          # fully automatic
+vidlet demo recording.mp4 -a "Bottled, email for indie makers"   # sharper script
+vidlet demo recording.mp4 --clone me.wav -c -p     # your voice + captions + post copy
+vidlet demo recording.mp4 --no-short               # full video only
+```
+
+The generated script lands in `*.script.txt` — edit a line and re-voice without re-rendering: `vidlet voiceover script.txt --video demo.mp4`. Renders use your NVIDIA GPU automatically when available.
+
 ## AI Short — Full Video to YouTube Short, One Command
 
 Point it at any talking video or screen recording. VidLet transcribes it locally (whisper.cpp), asks Groq AI to pick the most engaging moments, stitches them into a ≤60s 9:16 Short, and the crop follows the on-screen action/cursor automatically via motion tracking.

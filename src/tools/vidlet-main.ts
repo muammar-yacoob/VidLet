@@ -13,6 +13,7 @@ import { autoCleanup } from './autocleanup.js';
 import { caption } from './caption.js';
 import { analyzeVoice, cleanVoice, ensureDeepFilter } from './cleanvoice.js';
 import { compress } from './compress.js';
+import { demo } from './demo.js';
 import { filter } from './filter.js';
 import { jumpcut } from './jumpcut.js';
 import { findAllLoopPoints, findBestLoopStart, findMatchesFromEnd } from './loop.js';
@@ -130,6 +131,9 @@ interface ToolOptions {
   language?: string;
   gender?: 'female' | 'male';
   cloneRef?: string;
+  // Demo options
+  about?: string;
+  makeShort?: boolean;
 }
 
 /** Process result */
@@ -372,6 +376,27 @@ async function runTool(input: string, opts: ToolOptions): Promise<ProcessResult>
         logs.push({
           type: 'success',
           message: 'AI Short ready! Crops/times editable in the .segments.json beside it.',
+        });
+        break;
+      }
+
+      case 'demo': {
+        logs.push({ type: 'info', message: 'Creating AI demo (trim + narrate + short)...' });
+        output = await demo({
+          input: actualInput,
+          about: opts.about,
+          gender: opts.gender,
+          cloneRef: opts.cloneRef,
+          short: opts.makeShort,
+          captions: opts.captions,
+          onProgress: (stage) => {
+            setProcessStatus(stage);
+          },
+        });
+        setProcessStatus('');
+        logs.push({
+          type: 'success',
+          message: 'Demo ready! Script saved beside it - edit + re-voice any time.',
         });
         break;
       }

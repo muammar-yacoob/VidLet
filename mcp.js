@@ -21,6 +21,7 @@ import {
   extractAudio,
   getOutputPath,
   getVideoInfo,
+  demo,
   jumpcut,
   short,
   togif,
@@ -216,6 +217,29 @@ const TOOLS = [
           description: 'Path to an edited .segments.json to re-render from (skips transcription + AI).',
         },
         output_path: { type: 'string', description: 'Optional explicit output path.' },
+      },
+      required: ['path'],
+    },
+  },
+  {
+    name: 'create_demo',
+    description:
+      'The quiet-creator pipeline for SILENT screen recordings: trims idle spans (motion-based), ' +
+      'a vision model watches keyframes, an LLM writes the narration, TTS speaks it (or a cloned ' +
+      'voice via clone_ref), and it outputs the full narrated 16:9 demo plus a 9:16 Short. ' +
+      'Requires GROQ_API_KEY in the server env. Never overwrites existing files.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...PATH_PROPERTY,
+        about: { type: 'string', description: 'One line about the product/feature being shown.' },
+        language: { type: 'string', description: 'Narration language code, default en.' },
+        gender: { type: 'string', enum: ['female', 'male'], description: 'Voice gender, default female.' },
+        clone_ref: { type: 'string', description: 'Path to a ~10s voice reference for cloned narration.' },
+        make_short: { type: 'boolean', description: 'Also produce the 9:16 Short (default true).' },
+        captions: { type: 'boolean', description: 'Burn captions into the Short.' },
+        generate_post: { type: 'boolean', description: 'Also write post copy sidecar.' },
+        output_path: { type: 'string', description: 'Optional explicit output path for the full demo.' },
       },
       required: ['path'],
     },
@@ -483,6 +507,43 @@ async function handleCreateShort({
   );
 }
 
+async function handleCreateDemo({
+  path,
+  about,
+  language,
+  gender,
+  clone_ref,
+  make_short,
+  captions,
+  generate_post,
+  output_path,
+}) {
+  const input = resolveInputPath(path);
+  const cloneRef = clone_ref ? resolveInputPath(clone_ref) : undefined;
+  const desired = output_path ? resolve(output_path) : getOutputPath(input, '_demo');
+  const output = safeOutputPath(input, desired);
+  return runWriteTool(output, () =>
+    withSilencedStdout(async () => {
+      const result = await demo({
+        input,
+        about,
+        output,
+        language,
+        gender,
+        cloneRef,
+        short: make_short,
+        captions,
+        post: generate_post,
+      });
+      return jsonContent({
+        output: result,
+        script: `${output}.script.txt`,
+        ...(generate_post ? { post_copy: `${output}.post.txt` } : {}),
+      });
+    }),
+  );
+}
+
 async function handleConvertToGif({ path, fps, width, output_path }) {
   const input = resolveInputPath(path);
   const desired = output_path ? resolve(output_path) : changeExtension(input, '.gif');
@@ -506,6 +567,7 @@ const TOOL_HANDLERS = {
   convert_to_gif: handleConvertToGif,
   generate_voiceover: handleGenerateVoiceover,
   create_short: handleCreateShort,
+  create_demo: handleCreateDemo,
 };
 
 const server = new Server({ name: 'vidlet', version: pkg.version }, { capabilities: { tools: {} } });

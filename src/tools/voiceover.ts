@@ -89,7 +89,11 @@ function defaultAudioOutput(input: string): string {
   return join(process.cwd(), 'voiceover.mp3');
 }
 
-/** Generate the narration audio file. Returns its path. */
+/** Generate the narration audio file (no console output). Returns its path. */
+export async function generateNarrationAudio(options: VoiceoverOptions): Promise<string> {
+  return generateNarration(options);
+}
+
 async function generateNarration(options: VoiceoverOptions): Promise<string> {
   const { cloneRef, onProgress } = options;
   const progress = onProgress ?? (() => {});

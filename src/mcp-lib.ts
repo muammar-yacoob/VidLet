@@ -11,3 +11,4 @@ export { jumpcut, type JumpcutOptions } from './tools/jumpcut.js';
 export { togif, type ToGifOptions } from './tools/togif.js';
 export { voiceover, type VoiceoverOptions } from './tools/voiceover.js';
 export { short, type ShortOptions } from './tools/short.js';
+export { demo, type DemoOptions } from './tools/demo.js';

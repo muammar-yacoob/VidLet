@@ -21,6 +21,53 @@ export interface FFmpegOptions {
   overwrite?: boolean;
 }
 
+let gpuEncoderProbe: Promise<boolean> | null = null;
+
+/**
+ * True when NVIDIA NVENC hardware encoding actually works here - probed
+ * once per process with a real micro-encode, because listing the encoder
+ * is not enough (WSL2 exposes CUDA compute but not NVENC, for example).
+ */
+export function hasGpuEncoder(): Promise<boolean> {
+  if (!gpuEncoderProbe) {
+    gpuEncoderProbe = execa(
+      'ffmpeg',
+      [
+        '-hide_banner',
+        '-f',
+        'lavfi',
+        '-i',
+        'color=black:s=64x64:d=0.2',
+        '-c:v',
+        'h264_nvenc',
+        '-f',
+        'null',
+        '-',
+      ],
+      { timeout: 20_000, reject: false }
+    ).then(
+      (r) => {
+        const ok = r.exitCode === 0;
+        logToFile(`GPU encoder (h264_nvenc): ${ok ? 'available' : 'unavailable, using libx264'}`);
+        return ok;
+      },
+      () => false
+    );
+  }
+  return gpuEncoderProbe;
+}
+
+/**
+ * H.264 encoder args for re-encode paths: NVENC when it works (5-10x
+ * faster), libx264 otherwise. Quality targets are matched (~CRF/CQ 18).
+ */
+export async function videoEncoderArgs(): Promise<string[]> {
+  if (await hasGpuEncoder()) {
+    return ['-c:v', 'h264_nvenc', '-preset', 'p5', '-cq', '18', '-b:v', '0'];
+  }
+  return ['-c:v', 'libx264', '-preset', 'medium', '-crf', '18'];
+}
+
 export interface VideoInfo {
   duration: number;
   width: number;
@@ -44,23 +91,13 @@ export async function checkFFmpeg(): Promise<boolean> {
   }
 }
 
-let nvencChecked = false;
-let nvencAvailable = false;
-
 /**
- * Check if NVENC GPU encoding is available
+ * Check if NVENC GPU encoding is available. Delegates to the real
+ * micro-encode probe - the old encoder-list check reported true on
+ * systems where encodes then failed (e.g. WSL2).
  */
 export async function checkNvenc(): Promise<boolean> {
-  if (nvencChecked) return nvencAvailable;
-  try {
-    const { stdout } = await execa('ffmpeg', ['-hide_banner', '-encoders']);
-    nvencAvailable = stdout.includes('h264_nvenc');
-    nvencChecked = true;
-    return nvencAvailable;
-  } catch {
-    nvencChecked = true;
-    return false;
-  }
+  return hasGpuEncoder();
 }
 
 /**
