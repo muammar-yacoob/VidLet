@@ -13,9 +13,11 @@ export function registerShortCommand(program: Command): void {
     .option('-s, --style <style>', 'Caption style: hormozi, karaoke, classic, minimal')
     .option('--from-segments <json>', 'Re-render from an edited .segments.json (skips AI)')
     .option('-p, --post', 'Also write title/description/hashtags to <output>.post.txt')
+    .option('-n, --count <n>', 'Cut N distinct shorts (1-5), best virality score first')
     .action(async (file: string, options) => {
       try {
         await short({
+          count: options.count ? Number.parseInt(options.count) : undefined,
           input: await resolveInputPath(file),
           output: options.o,
           maxDuration: options.d ? Math.min(60, Number.parseFloat(options.d)) : undefined,
