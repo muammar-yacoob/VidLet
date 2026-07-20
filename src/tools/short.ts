@@ -19,6 +19,7 @@ import { getOutputPath } from '../lib/paths.js';
 import { type TranscriptSegment, type WhisperModel, transcribe } from '../lib/whisper.js';
 import { type CaptionStyle, caption } from './caption.js';
 import { type PortraitSegment, portraitMultiSegment } from './shorts.js';
+import { uniquePath } from './voiceover.js';
 
 export interface ShortOptions {
   input: string;
@@ -33,6 +34,8 @@ export interface ShortOptions {
   fromSegments?: string;
   /** Also generate a ready-to-paste title/description/hashtags sidecar. */
   post?: boolean;
+  /** How many DISTINCT shorts to cut from the video (1-5, default 1). */
+  count?: number;
   resolution?: number;
   onProgress?: (stage: string) => void;
 }
@@ -158,6 +161,96 @@ async function pickHighlights(
   return sanitizeClips(parsed.data.clips, videoDuration, maxTotal);
 }
 
+export interface ShortPlan {
+  score: number;
+  angle?: string;
+  clips: ShortClip[];
+}
+
+const batchSchema = z.object({
+  shorts: z
+    .array(
+      z.object({
+        score: z.number().min(0).max(100),
+        angle: z.string().optional(),
+        clips: z
+          .array(
+            z.object({
+              start: z.number(),
+              end: z.number(),
+              reason: z.string().optional(),
+            })
+          )
+          .min(1),
+      })
+    )
+    .min(1),
+});
+
+/**
+ * Batch fairness: shorts are ranked by score, and a clip already claimed by
+ * a stronger short is dropped from weaker ones; shorts left empty vanish.
+ */
+export function dropCrossShortOverlaps(shorts: ShortPlan[]): ShortPlan[] {
+  const ranked = [...shorts].sort((a, b) => b.score - a.score);
+  const claimed: ShortClip[] = [];
+  const result: ShortPlan[] = [];
+  for (const plan of ranked) {
+    const kept = plan.clips.filter(
+      (c) => !claimed.some((cl) => c.start < cl.end && c.end > cl.start)
+    );
+    if (kept.length === 0) continue;
+    claimed.push(...kept);
+    result.push({ ...plan, clips: kept });
+  }
+  return result;
+}
+
+/** short-2-score87 style output names for batch mode. */
+export function batchOutputName(base: string, index: number, score: number): string {
+  const dot = base.lastIndexOf('.');
+  const stem = dot === -1 ? base : base.slice(0, dot);
+  const ext = dot === -1 ? '.mp4' : base.slice(dot);
+  return `${stem}-${index}-score${Math.round(score)}${ext}`;
+}
+
+async function pickBatchHighlights(
+  segments: TranscriptSegment[],
+  videoDuration: number,
+  maxTotal: number,
+  count: number
+): Promise<ShortPlan[]> {
+  const raw = await groqChatJSON<unknown>([
+    {
+      role: 'system',
+      content:
+        `You are a short-form video editor. Cut up to ${count} DISTINCT YouTube Shorts from one ` +
+        'timestamped transcript - each short covers a different angle (different hook, insight, ' +
+        'demo or payoff) and shares NO clips with the others. Per short: 2-6 chronological ' +
+        `non-overlapping clips, each 3-20 seconds, total at most ${maxTotal} seconds, cut on ` +
+        'sentence boundaries using ONLY the given timestamps, strongest hook first. Score each ' +
+        'short 0-100 for hook strength / virality potential (be honest, spread the scores). ' +
+        'Respond with JSON: {"shorts":[{"score":<0-100>,"angle":"<3-6 word label>",' +
+        '"clips":[{"start":<sec>,"end":<sec>,"reason":"<short why>"}]}]}',
+    },
+    {
+      role: 'user',
+      content: `Video duration: ${videoDuration.toFixed(1)}s\n\nTranscript:\n${formatTranscript(segments)}`,
+    },
+  ]);
+
+  const parsed = batchSchema.safeParse(raw);
+  if (!parsed.success) {
+    throw new Error(
+      `AI returned an unexpected batch format: ${parsed.error.message.slice(0, 200)}`
+    );
+  }
+  const cleaned = parsed.data.shorts
+    .map((s) => ({ ...s, clips: sanitizeClips(s.clips, videoDuration, maxTotal) }))
+    .filter((s) => s.clips.length > 0);
+  return dropCrossShortOverlaps(cleaned).slice(0, count);
+}
+
 /** Transcript text covered by a clip (stored in the sidecar for editing context). */
 function clipText(segments: TranscriptSegment[], clip: ShortClip): string {
   return segments
@@ -213,6 +306,56 @@ export async function generatePostCopy(
   return postFile;
 }
 
+/** Motion-track each clip and attach transcript context. */
+async function buildSegments(
+  input: string,
+  info: { width: number; height: number },
+  clips: ShortClip[],
+  transcriptSegments: TranscriptSegment[]
+): Promise<SidecarSegment[]> {
+  const segments: SidecarSegment[] = [];
+  for (const clip of clips) {
+    const cropX = await estimateCropX(input, clip.start, clip.end, info.width, info.height);
+    segments.push({
+      id: `clip-${segments.length + 1}`,
+      startTime: clip.start,
+      endTime: clip.end,
+      cropX: Number(cropX.toFixed(3)),
+      text: clipText(transcriptSegments, clip),
+      reason: clip.reason,
+    });
+  }
+  return segments;
+}
+
+/** Sidecar + render + optional captions for one short. Returns the final path. */
+async function renderOneShort(
+  input: string,
+  segments: SidecarSegment[],
+  output: string,
+  options: ShortOptions
+): Promise<string> {
+  writeFileSync(
+    `${output}.segments.json`,
+    JSON.stringify({ input, resolution: options.resolution ?? 1080, segments }, null, 2)
+  );
+  let result = await portraitMultiSegment({
+    input,
+    output,
+    segments,
+    resolution: options.resolution ?? 1080,
+  });
+  if (options.captions) {
+    result = await caption({
+      input: result,
+      autoTranscribe: true,
+      whisperModel: options.whisperModel ?? 'base.en',
+      style: options.captionStyle ?? 'hormozi',
+    });
+  }
+  return result;
+}
+
 export async function short(options: ShortOptions): Promise<string> {
   const {
     input,
@@ -221,6 +364,7 @@ export async function short(options: ShortOptions): Promise<string> {
     resolution = 1080,
     onProgress,
   } = options;
+  const count = Math.max(1, Math.min(5, options.count ?? 1));
   const progress = onProgress ?? ((stage: string) => console.log(fmt.dim(`  ${stage}...`)));
 
   if (!(await checkFFmpeg())) {
@@ -233,9 +377,42 @@ export async function short(options: ShortOptions): Promise<string> {
   header('AI Short');
   console.log(`Input:    ${fmt.white(input)}`);
   console.log(
-    `Duration: ${fmt.white(`${info.duration.toFixed(1)}s`)} → target ≤ ${fmt.yellow(`${maxDuration}s`)}`
+    `Duration: ${fmt.white(`${info.duration.toFixed(1)}s`)} → target ≤ ${fmt.yellow(`${maxDuration}s`)}` +
+      (count > 1 ? ` × ${fmt.yellow(String(count))} shorts` : '')
   );
   separator();
+
+  // Batch mode: several distinct shorts, best-scored first.
+  if (count > 1 && !options.fromSegments) {
+    progress(`transcribing (whisper ${whisperModel})`);
+    const transcript = await transcribe(input, { model: whisperModel, onProgress: progress });
+    if (transcript.segments.length === 0) {
+      throw new Error('Transcript is empty - is there speech in this video?');
+    }
+
+    progress(`planning ${count} distinct shorts (Groq)`);
+    const plans = await pickBatchHighlights(transcript.segments, info.duration, maxDuration, count);
+    if (plans.length === 0) throw new Error('AI found no usable shorts in the transcript.');
+
+    const outputs: string[] = [];
+    for (let i = 0; i < plans.length; i++) {
+      const plan = plans[i];
+      progress(`short ${i + 1}/${plans.length}: ${plan.angle ?? 'rendering'}`);
+      const segments = await buildSegments(input, info, plan.clips, transcript.segments);
+      const target = uniquePath(batchOutputName(output, i + 1, plan.score));
+      const result = await renderOneShort(input, segments, target, options);
+      if (options.post) {
+        await generatePostCopy(segments, target).catch(() => {});
+      }
+      outputs.push(result);
+      console.log(
+        `  ${fmt.green(`score ${plan.score}`)}  ${fmt.white(result)}${plan.angle ? fmt.dim(`  (${plan.angle})`) : ''}`
+      );
+    }
+
+    success(`${outputs.length} shorts ready - highest score first.`);
+    return outputs[0];
+  }
 
   let segments: SidecarSegment[];
 
@@ -268,37 +445,12 @@ export async function short(options: ShortOptions): Promise<string> {
     }
 
     progress('tracking motion for crop positions');
-    segments = [];
-    for (const clip of clips) {
-      const cropX = await estimateCropX(input, clip.start, clip.end, info.width, info.height);
-      segments.push({
-        id: `clip-${segments.length + 1}`,
-        startTime: clip.start,
-        endTime: clip.end,
-        cropX: Number(cropX.toFixed(3)),
-        text: clipText(transcript.segments, clip),
-        reason: clip.reason,
-      });
-    }
+    segments = await buildSegments(input, info, clips, transcript.segments);
   }
-
-  // Sidecar first, so the plan survives even if rendering fails.
-  const sidecar = `${output}.segments.json`;
-  writeFileSync(sidecar, JSON.stringify({ input, resolution, segments }, null, 2));
 
   progress('rendering 9:16 short');
-  const rendered = await portraitMultiSegment({ input, output, segments, resolution });
-
-  let result = rendered;
-  if (options.captions) {
-    progress('burning captions');
-    result = await caption({
-      input: rendered,
-      autoTranscribe: true,
-      whisperModel,
-      style: options.captionStyle ?? 'hormozi',
-    });
-  }
+  const sidecar = `${output}.segments.json`;
+  const result = await renderOneShort(input, segments, output, { ...options, resolution });
 
   if (options.post) {
     progress('writing post copy');

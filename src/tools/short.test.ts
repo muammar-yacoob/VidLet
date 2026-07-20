@@ -1,6 +1,51 @@
 import { describe, expect, it } from 'vitest';
 import { centroidToCropX, diffCentroidX } from '../lib/motion.js';
-import { MIN_CLIP_LENGTH, formatTranscript, sanitizeClips } from './short.js';
+import {
+  MIN_CLIP_LENGTH,
+  batchOutputName,
+  dropCrossShortOverlaps,
+  formatTranscript,
+  sanitizeClips,
+} from './short.js';
+
+describe('dropCrossShortOverlaps', () => {
+  it('ranks by score and gives contested clips to the stronger short', () => {
+    const result = dropCrossShortOverlaps([
+      {
+        score: 60,
+        clips: [
+          { start: 10, end: 20 },
+          { start: 40, end: 50 },
+        ],
+      },
+      { score: 90, clips: [{ start: 15, end: 25 }] },
+    ]);
+    expect(result[0]).toEqual({ score: 90, clips: [{ start: 15, end: 25 }] });
+    // Weaker short loses the 10-20 clip (overlaps 15-25) but keeps 40-50.
+    expect(result[1]).toEqual({ score: 60, clips: [{ start: 40, end: 50 }] });
+  });
+
+  it('removes shorts left with no clips', () => {
+    const result = dropCrossShortOverlaps([
+      { score: 80, clips: [{ start: 0, end: 30 }] },
+      { score: 40, clips: [{ start: 10, end: 25 }] },
+    ]);
+    expect(result).toHaveLength(1);
+    expect(result[0].score).toBe(80);
+  });
+});
+
+describe('batchOutputName', () => {
+  it('injects index and rounded score before the extension', () => {
+    expect(batchOutputName('/x/VidLet/v_short.mp4', 2, 86.6)).toBe(
+      '/x/VidLet/v_short-2-score87.mp4'
+    );
+  });
+
+  it('handles extensionless bases', () => {
+    expect(batchOutputName('/x/out', 1, 90)).toBe('/x/out-1-score90.mp4');
+  });
+});
 
 describe('sanitizeClips', () => {
   it('clamps clips to video bounds and drops too-short ones', () => {

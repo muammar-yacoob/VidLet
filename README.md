@@ -74,6 +74,7 @@ vidlet short demo.mp4               # highlights → 9:16 short
 vidlet short demo.mp4 -c            # + hormozi captions burned in
 vidlet short demo.mp4 -d 30         # tighter 30s cut
 vidlet short demo.mp4 -c -p         # + title/description/hashtags sidecar
+vidlet short talk.mp4 -n 3          # 3 DISTINCT shorts, virality-scored filenames
 ```
 
 Every run writes a `*.segments.json` next to the output — edit any clip's `startTime`/`endTime`/`cropX` (0 = left edge, 1 = right edge) and re-render instantly without re-running the AI:

@@ -212,6 +212,10 @@ const TOOLS = [
           type: 'boolean',
           description: 'Also write viral title/description/hashtags to "<output>.post.txt".',
         },
+        count: {
+          type: 'number',
+          description: 'Cut N distinct shorts (1-5); outputs are named -1-scoreNN etc, best first.',
+        },
         from_segments: {
           type: 'string',
           description: 'Path to an edited .segments.json to re-render from (skips transcription + AI).',
@@ -482,6 +486,7 @@ async function handleCreateShort({
   max_duration,
   captions,
   generate_post,
+  count,
   from_segments,
   output_path,
 }) {
@@ -496,6 +501,7 @@ async function handleCreateShort({
         maxDuration: max_duration ? Math.min(60, max_duration) : undefined,
         captions,
         post: generate_post,
+        count,
         fromSegments: from_segments,
       });
       return jsonContent({

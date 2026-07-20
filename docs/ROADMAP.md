@@ -6,8 +6,9 @@ voice cloning, MCP server for agent-driven editing, plus the browser app
 (vidlet.app) with in-browser recording and the same AI Short pipeline.
 
 Shipped since first draft: `vidlet demo` (the quiet-creator pipeline: silent
-recording → idle-trim → AI-written narration → TTS → full video + Short) and
-NVENC GPU encoding with automatic fallback.
+recording → idle-trim → AI-written narration → TTS → full video + Short),
+NVENC GPU encoding with automatic fallback, and batch Shorts
+(`vidlet short -n 3` — distinct angles, virality-scored filenames).
 
 Note on vision: keyframe understanding uses whichever multimodal model the
 Groq org has enabled (see VISION_CANDIDATES in src/tools/demo.ts) and degrades
