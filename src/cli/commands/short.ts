@@ -12,6 +12,7 @@ export function registerShortCommand(program: Command): void {
     .option('-c, --captions', 'Burn styled captions into the short')
     .option('-s, --style <style>', 'Caption style: hormozi, karaoke, classic, minimal')
     .option('--from-segments <json>', 'Re-render from an edited .segments.json (skips AI)')
+    .option('-p, --post', 'Also write title/description/hashtags to <output>.post.txt')
     .action(async (file: string, options) => {
       try {
         await short({
@@ -22,6 +23,7 @@ export function registerShortCommand(program: Command): void {
           captions: options.captions,
           captionStyle: options.style,
           fromSegments: options.fromSegments,
+          post: options.post,
         });
       } catch (error) {
         handleError(error);

@@ -31,6 +31,8 @@ export interface ShortOptions {
   captionStyle?: CaptionStyle;
   /** Re-render from an edited segments JSON - skips transcription and AI. */
   fromSegments?: string;
+  /** Also generate a ready-to-paste title/description/hashtags sidecar. */
+  post?: boolean;
   resolution?: number;
   onProgress?: (stage: string) => void;
 }
@@ -170,6 +172,44 @@ interface SidecarSegment extends PortraitSegment {
   reason?: string;
 }
 
+const postSchema = z.object({
+  title: z.string(),
+  description: z.string(),
+  hashtags: z.array(z.string()).min(3),
+});
+
+/**
+ * Ready-to-paste YouTube/TikTok post copy from the picked clips.
+ * Written to `<output>.post.txt`.
+ */
+async function generatePostCopy(segments: SidecarSegment[], output: string): Promise<string> {
+  const content = segments
+    .map((s) => `- ${s.text ?? ''}${s.reason ? ` (${s.reason})` : ''}`)
+    .join('\n');
+
+  const raw = await groqChatJSON<unknown>([
+    {
+      role: 'system',
+      content:
+        'You write viral YouTube Shorts metadata. Given the clips in a short, respond with JSON ' +
+        '{"title": "<hooky, <=90 chars, no clickbait lies>", "description": "<2-3 sentences, ' +
+        'plain human voice, one call to action>", "hashtags": ["<5-8 tags without #>"]}',
+    },
+    { role: 'user', content: `Clips in the short:\n${content}` },
+  ]);
+
+  const parsed = postSchema.safeParse(raw);
+  if (!parsed.success) throw new Error('AI returned unexpected post format');
+
+  const { title, description, hashtags } = parsed.data;
+  const postFile = `${output}.post.txt`;
+  writeFileSync(
+    postFile,
+    `${title}\n\n${description}\n\n${hashtags.map((h) => `#${h.replace(/^#/, '')}`).join(' ')}\n`
+  );
+  return postFile;
+}
+
 export async function short(options: ShortOptions): Promise<string> {
   const {
     input,
@@ -255,6 +295,16 @@ export async function short(options: ShortOptions): Promise<string> {
       whisperModel,
       style: options.captionStyle ?? 'hormozi',
     });
+  }
+
+  if (options.post) {
+    progress('writing post copy');
+    try {
+      const postFile = await generatePostCopy(segments, output);
+      console.log(fmt.dim(`Post copy: ${postFile}`));
+    } catch (err) {
+      console.log(fmt.yellow(`Post copy skipped: ${(err as Error).message.slice(0, 120)}`));
+    }
   }
 
   success(`Short: ${result}`);
