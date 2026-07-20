@@ -37,3 +37,4 @@ export { jumpcut, type JumpcutOptions, type JumpcutPace } from './jumpcut.js';
 export { portrait, type PortraitOptions } from './shorts.js';
 export { slice, type SliceOptions, type SliceRegion } from './slice.js';
 export { speedup, type SpeedupOptions } from './speedup.js';
+export { voiceover, type VoiceoverOptions } from './voiceover.js';

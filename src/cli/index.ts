@@ -20,6 +20,7 @@ import {
   registerTogifCommand,
   registerUninstallCommand,
   registerVidletCommand,
+  registerVoiceoverCommand,
 } from './commands/index.js';
 
 /**
@@ -61,6 +62,7 @@ export function createProgram(): Command {
   registerCaptionCommand(program);
   registerJumpcutCommand(program);
   registerSpeedupCommand(program);
+  registerVoiceoverCommand(program);
   registerVidletCommand(program);
 
   return program;
