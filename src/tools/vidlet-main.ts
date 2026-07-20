@@ -18,11 +18,13 @@ import { jumpcut } from './jumpcut.js';
 import { findAllLoopPoints, findBestLoopStart, findMatchesFromEnd } from './loop.js';
 import { mkv2mp4 } from './mkv2mp4.js';
 import { removeSilence } from './removesilence.js';
+import { short } from './short.js';
 import { type PortraitSegment, portrait, portraitMultiSegment } from './shorts.js';
 import { shrink } from './shrink.js';
 import { thumb } from './thumb.js';
 import { togif } from './togif.js';
 import { trim, trimAccurate } from './trim.js';
+import { voiceover } from './voiceover.js';
 
 import { setProcessStatus } from '../lib/process-status.js';
 
@@ -120,6 +122,14 @@ interface ToolOptions {
   // Auto cleanup options
   skipContrast?: boolean;
   cleanupContrast?: number;
+  // AI Short options
+  maxDuration?: number;
+  captions?: boolean;
+  // Voiceover options
+  text?: string;
+  language?: string;
+  gender?: 'female' | 'male';
+  cloneRef?: string;
 }
 
 /** Process result */
@@ -345,6 +355,42 @@ async function runTool(input: string, opts: ToolOptions): Promise<ProcessResult>
         });
         setProcessStatus('');
         logs.push({ type: 'success', message: 'Jump cuts complete!' });
+        break;
+      }
+
+      case 'short': {
+        logs.push({ type: 'info', message: 'Creating AI Short...' });
+        output = await short({
+          input: actualInput,
+          maxDuration: opts.maxDuration,
+          captions: opts.captions,
+          onProgress: (stage) => {
+            setProcessStatus(stage);
+          },
+        });
+        setProcessStatus('');
+        logs.push({
+          type: 'success',
+          message: 'AI Short ready! Crops/times editable in the .segments.json beside it.',
+        });
+        break;
+      }
+
+      case 'voiceover': {
+        if (!opts.text?.trim()) throw new Error('Narration script is empty');
+        logs.push({ type: 'info', message: 'Generating voiceover...' });
+        output = await voiceover({
+          input: opts.text,
+          video: actualInput,
+          language: opts.language,
+          gender: opts.gender,
+          cloneRef: opts.cloneRef,
+          onProgress: (stage) => {
+            setProcessStatus(stage);
+          },
+        });
+        setProcessStatus('');
+        logs.push({ type: 'success', message: 'Voiceover mixed in!' });
         break;
       }
 
