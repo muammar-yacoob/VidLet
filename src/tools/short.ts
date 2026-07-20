@@ -68,10 +68,13 @@ const sidecarSchema = z.object({
 });
 
 export const MIN_CLIP_LENGTH = 1.5;
+/** Clips closer than this are fused - the LLM often returns back-to-back
+ * picks, and separate render segments would add pointless cuts/seams. */
+export const MERGE_GAP = 0.5;
 
 /**
- * Clamp, order and de-overlap LLM-picked clips, then trim the total to
- * maxTotal seconds (shortening from the last clip backwards).
+ * Clamp, order, de-overlap and fuse near-contiguous LLM-picked clips, then
+ * trim the total to maxTotal seconds (shortening from the last clip).
  */
 export function sanitizeClips(
   clips: ShortClip[],
@@ -87,12 +90,15 @@ export function sanitizeClips(
     .filter((c) => c.end - c.start >= MIN_CLIP_LENGTH)
     .sort((a, b) => a.start - b.start);
 
-  // Drop overlaps: keep the earlier clip, skip any clip starting inside it.
+  // Drop overlaps and fuse back-to-back clips into one continuous take.
   const result: ShortClip[] = [];
   for (const clip of cleaned) {
     const prev = result[result.length - 1];
-    if (prev && clip.start < prev.end) continue;
-    result.push(clip);
+    if (prev && clip.start - prev.end <= MERGE_GAP) {
+      if (clip.end > prev.end) prev.end = clip.end;
+      continue;
+    }
+    result.push({ ...clip });
   }
 
   // Enforce the total-duration budget.

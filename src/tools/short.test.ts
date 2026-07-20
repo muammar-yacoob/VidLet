@@ -30,6 +30,24 @@ describe('sanitizeClips', () => {
       57
     );
     expect(clips.map((c) => c.start)).toEqual([5, 20]);
+    expect(clips[1].end).toBe(40); // overlap fused, not dropped
+  });
+
+  it('fuses back-to-back clips so the render has no needless cuts', () => {
+    const clips = sanitizeClips(
+      [
+        { start: 17.6, end: 21 },
+        { start: 21, end: 24.9 },
+        { start: 24.9, end: 27.7 },
+        { start: 40, end: 45 }, // real gap - stays separate
+      ],
+      100,
+      57
+    );
+    expect(clips).toEqual([
+      { start: 17.6, end: 27.7 },
+      { start: 40, end: 45 },
+    ]);
   });
 
   it('trims the last clip to fit the duration budget', () => {
