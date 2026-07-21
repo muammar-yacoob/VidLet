@@ -695,8 +695,15 @@
                 <label>Clone (optional)</label>
                 <input type="text" id="vo-clone" placeholder="/path/to/your-voice.wav (~10s sample)" style="width:100%;">
               </div>
+              <div class="caption-row">
+                <label>Clone engine</label>
+                <select id="vo-clone-engine">
+                  <option value="chatterbox" selected>Chatterbox (CPU or GPU)</option>
+                  <option value="dots">dots.tts (best quality, NVIDIA GPU)</option>
+                </select>
+              </div>
               <div class="caption-info">
-                <span>Free Edge TTS. With a clone sample: local Chatterbox voice cloning (first use installs ~3GB).</span>
+                <span>Free Edge TTS. With a clone sample: local voice cloning — Chatterbox or dots.tts (first use installs a few GB).</span>
               </div>
             </div>
           </div>

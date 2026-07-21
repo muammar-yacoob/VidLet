@@ -1,5 +1,5 @@
 import type { Command } from 'commander';
-import { voiceover } from '../../tools/voiceover.js';
+import { resolveCloneEngine, voiceover } from '../../tools/voiceover.js';
 import { handleError, resolveInputPath } from '../utils.js';
 
 export function registerVoiceoverCommand(program: Command): void {
@@ -10,7 +10,11 @@ export function registerVoiceoverCommand(program: Command): void {
     .option('-l <lang>', 'Language: en, es, fr, de, it, pt, ja, ko, zh, ar, hi, ru, tr, nl')
     .option('-m, --male', 'Use the male voice for the language')
     .option('--voice <name>', 'Exact Edge voice name (overrides -l/-m)')
-    .option('--clone <ref>', 'Clone the voice in this ~10s recording (local Chatterbox, MIT)')
+    .option('--clone <ref>', 'Clone the voice in this ~10s recording (local, free)')
+    .option(
+      '--clone-engine <engine>',
+      'Cloning engine: chatterbox (CPU/GPU, default) or dots (best quality, NVIDIA GPU)'
+    )
     .option('--video <file>', 'Mix narration over this video, auto-ducking its audio')
     .option('--no-normalize', 'Skip loudness normalization')
     .action(async (textOrFile: string, options) => {
@@ -22,6 +26,7 @@ export function registerVoiceoverCommand(program: Command): void {
           gender: options.male ? 'male' : 'female',
           voice: options.voice,
           cloneRef: options.clone ? await resolveInputPath(options.clone) : undefined,
+          cloneEngine: resolveCloneEngine(options.cloneEngine),
           video: options.video ? await resolveInputPath(options.video) : undefined,
           normalize: options.normalize,
         });

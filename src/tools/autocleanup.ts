@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import { checkFFmpeg, getVideoInfo } from '../lib/ffmpeg.js';
 import { fmt, header, separator, success } from '../lib/logger.js';
 import { getOutputPath } from '../lib/paths.js';
+import { detectSilence } from '../lib/segments.js';
 import { cleanVoice, ensureDeepFilter } from './cleanvoice.js';
 import { compress } from './compress.js';
 import { filter } from './filter.js';
@@ -12,13 +13,26 @@ import { removeSilence } from './removesilence.js';
 /** Maximum duration (seconds) for auto-applying the contrast step */
 const SHORT_VIDEO_THRESHOLD = 300; // 5 minutes
 
+/**
+ * Silence defaults for the pipeline. Deliberately more conservative than the
+ * standalone `removesilence` tool: by this point the audio has been denoised,
+ * so ordinary room tone has collapsed to near-digital silence and a 0.5s/no
+ * padding cut would strip every natural pause, leaving only the words.
+ */
+const PIPELINE_MIN_SILENCE = 1.2;
+const PIPELINE_SILENCE_PADDING = 0.3;
+/** Skip the silence step entirely if it would remove more than this share. */
+const MAX_SILENCE_REMOVAL = 0.6;
+
 export interface AutoCleanupOptions {
   input: string;
   output?: string;
   /** Denoise strength 1–10 (default: 3) */
   noiseReduction?: number;
-  /** Min silence to cut in seconds (default: 0.5) */
+  /** Min silence to cut in seconds (default: 1.2) */
   minSilenceDuration?: number;
+  /** Breathing room kept either side of each silence cut (default: 0.3) */
+  silencePadding?: number;
   /** Contrast boost amount 0–2, 1 = neutral (default: 1.15) */
   contrast?: number;
   /** Skip the contrast step entirely (default: false) */
@@ -38,7 +52,8 @@ export async function autoCleanup(options: AutoCleanupOptions): Promise<string> 
     input,
     output: customOutput,
     noiseReduction = 3,
-    minSilenceDuration = 0.5,
+    minSilenceDuration = PIPELINE_MIN_SILENCE,
+    silencePadding = PIPELINE_SILENCE_PADDING,
     contrast = 1.15,
     skipContrast = false,
   } = options;
@@ -94,14 +109,38 @@ export async function autoCleanup(options: AutoCleanupOptions): Promise<string> 
     });
 
     // ── Step 2: Remove silence ──
+    // Skipped when it would gut the video (sparse narration, mostly-quiet
+    // screen capture) — better to leave the pacing alone than to hand back
+    // only the parts that had someone talking.
     step++;
     progress('Removing silence...');
     console.log(fmt.dim(`[${step}/4] Removing silence...`));
-    current = await removeSilence({
-      input: current,
-      output: path.join(tempDir, 'step2_desilence.mp4'),
-      minSilenceDuration,
+    const denoisedInfo = await getVideoInfo(current);
+    const silence = await detectSilence(current, {
+      minDuration: minSilenceDuration,
+      thresholdDb: -30,
+      videoDuration: denoisedInfo.duration,
     });
+    const cutTotal = silence.reduce(
+      (sum, s) => sum + Math.max(0, s.end - s.start - 2 * silencePadding),
+      0
+    );
+    const cutShare = denoisedInfo.duration > 0 ? cutTotal / denoisedInfo.duration : 0;
+
+    if (cutShare > MAX_SILENCE_REMOVAL) {
+      console.log(
+        fmt.yellow(
+          `Silence removal skipped — it would cut ${Math.round(cutShare * 100)}% of the video.`
+        )
+      );
+    } else {
+      current = await removeSilence({
+        input: current,
+        output: path.join(tempDir, 'step2_desilence.mp4'),
+        minSilenceDuration,
+        padding: silencePadding,
+      });
+    }
 
     // ── Step 3: Contrast (optional) ──
     step++;

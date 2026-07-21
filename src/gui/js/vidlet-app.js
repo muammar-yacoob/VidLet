@@ -862,7 +862,10 @@ async function process() {
       opts.language = $('vo-lang').value;
       opts.gender = $('vo-gender').value;
       const voClone = $('vo-clone').value.trim();
-      if (voClone) opts.cloneRef = voClone;
+      if (voClone) {
+        opts.cloneRef = voClone;
+        opts.cloneEngine = $('vo-clone-engine').value;
+      }
     }
 
     // Poll for live processing status with animated dots

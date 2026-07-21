@@ -7,12 +7,14 @@ export function registerRemoveSilenceCommand(program: Command): void {
     .description('Remove silent segments from video')
     .option('-d <seconds>', 'Minimum silence duration in seconds (default: 0.5)')
     .option('-t <dB>', 'Silence threshold in dB (default: -30)')
+    .option('-p <seconds>', 'Breathing room kept around each cut (default: 0.15)')
     .option('-o <path>', 'Output file path')
     .action((file: string, options) =>
       runToolCommand('removesilence', file, options, () => ({
         output: options.o,
         minSilenceDuration: options.d ? Number.parseFloat(options.d) : undefined,
         silenceThreshold: options.t ? Number.parseFloat(options.t) : undefined,
+        padding: options.p ? Number.parseFloat(options.p) : undefined,
       }))
     );
 }

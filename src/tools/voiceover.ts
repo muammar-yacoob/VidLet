@@ -3,8 +3,10 @@
  *
  * Engines:
  *  - edge (default): free Microsoft Edge neural voices, no API key, instant.
- *  - clone: local zero-shot voice cloning (Chatterbox, MIT) from a ~10s
- *    reference recording. First use installs the engine (several GB).
+ *  - clone: local zero-shot voice cloning from a ~10s reference recording.
+ *    Two engines - Chatterbox (MIT, CPU or GPU, the default) and dots.tts
+ *    (Apache-2.0, watermark-free, best similarity, wants an NVIDIA GPU).
+ *    First use installs the chosen engine (several GB).
  *
  * Optionally mixes the narration over an existing video, auto-ducking the
  * original audio while the voice speaks.
@@ -12,10 +14,21 @@
 import { existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { synthesizeClone } from '../lib/chatterbox.js';
+import { synthesizeCloneDots } from '../lib/dots-tts.js';
 import { resolveVoice, synthesizeSpeech } from '../lib/edge-tts.js';
 import { checkFFmpeg, executeFFmpegRaw, getVideoInfo } from '../lib/ffmpeg.js';
 import { fmt, header, separator, success } from '../lib/logger.js';
 import { getOutputPath } from '../lib/paths.js';
+import { transcribe } from '../lib/whisper.js';
+
+export type CloneEngine = 'chatterbox' | 'dots';
+
+/** Validate a CLI/GUI-supplied engine name, defaulting to Chatterbox. */
+export function resolveCloneEngine(value?: string): CloneEngine {
+  if (value === undefined || value === '' || value === 'chatterbox') return 'chatterbox';
+  if (value === 'dots' || value === 'dots.tts') return 'dots';
+  throw new Error(`Unknown clone engine "${value}". Use: chatterbox, dots`);
+}
 
 export interface VoiceoverOptions {
   /** Script text, or a path to a .txt/.md file containing it. */
@@ -29,6 +42,8 @@ export interface VoiceoverOptions {
   voice?: string;
   /** Reference recording (~10s) — switches to the local cloning engine. */
   cloneRef?: string;
+  /** Which local cloning engine to use with cloneRef. Default chatterbox. */
+  cloneEngine?: CloneEngine;
   /** Mix the narration over this video (auto-ducks its audio). */
   video?: string;
   /** Output path for the mixed video. Derived from the video when omitted. */
@@ -105,12 +120,36 @@ async function generateNarration(options: VoiceoverOptions): Promise<string> {
 
   if (cloneRef) {
     const wavOut = output.endsWith('.wav') ? output : `${output}.tmp.wav`;
-    await synthesizeClone({
-      text,
-      referenceAudio: resolve(cloneRef),
-      output: wavOut,
-      onProgress: progress,
-    });
+    if ((options.cloneEngine ?? 'chatterbox') === 'dots') {
+      // dots.tts clones best when it also gets the reference's transcript;
+      // whisper is already part of VidLet, so transcribe it automatically.
+      let promptText: string | undefined;
+      try {
+        progress('transcribing reference sample');
+        const ref = await transcribe(resolve(cloneRef), { onProgress: () => {} });
+        promptText =
+          ref.segments
+            .map((s) => s.text)
+            .join(' ')
+            .trim() || undefined;
+      } catch {
+        // Optional input - dots.tts works without it.
+      }
+      await synthesizeCloneDots({
+        text,
+        referenceAudio: resolve(cloneRef),
+        promptText,
+        output: wavOut,
+        onProgress: progress,
+      });
+    } else {
+      await synthesizeClone({
+        text,
+        referenceAudio: resolve(cloneRef),
+        output: wavOut,
+        onProgress: progress,
+      });
+    }
     if (wavOut !== output) {
       progress('encoding mp3');
       await executeFFmpegRaw(['-y', '-i', wavOut, '-b:a', '128k', '-loglevel', 'error', output]);
@@ -172,7 +211,11 @@ export async function voiceover(options: VoiceoverOptions): Promise<string> {
     throw new Error('FFmpeg not found. Please install ffmpeg: sudo apt install ffmpeg');
   }
 
-  const engine = options.cloneRef ? 'Chatterbox (voice clone, local)' : 'Edge TTS (free)';
+  const engine = options.cloneRef
+    ? options.cloneEngine === 'dots'
+      ? 'dots.tts (voice clone, local)'
+      : 'Chatterbox (voice clone, local)'
+    : 'Edge TTS (free)';
   header('Voiceover');
   console.log(`Engine:   ${fmt.yellow(engine)}`);
   if (options.cloneRef) console.log(`Voice:    ${fmt.white(options.cloneRef)}`);

@@ -25,7 +25,7 @@ import { shrink } from './shrink.js';
 import { thumb } from './thumb.js';
 import { togif } from './togif.js';
 import { trim, trimAccurate } from './trim.js';
-import { voiceover } from './voiceover.js';
+import { resolveCloneEngine, voiceover } from './voiceover.js';
 
 import { setProcessStatus } from '../lib/process-status.js';
 
@@ -131,6 +131,7 @@ interface ToolOptions {
   language?: string;
   gender?: 'female' | 'male';
   cloneRef?: string;
+  cloneEngine?: string;
   // Demo options
   about?: string;
   makeShort?: boolean;
@@ -410,6 +411,7 @@ async function runTool(input: string, opts: ToolOptions): Promise<ProcessResult>
           language: opts.language,
           gender: opts.gender,
           cloneRef: opts.cloneRef,
+          cloneEngine: resolveCloneEngine(opts.cloneEngine),
           onProgress: (stage) => {
             setProcessStatus(stage);
           },

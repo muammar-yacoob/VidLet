@@ -18,13 +18,24 @@ export interface RemoveSilenceOptions {
   minSilenceDuration?: number;
   /** Silence detection threshold in dB (default: -30) */
   silenceThreshold?: number;
+  /**
+   * Seconds of breathing room kept either side of every cut, so speech is
+   * never clipped mid-word (default: 0.15).
+   */
+  padding?: number;
 }
 
 /**
  * Remove silent segments from a video
  */
 export async function removeSilence(options: RemoveSilenceOptions): Promise<string> {
-  const { input, output: customOutput, minSilenceDuration = 0.5, silenceThreshold = -30 } = options;
+  const {
+    input,
+    output: customOutput,
+    minSilenceDuration = 0.5,
+    silenceThreshold = -30,
+    padding = 0.15,
+  } = options;
 
   if (!(await checkFFmpeg())) {
     throw new Error('FFmpeg not found. Please install ffmpeg.');
@@ -66,11 +77,18 @@ export async function removeSilence(options: RemoveSilenceOptions): Promise<stri
       `(${fmt.yellow(totalSilence.toFixed(1))}s total)`
   );
 
-  // Step 2: Calculate keep segments
-  const keepSegments = invertSegments(info.duration, silentSegments);
+  // Step 2: Calculate keep segments, widened by the padding so cuts land in
+  // the dead air rather than on the first/last syllable.
+  const keepSegments = invertSegments(info.duration, silentSegments, { padding });
   if (keepSegments.length === 0) {
     throw new Error('Removing all silence would leave no content.');
   }
+
+  const keptDuration = keepSegments.reduce((sum, s) => sum + (s.end - s.start), 0);
+  console.log(
+    `Keeping ${fmt.yellow(keptDuration.toFixed(1))}s of ${fmt.white(info.duration.toFixed(1))}s ` +
+      `across ${fmt.yellow(keepSegments.length.toString())} segment(s)`
+  );
 
   // Step 3: Extract each keep segment and concatenate
   const tempDir = path.join(os.tmpdir(), `vidlet-silence-${Date.now()}`);

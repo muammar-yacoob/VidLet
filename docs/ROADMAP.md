@@ -42,8 +42,9 @@ Prioritized next steps (impact ÷ effort, top first):
 9. **`vidlet record`** — native screen/webcam capture. On Windows the clean
    path is a tiny helper invoking ffmpeg gdigrab/dshow from the Windows side
    (WSL cannot see the desktop); the browser recorder covers this today.
-10. **dots.tts side-by-side** — trial the Apache-2.0, watermark-free cloner
-    against Chatterbox on the owner's voice sample; swap if it wins.
+10. ~~**dots.tts side-by-side**~~ — shipped: `--clone-engine dots` (CLI), the
+    GUI's Clone-engine dropdown, and MCP `clone_engine` run the Apache-2.0,
+    watermark-free cloner beside Chatterbox for direct comparison.
 
 ## Long term / product bets
 11. **Template packs** — hook text overlays, progress bars, end cards as

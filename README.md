@@ -39,17 +39,18 @@ vidlet jumpcut video.mp4 --pace loose --zoom 0  # gentle, no zoom
 
 ## Voiceover — Free TTS or Clone Your Own Voice
 
-Turn a script into narration. Default engine is Microsoft Edge neural TTS — free, no API key, 14 languages. Pass a ~10 second recording of yourself and VidLet clones your voice locally with [Chatterbox](https://github.com/resemble-ai/chatterbox) (MIT, beats ElevenLabs in blind tests).
+Turn a script into narration. Default engine is Microsoft Edge neural TTS — free, no API key, 14 languages. Pass a ~10 second recording of yourself and VidLet clones your voice locally with [Chatterbox](https://github.com/resemble-ai/chatterbox) (MIT, beats ElevenLabs in blind tests) — or with [dots.tts](https://github.com/rednote-hilab/dots.tts) (Apache-2.0, watermark-free, best speaker similarity, wants an NVIDIA GPU).
 
 ```bash
 vidlet voiceover script.txt                        # free neural TTS (Edge)
 vidlet voiceover "Quick line of narration" -l es   # literal text, Spanish
 vidlet voiceover script.txt -m                     # male voice
 vidlet voiceover script.txt --clone me.wav         # YOUR voice (local, one-time ~3GB setup)
+vidlet voiceover script.txt --clone me.wav --clone-engine dots   # best-quality clone (GPU)
 vidlet voiceover script.txt --video raw.mp4        # mix over video, auto-ducks its audio
 ```
 
-Narration is loudness-normalized to -16 LUFS. Cloning runs on CPU (slow, fine for short scripts) or CUDA automatically. Everything stays on your machine.
+Narration is loudness-normalized to -16 LUFS. Chatterbox runs on CPU (slow, fine for short scripts) or CUDA automatically; dots.tts auto-transcribes your sample with whisper for maximum similarity. Everything stays on your machine.
 
 ## AI Demo — For People Who Hate Editing (and Microphones)
 

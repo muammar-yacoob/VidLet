@@ -22,7 +22,12 @@ export interface PortraitSegment {
 export interface PortraitOptions {
   input: string;
   output?: string;
-  mode: 'crop' | 'blur';
+  /**
+   * crop = take a 9:16 slice (sides are lost), blur = centre the video over a
+   * blurred copy, fit = centre the whole frame with letterbox bars (nothing
+   * is cut off).
+   */
+  mode: 'crop' | 'blur' | 'fit';
   cropX?: number; // 0-1, horizontal crop position (0=left, 0.5=center, 1=right)
   resolution?: number; // Output width (height calculated for 9:16)
 }
@@ -51,7 +56,13 @@ export async function portrait(options: PortraitOptions): Promise<string> {
   console.log(`Input:    ${fmt.white(input)}`);
   console.log(`Size:     ${fmt.white(`${info.width}x${info.height}`)}`);
   console.log(`Output:   ${fmt.yellow(`${outWidth}x${outHeight}`)} (9:16)`);
-  console.log(`Mode:     ${fmt.yellow(mode === 'blur' ? 'Blur Background' : `Crop (${cropPos})`)}`);
+  const modeLabel =
+    mode === 'blur'
+      ? 'Blur Background'
+      : mode === 'fit'
+        ? 'Fit (letterboxed)'
+        : `Crop (${cropPos})`;
+  console.log(`Mode:     ${fmt.yellow(modeLabel)}`);
   separator();
   console.log(fmt.dim('Processing...'));
 
@@ -65,6 +76,12 @@ export async function portrait(options: PortraitOptions): Promise<string> {
     const overlayScale = `scale=-1:${outHeight * 0.6}:force_original_aspect_ratio=decrease`;
 
     filterComplex = `[0:v]${blurScale}[bg];[0:v]${overlayScale}[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2,format=yuv420p`;
+  } else if (mode === 'fit') {
+    // Fit mode: scale the whole frame down until it fits, then pad out to
+    // 9:16 — the entire shot survives, at the cost of bars top and bottom.
+    filterComplex =
+      `scale=${outWidth}:${outHeight}:force_original_aspect_ratio=decrease,` +
+      `pad=${outWidth}:${outHeight}:(ow-iw)/2:(oh-ih)/2:color=black,format=yuv420p`;
   } else {
     // Crop mode: Extract 9:16 portion from the video
     // cropX is 0-1, convert to FFmpeg expression
