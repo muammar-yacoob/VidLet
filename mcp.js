@@ -23,6 +23,7 @@ import {
   getVideoInfo,
   demo,
   jumpcut,
+  resolveCloneEngine,
   short,
   togif,
   trim,
@@ -170,9 +171,10 @@ const TOOLS = [
     name: 'generate_voiceover',
     description:
       'Generate narration audio from a script. Default engine is free Edge neural TTS (no API ' +
-      'key). Pass clone_ref (a ~10s voice recording) to clone that voice locally with Chatterbox ' +
-      '(MIT) — first use installs several GB. Optionally mixes the narration over video_path, ' +
-      'auto-ducking its original audio. Never overwrites existing files.',
+      'key). Pass clone_ref (a ~10s voice recording) to clone that voice locally — with ' +
+      'Chatterbox (MIT, default) or dots.tts (Apache-2.0, best quality, NVIDIA GPU) via ' +
+      'clone_engine — first use installs several GB. Optionally mixes the narration over ' +
+      'video_path, auto-ducking its original audio. Never overwrites existing files.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -185,6 +187,11 @@ const TOOLS = [
         clone_ref: {
           type: 'string',
           description: 'Path to a ~10s reference recording — switches to the local voice-cloning engine.',
+        },
+        clone_engine: {
+          type: 'string',
+          enum: ['chatterbox', 'dots'],
+          description: 'Cloning engine used with clone_ref: chatterbox (CPU/GPU, default) or dots (best quality, NVIDIA GPU).',
         },
         video_path: {
           type: 'string',
@@ -454,9 +461,10 @@ async function handleExtractAudio({ path, format, output_path }) {
   );
 }
 
-async function handleGenerateVoiceover({ text, language, gender, clone_ref, video_path, output_path }) {
+async function handleGenerateVoiceover({ text, language, gender, clone_ref, clone_engine, video_path, output_path }) {
   if (typeof text !== 'string' || !text.trim()) throw new Error('`text` is required');
   const cloneRef = clone_ref ? resolveInputPath(clone_ref) : undefined;
+  const cloneEngine = resolveCloneEngine(clone_engine ?? undefined);
   const video = video_path ? resolveInputPath(video_path) : undefined;
 
   // Narration audio: beside the video (VidLet/ subfolder) when mixing, else CWD.
@@ -471,7 +479,7 @@ async function handleGenerateVoiceover({ text, language, gender, clone_ref, vide
   return runWriteTool(output, () =>
     withSilencedStdout(async () => {
       try {
-        const result = await voiceover({ input: text, output, language, gender, cloneRef, video, videoOutput });
+        const result = await voiceover({ input: text, output, language, gender, cloneRef, cloneEngine, video, videoOutput });
         return jsonContent({ output: result, narration_audio: output });
       } catch (e) {
         if (videoOutput) releaseIfEmpty(videoOutput);

@@ -3,7 +3,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { DEFAULT_VOICE, resolveVoice } from '../lib/edge-tts.js';
-import { MAX_SCRIPT_LENGTH, buildDuckFilter, resolveScriptText, uniquePath } from './voiceover.js';
+import {
+  MAX_SCRIPT_LENGTH,
+  buildDuckFilter,
+  resolveCloneEngine,
+  resolveScriptText,
+  uniquePath,
+} from './voiceover.js';
 
 const tmp = mkdtempSync(join(tmpdir(), 'vidlet-voiceover-test-'));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
@@ -72,5 +78,22 @@ describe('buildDuckFilter', () => {
     // Regression: without apad, sidechaincompress EOFs at narration end and
     // the output video is truncated to the narration length.
     expect(buildDuckFilter()).toContain('apad');
+  });
+});
+
+describe('resolveCloneEngine', () => {
+  it('defaults to chatterbox', () => {
+    expect(resolveCloneEngine()).toBe('chatterbox');
+    expect(resolveCloneEngine('')).toBe('chatterbox');
+    expect(resolveCloneEngine('chatterbox')).toBe('chatterbox');
+  });
+
+  it('accepts dots under both spellings', () => {
+    expect(resolveCloneEngine('dots')).toBe('dots');
+    expect(resolveCloneEngine('dots.tts')).toBe('dots');
+  });
+
+  it('rejects unknown engines', () => {
+    expect(() => resolveCloneEngine('elevenlabs')).toThrow(/Unknown clone engine/);
   });
 });
