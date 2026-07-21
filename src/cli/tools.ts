@@ -478,7 +478,7 @@ export const tools: Tool[] = [
       return portrait({
         input,
         output: options.output as string | undefined,
-        mode: (options.mode as 'crop' | 'blur') || 'crop',
+        mode: (options.mode as 'crop' | 'blur' | 'fit') || 'crop',
         cropX: options.cropX as number | undefined,
         resolution: options.resolution as number | undefined,
       });
@@ -572,6 +572,7 @@ export const tools: Tool[] = [
         output: options.output as string | undefined,
         minSilenceDuration: options.minSilenceDuration as number | undefined,
         silenceThreshold: options.silenceThreshold as number | undefined,
+        padding: options.padding as number | undefined,
       });
     },
   },
@@ -583,6 +584,7 @@ export const tools: Tool[] = [
         output: options.output as string | undefined,
         noiseReduction: options.noiseReduction as number | undefined,
         minSilenceDuration: options.minSilenceDuration as number | undefined,
+        silencePadding: options.silencePadding as number | undefined,
         skipContrast: options.skipContrast as boolean | undefined,
       });
     },
