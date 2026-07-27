@@ -505,9 +505,9 @@ async function handleSetupRecording({ script, script_path }) {
   if (text.length > 20000) throw new Error('Script too long (max 20000 chars) — trim it down.');
 
   const base = process.env.VIDLET_URL || 'https://vidlet.app';
-  // Hash fragment (never sent to the server); the site loads it into the
-  // teleprompter and strips it from the URL.
-  const url = `${base}/#prompter=${Buffer.from(text, 'utf8').toString('base64url')}`;
+  // /app is the editor (/ is the landing page). Hash fragment is never sent
+  // to the server; the site loads it into the teleprompter and strips it.
+  const url = `${base}/app#prompter=${Buffer.from(text, 'utf8').toString('base64url')}`;
   openInBrowser(url);
   return jsonContent({
     url, // full link, in case the browser could not be opened automatically
