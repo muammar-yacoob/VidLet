@@ -3,7 +3,7 @@
 Free auto-captions + auto-jump-cuts + 16 video tools. Runs locally. No subscription. No cloud.
 
 [![npm](https://img.shields.io/npm/v/@spark-apps/vidlet)](https://www.npmjs.com/package/@spark-apps/vidlet)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 
 ```bash
 npm i -g @spark-apps/vidlet    # adds Windows right-click menu automatically
@@ -113,7 +113,7 @@ Or record a talking-head take instead and start with `vidlet autocleanup` (denoi
 | **Price** | **Free** | $10/mo | $24/mo | $20/mo |
 | **Runs locally** | **Yes** | No | No | No |
 | CLI / batch | Yes | No | No | No |
-| Open source | MIT | No | No | No |
+| Open source | AGPL-3.0 | No | No | No |
 
 ## All Tools
 
@@ -196,4 +196,4 @@ Star the repo, report bugs, or open a PR: [github.com/muammar-yacoob/VidLet](htt
 
 ## License
 
-MIT — [sparkbrain.app](https://sparkbrain.app)
+AGPL-3.0 — [sparkbrain.app](https://sparkbrain.app)

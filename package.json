@@ -48,7 +48,7 @@
     "video-editor"
   ],
   "author": "spark-apps",
-  "license": "MIT",
+  "license": "AGPL-3.0",
   "homepage": "https://vidlet.app",
   "repository": {
     "type": "git",
