@@ -82,9 +82,11 @@ npm link && vidlet --help
 
 ## MCP Server
 
-`mcp.js` (repo root, bin `vidlet-mcp`) exposes 8 tools over stdio for AI agents: `list_capabilities`,
+`mcp.js` (repo root, bin `vidlet-mcp`) exposes 12 tools over stdio for AI agents: `list_capabilities`,
 `probe_video` (read-only), `generate_captions`, `auto_jump_cut`, `trim_video`, `compress_video`,
-`extract_audio`, `convert_to_gif`. It imports real tool functions from `dist/mcp-lib.js` (built from
+`extract_audio`, `convert_to_gif`, `setup_recording` (opens vidlet.app with a script preloaded into
+the teleprompter via a `#prompter=<base64url>` hash; writes no files), `generate_voiceover`,
+`create_short`, `create_demo`. It imports real tool functions from `dist/mcp-lib.js` (built from
 `src/mcp-lib.ts`, a second tsup entry) rather than shelling out to the CLI. No delete/move tools by
 design; every write defaults to the `VidLet/` subdirectory and never overwrites an existing file
 (numbered `-1`, `-2`, ... via an atomic reserve-then-write, since a plain existsSync check races

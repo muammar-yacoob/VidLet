@@ -8,6 +8,7 @@
 // auth needed. Deliberately NO delete/move tools — outputs are always new
 // files, never overwrites, never touches the input.
 
+import { spawn } from 'node:child_process';
 import { existsSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
@@ -165,6 +166,24 @@ const TOOLS = [
         output_path: { type: 'string', description: 'Optional explicit output path.' },
       },
       required: ['path'],
+    },
+  },
+  {
+    name: 'setup_recording',
+    description:
+      'Set up a screen-recording session on vidlet.app: opens the browser with the given script ' +
+      'preloaded into the teleprompter (an always-on-top floating window, excluded from the ' +
+      'capture). The user then clicks "Open prompter" and "Record screen" — browser security ' +
+      'requires those two clicks. Writes no files.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        script: { type: 'string', description: 'The narration script / transcript text (max 20000 chars).' },
+        script_path: {
+          type: 'string',
+          description: 'Path to a script file (.txt/.md/.srt/.vtt) — alternative to `script`.',
+        },
+      },
     },
   },
   {
@@ -461,6 +480,46 @@ async function handleExtractAudio({ path, format, output_path }) {
   );
 }
 
+/** Open a URL in the OS default browser (WSL included). Fire-and-forget. */
+function openInBrowser(url) {
+  const isWsl =
+    process.platform === 'linux' &&
+    existsSync('/proc/version') &&
+    readFileSync('/proc/version', 'utf8').toLowerCase().includes('microsoft');
+  const [cmd, args] = isWsl
+    ? ['cmd.exe', ['/c', 'start', '', url.replace(/&/g, '^&')]]
+    : process.platform === 'darwin'
+      ? ['open', [url]]
+      : process.platform === 'win32'
+        ? ['cmd', ['/c', 'start', '', url.replace(/&/g, '^&')]]
+        : ['xdg-open', [url]];
+  const child = spawn(cmd, args, { detached: true, stdio: 'ignore' });
+  child.on('error', () => {}); // no opener available — the URL is still returned
+  child.unref();
+}
+
+async function handleSetupRecording({ script, script_path }) {
+  let text = script;
+  if (!text?.trim() && script_path) text = readFileSync(resolveInputPath(script_path), 'utf8');
+  if (!text?.trim()) throw new Error('Provide `script` text or a `script_path` file.');
+  if (text.length > 20000) throw new Error('Script too long (max 20000 chars) — trim it down.');
+
+  const base = process.env.VIDLET_URL || 'https://vidlet.app';
+  // Hash fragment (never sent to the server); the site loads it into the
+  // teleprompter and strips it from the URL.
+  const url = `${base}/#prompter=${Buffer.from(text, 'utf8').toString('base64url')}`;
+  openInBrowser(url);
+  return jsonContent({
+    url, // full link, in case the browser could not be opened automatically
+    script_chars: text.length,
+    next_steps: [
+      'The teleprompter panel is open with the script loaded.',
+      'Click "Open prompter" to float it (always-on-top, excluded from capture).',
+      'Click "Record screen" and pick the window to record.',
+    ],
+  });
+}
+
 async function handleGenerateVoiceover({ text, language, gender, clone_ref, clone_engine, video_path, output_path }) {
   if (typeof text !== 'string' || !text.trim()) throw new Error('`text` is required');
   const cloneRef = clone_ref ? resolveInputPath(clone_ref) : undefined;
@@ -579,6 +638,7 @@ const TOOL_HANDLERS = {
   compress_video: handleCompressVideo,
   extract_audio: handleExtractAudio,
   convert_to_gif: handleConvertToGif,
+  setup_recording: handleSetupRecording,
   generate_voiceover: handleGenerateVoiceover,
   create_short: handleCreateShort,
   create_demo: handleCreateDemo,
