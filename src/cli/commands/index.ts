@@ -16,6 +16,7 @@ export { registerRemoveSilenceCommand } from './removesilence.js';
 export { registerAutoCleanupCommand } from './autocleanup.js';
 export { registerCaptionCommand } from './caption.js';
 export { registerJumpcutCommand } from './jumpcut.js';
+export { registerRenderCommand } from './render.js';
 export { registerDemoCommand } from './demo.js';
 export { registerShortCommand } from './short.js';
 export { registerSpeedupCommand } from './speedup.js';

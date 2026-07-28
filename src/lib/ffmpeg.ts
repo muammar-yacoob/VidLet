@@ -159,6 +159,23 @@ export async function getVideoDuration(inputPath: string): Promise<number> {
   return info.duration;
 }
 
+/**
+ * Container duration in seconds for ANY media file (audio-only included —
+ * getVideoInfo throws on files without a video stream).
+ */
+export async function getMediaDuration(inputPath: string): Promise<number> {
+  const { stdout } = await execa('ffprobe', [
+    '-v',
+    'quiet',
+    '-print_format',
+    'json',
+    '-show_format',
+    inputPath,
+  ]);
+  const data = JSON.parse(stdout);
+  return Number.parseFloat(data.format?.duration || '0');
+}
+
 /** Throw an FFmpegError if the ffmpeg result exited with a non-zero code. */
 function assertFFmpegOk(result: { exitCode?: number; stderr?: unknown }): void {
   logToFile(`FFmpeg completed with exit code: ${result.exitCode}`);

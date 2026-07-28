@@ -86,6 +86,18 @@ vidlet short demo.mp4 --from-segments VidLet/demo_short.mp4.segments.json
 
 Only the highlight picking touches an API (Groq free tier); transcription, motion tracking and rendering are all local.
 
+## The `.vidlet` Project Format — Edit as Text, Render Natively
+
+A `.vidlet` file is a plain-JSON layered edit — main video track, overlays, voice/music/sfx, subtitles — that references media by relative path + sha256 instead of embedding it. The format is an open **CC0** spec ([docs/vidlet-format.md](docs/vidlet-format.md), schema vendored at `res/vidlet-1.schema.json`), so it diffs in git and any human or AI agent can edit it as text. The same file opens in the [vidlet.app](https://vidlet.app/app) browser editor.
+
+```bash
+vidlet render project.vidlet                # full render (NVENC when available)
+vidlet render project.vidlet --draft        # fast preview: ultrafast x264, ≤720p
+vidlet render project.vidlet --resolution 720p -o out.mp4
+```
+
+The renderer cuts the main track (gaps become the background color), composites overlays (free position/scale/opacity or full-frame cover cutaways, looped or last-frame-held), burns the subtitle block, and mixes audio — narration clips with `ducking: true` sidechain-compress everything else.
+
 ## Produce a Video End to End
 
 Script → voiceover → edit → captions → publish, all local:
@@ -123,6 +135,7 @@ vidlet caption <file>            # auto-transcribe + styled captions
 vidlet jumpcut <file>            # auto-edit: cut silence + zoom
 vidlet voiceover <script>        # narration: free TTS or clone your voice
 vidlet short <file>              # AI highlights → 9:16 Short, crop follows action
+vidlet render <project.vidlet>   # render a .vidlet project (open CC0 format)
 vidlet autocleanup <file>        # denoise + remove silence + compress
 vidlet compress <file>           # H.264/HEVC compression
 vidlet cleanvoice <file>         # neural voice denoising
@@ -188,7 +201,7 @@ VidLet ships an MCP server (`vidlet-mcp`) so an AI agent can call the tools dire
 }
 ```
 
-Tools: `list_capabilities`, `probe_video` (read-only), `generate_captions`, `auto_jump_cut`, `trim_video`, `compress_video`, `extract_audio`, `convert_to_gif`, `generate_voiceover`, `create_short`. Every write tool defaults to a `VidLet/` subfolder beside the source and never overwrites an existing file (numbered `-1`, `-2`, ... on collision). No delete or move tools, by design.
+17 tools: `list_capabilities`, `probe_video` (read-only), `generate_captions`, `auto_jump_cut`, `trim_video`, `compress_video`, `extract_audio`, `convert_to_gif`, `setup_recording`, `generate_voiceover`, `create_short`, `create_demo`, plus the `.vidlet` project suite — `create_project` (builds a project from an .srt/.vtt, script, or QuickPeek-style JSON plan, asking the user about voice/recording when unspecified), `validate_project`, `render_project`, `open_in_editor` (hands the project to the vidlet.app editor via the URL hash), and `add_voiceover_to_project`. Every write tool defaults to a `VidLet/` subfolder beside the source and never overwrites an existing file (numbered `-1`, `-2`, ... on collision). No delete or move tools, by design.
 
 ## Support
 

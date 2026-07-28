@@ -1,0 +1,318 @@
+/**
+ * Core video-file MCP tools (probe, captions, jumpcut, trim, compress,
+ * extract audio, gif). Schemas and handlers moved verbatim from mcp.js.
+ */
+import { statSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { getVideoInfo } from '../lib/ffmpeg.js';
+import { checkFFmpeg } from '../lib/ffmpeg.js';
+import { changeExtension, getOutputPath } from '../lib/paths.js';
+import { extractAudio } from '../tools/audio.js';
+import { caption } from '../tools/caption.js';
+import { compress } from '../tools/compress.js';
+import { jumpcut } from '../tools/jumpcut.js';
+import { togif } from '../tools/togif.js';
+import { trim } from '../tools/trim.js';
+import {
+  PATH_PROPERTY,
+  type ToolDefinition,
+  type ToolHandler,
+  jsonContent,
+  resolveInputPath,
+  runWriteTool,
+  safeOutputPath,
+  withSilencedStdout,
+} from './shared.js';
+
+export const CORE_TOOLS: ToolDefinition[] = [
+  {
+    name: 'probe_video',
+    description:
+      'Read-only: duration, resolution, fps, codec, bitrate, audio presence, file size. Writes nothing.',
+    inputSchema: { type: 'object', properties: { ...PATH_PROPERTY }, required: ['path'] },
+  },
+  {
+    name: 'generate_captions',
+    description:
+      'Auto-transcribe locally with whisper.cpp (English only) and burn styled captions in. ' +
+      'Never overwrites input; default output is "<name>_captioned.<ext>" in a VidLet/ subfolder ' +
+      'beside the source, numbered (-1, -2, ...) if that already exists.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...PATH_PROPERTY,
+        language: {
+          type: 'string',
+          description: 'Must be "en" or omitted — bundled whisper.cpp models are English-only.',
+        },
+        output_path: { type: 'string', description: 'Optional explicit output path.' },
+      },
+      required: ['path'],
+    },
+  },
+  {
+    name: 'auto_jump_cut',
+    description:
+      'Auto-edit: cut silence and add alternating punch-in zoom. Never overwrites input; default ' +
+      'output is "<name>_jumpcut.<ext>" in a VidLet/ subfolder, numbered if that already exists.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...PATH_PROPERTY,
+        output_path: { type: 'string', description: 'Optional explicit output path.' },
+        silence_threshold: {
+          type: 'number',
+          description:
+            'Silence threshold in dB (more negative = more sensitive). Default -30 (normal pace).',
+        },
+      },
+      required: ['path'],
+    },
+  },
+  {
+    name: 'trim_video',
+    description:
+      'Cut a video to a start/end time range (fast stream copy). Never overwrites input; default ' +
+      'output is "<name>_trimmed.<ext>" in a VidLet/ subfolder, numbered if that already exists.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...PATH_PROPERTY,
+        start: { type: 'number', description: 'Start time in seconds.' },
+        end: { type: 'number', description: 'End time in seconds.' },
+        output_path: { type: 'string', description: 'Optional explicit output path.' },
+      },
+      required: ['path', 'start', 'end'],
+    },
+  },
+  {
+    name: 'compress_video',
+    description:
+      'Re-encode with H.264 to shrink file size. Never overwrites input; default output is ' +
+      '"<name>_compressed.<ext>" in a VidLet/ subfolder, numbered if that already exists.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...PATH_PROPERTY,
+        bitrate: { type: 'number', description: 'Target video bitrate in kbps.' },
+        preset: {
+          type: 'string',
+          enum: [
+            'ultrafast',
+            'superfast',
+            'veryfast',
+            'faster',
+            'fast',
+            'medium',
+            'slow',
+            'slower',
+            'veryslow',
+          ],
+          description: 'x264 encoding speed/quality preset.',
+        },
+        output_path: { type: 'string', description: 'Optional explicit output path.' },
+      },
+      required: ['path'],
+    },
+  },
+  {
+    name: 'extract_audio',
+    description:
+      'Pull the audio track out to its own file. Never overwrites input; default output is ' +
+      '"<name>.<format>" in a VidLet/ subfolder, numbered if that already exists.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...PATH_PROPERTY,
+        format: {
+          type: 'string',
+          enum: ['mp3', 'aac', 'wav', 'flac', 'ogg'],
+          description: 'Output audio format, default mp3.',
+        },
+        output_path: { type: 'string', description: 'Optional explicit output path.' },
+      },
+      required: ['path'],
+    },
+  },
+  {
+    name: 'convert_to_gif',
+    description:
+      'Convert to an optimized (palette-generated) GIF. Never overwrites input; default output is ' +
+      '"<name>.gif" in a VidLet/ subfolder, numbered if that already exists.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...PATH_PROPERTY,
+        fps: { type: 'number', description: 'Frames per second, default 15.' },
+        width: {
+          type: 'number',
+          description: 'Output width in px (height auto-scaled), default 480.',
+        },
+        output_path: { type: 'string', description: 'Optional explicit output path.' },
+      },
+      required: ['path'],
+    },
+  },
+];
+
+async function handleProbeVideo({ path }: { path?: string }) {
+  const input = resolveInputPath(path);
+  return withSilencedStdout(async () => {
+    const info = await getVideoInfo(input);
+    const sizeBytes = statSync(input).size;
+    return jsonContent({ path: input, sizeBytes, ...info });
+  });
+}
+
+async function handleGenerateCaptions({
+  path,
+  language,
+  output_path,
+}: {
+  path?: string;
+  language?: string;
+  output_path?: string;
+}) {
+  const input = resolveInputPath(path);
+  if (language && language !== 'en') {
+    throw new Error(
+      `Unsupported language "${language}" — bundled whisper.cpp models are English-only (tiny.en/base.en/small.en). Only "en" is supported.`
+    );
+  }
+  const desired = output_path ? resolve(output_path) : getOutputPath(input, '_captioned');
+  const output = safeOutputPath(input, desired);
+  return runWriteTool(output, () =>
+    withSilencedStdout(async () => {
+      if (!(await checkFFmpeg()))
+        throw new Error('FFmpeg not found. Install with: sudo apt install ffmpeg');
+      const result = await caption({
+        input,
+        output,
+        autoTranscribe: true,
+        whisperModel: 'base.en',
+      });
+      return jsonContent({ output: result });
+    })
+  );
+}
+
+async function handleAutoJumpCut({
+  path,
+  output_path,
+  silence_threshold,
+}: {
+  path?: string;
+  output_path?: string;
+  silence_threshold?: number;
+}) {
+  const input = resolveInputPath(path);
+  const desired = output_path ? resolve(output_path) : getOutputPath(input, '_jumpcut');
+  const output = safeOutputPath(input, desired);
+  return runWriteTool(output, () =>
+    withSilencedStdout(async () => {
+      const result = await jumpcut({ input, output, silenceThreshold: silence_threshold });
+      return jsonContent({ output: result });
+    })
+  );
+}
+
+async function handleTrimVideo({
+  path,
+  start,
+  end,
+  output_path,
+}: {
+  path?: string;
+  start?: number;
+  end?: number;
+  output_path?: string;
+}) {
+  const input = resolveInputPath(path);
+  if (typeof start !== 'number' || typeof end !== 'number') {
+    throw new Error('`start` and `end` (seconds) are required');
+  }
+  const desired = output_path ? resolve(output_path) : getOutputPath(input, '_trimmed');
+  const output = safeOutputPath(input, desired);
+  return runWriteTool(output, () =>
+    withSilencedStdout(async () => {
+      const result = await trim({ input, output, start, end });
+      return jsonContent({ output: result });
+    })
+  );
+}
+
+async function handleCompressVideo({
+  path,
+  bitrate,
+  preset,
+  output_path,
+}: {
+  path?: string;
+  bitrate?: number;
+  preset?: import('../tools/compress.js').CompressOptions['preset'];
+  output_path?: string;
+}) {
+  const input = resolveInputPath(path);
+  const desired = output_path ? resolve(output_path) : getOutputPath(input, '_compressed');
+  const output = safeOutputPath(input, desired);
+  return runWriteTool(output, () =>
+    withSilencedStdout(async () => {
+      const result = await compress({ input, output, bitrate, preset });
+      return jsonContent({ output: result });
+    })
+  );
+}
+
+async function handleExtractAudio({
+  path,
+  format,
+  output_path,
+}: {
+  path?: string;
+  format?: import('../tools/audio.js').ExtractAudioOptions['format'];
+  output_path?: string;
+}) {
+  const input = resolveInputPath(path);
+  const desired = output_path
+    ? resolve(output_path)
+    : changeExtension(input, `.${format ?? 'mp3'}`);
+  const output = safeOutputPath(input, desired);
+  return runWriteTool(output, () =>
+    withSilencedStdout(async () => {
+      const result = await extractAudio({ input, output, format });
+      return jsonContent({ output: result });
+    })
+  );
+}
+
+async function handleConvertToGif({
+  path,
+  fps,
+  width,
+  output_path,
+}: {
+  path?: string;
+  fps?: number;
+  width?: number;
+  output_path?: string;
+}) {
+  const input = resolveInputPath(path);
+  const desired = output_path ? resolve(output_path) : changeExtension(input, '.gif');
+  const output = safeOutputPath(input, desired);
+  return runWriteTool(output, () =>
+    withSilencedStdout(async () => {
+      const result = await togif({ input, output, fps, width });
+      return jsonContent({ output: result });
+    })
+  );
+}
+
+export const CORE_HANDLERS: Record<string, ToolHandler> = {
+  probe_video: handleProbeVideo,
+  generate_captions: handleGenerateCaptions,
+  auto_jump_cut: handleAutoJumpCut,
+  trim_video: handleTrimVideo,
+  compress_video: handleCompressVideo,
+  extract_audio: handleExtractAudio,
+  convert_to_gif: handleConvertToGif,
+};

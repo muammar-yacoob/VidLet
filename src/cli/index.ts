@@ -15,6 +15,7 @@ import {
   registerMkv2mp4Command,
   registerOptimizeCommand,
   registerRemoveSilenceCommand,
+  registerRenderCommand,
   registerShortCommand,
   registerShrinkCommand,
   registerSpeedupCommand,
@@ -66,6 +67,7 @@ export function createProgram(): Command {
   registerDemoCommand(program);
   registerShortCommand(program);
   registerSpeedupCommand(program);
+  registerRenderCommand(program);
   registerVoiceoverCommand(program);
   registerVidletCommand(program);
 

@@ -7,6 +7,7 @@ export default defineConfig({
 	entry: {
 		cli: 'src/cli.ts',
 		'mcp-lib': 'src/mcp-lib.ts',
+		'mcp-tools': 'src/mcp/index.ts',
 	},
 	format: ['esm'],
 	dts: false,

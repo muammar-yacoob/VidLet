@@ -1,0 +1,137 @@
+{
+	"$comment": "Vendored from the CC0 .vidlet format spec (https://vidlet.app/schema/vidlet-1.json)",
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://vidlet.app/schema/vidlet-1.json",
+	"title": "Vidlet project (.vidlet) v1",
+	"description": "Layered video edit: media by reference, fixed named tracks, subtitles. This schema is dedicated to the public domain under CC0 1.0 - implement freely.",
+	"type": "object",
+	"required": ["vidlet", "meta", "settings", "media", "tracks", "subtitles"],
+	"properties": {
+		"vidlet": { "const": 1 },
+		"meta": {
+			"type": "object",
+			"required": ["title", "createdAt", "modifiedAt", "generator"],
+			"properties": {
+				"title": { "type": "string" },
+				"createdAt": { "type": "string", "format": "date-time" },
+				"modifiedAt": { "type": "string", "format": "date-time" },
+				"generator": { "type": "string" }
+			}
+		},
+		"settings": {
+			"type": "object",
+			"required": ["width", "height", "fps", "background"],
+			"properties": {
+				"width": { "type": "integer", "minimum": 16 },
+				"height": { "type": "integer", "minimum": 16 },
+				"fps": { "type": "number", "exclusiveMinimum": 0 },
+				"background": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" }
+			}
+		},
+		"media": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"required": ["id", "kind", "name", "bytes"],
+				"properties": {
+					"id": { "type": "string", "minLength": 1 },
+					"kind": { "enum": ["video", "image", "audio"] },
+					"name": { "type": "string", "minLength": 1 },
+					"bytes": { "type": "integer", "minimum": 0 },
+					"duration": { "type": "number", "minimum": 0 },
+					"sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+					"path": { "type": "string" }
+				}
+			}
+		},
+		"tracks": {
+			"type": "object",
+			"required": ["video", "overlay", "voice", "music", "sfx"],
+			"properties": {
+				"video": {
+					"type": "array",
+					"items": {
+						"allOf": [{ "$ref": "#/$defs/baseClip" }],
+						"properties": {
+							"gain": { "type": "number", "minimum": 0 },
+							"muted": { "type": "boolean" }
+						}
+					}
+				},
+				"overlay": {
+					"type": "array",
+					"items": {
+						"allOf": [{ "$ref": "#/$defs/baseClip" }],
+						"properties": {
+							"x": { "type": "number" },
+							"y": { "type": "number" },
+							"scale": { "type": "number", "exclusiveMinimum": 0 },
+							"opacity": { "type": "number", "minimum": 0, "maximum": 1 },
+							"loop": { "type": "boolean" },
+							"fit": { "enum": ["free", "cover"] }
+						}
+					}
+				},
+				"voice": { "$ref": "#/$defs/audioTrack" },
+				"music": { "$ref": "#/$defs/audioTrack" },
+				"sfx": { "$ref": "#/$defs/audioTrack" }
+			}
+		},
+		"subtitles": {
+			"type": "object",
+			"required": ["style", "entries"],
+			"properties": {
+				"style": {
+					"type": "object",
+					"required": ["fontFamily", "fontSize", "color", "position", "outline"],
+					"properties": {
+						"fontFamily": { "type": "string" },
+						"fontSize": { "type": "number", "exclusiveMinimum": 0 },
+						"color": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" },
+						"position": { "enum": ["top", "center", "bottom"] },
+						"outline": { "type": "boolean" }
+					}
+				},
+				"entries": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"required": ["id", "start", "end", "text"],
+						"properties": {
+							"id": { "type": "string", "minLength": 1 },
+							"start": { "type": "number", "minimum": 0 },
+							"end": { "type": "number", "minimum": 0 },
+							"text": { "type": "string" }
+						}
+					}
+				}
+			}
+		}
+	},
+	"$defs": {
+		"baseClip": {
+			"type": "object",
+			"required": ["id", "mediaId", "start", "duration"],
+			"properties": {
+				"id": { "type": "string", "minLength": 1 },
+				"mediaId": { "type": "string", "minLength": 1 },
+				"start": { "type": "number", "minimum": 0 },
+				"sourceIn": { "type": "number", "minimum": 0 },
+				"duration": { "type": "number", "exclusiveMinimum": 0 }
+			}
+		},
+		"audioTrack": {
+			"type": "array",
+			"items": {
+				"allOf": [{ "$ref": "#/$defs/baseClip" }],
+				"properties": {
+					"gain": { "type": "number", "minimum": 0 },
+					"fadeIn": { "type": "number", "minimum": 0 },
+					"fadeOut": { "type": "number", "minimum": 0 },
+					"loop": { "type": "boolean" },
+					"ducking": { "type": "boolean" }
+				}
+			}
+		}
+	}
+}

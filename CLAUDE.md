@@ -29,6 +29,7 @@ VidLet is a Windows video utility toolkit that adds right-click context menu opt
 ### Video Tools
 | Tool | Purpose |
 |------|---------|
+| `render` | Render a `.vidlet` project (CC0 spec: `docs/vidlet-format.md` + `res/vidlet-1.schema.json`) to MP4 — main-track cuts, overlays, subtitles, audio mixdown with narration ducking |
 | `compress` | Reduce file size with H.264/HEVC encoding |
 | `togif` | Convert to optimized GIF with palette generation |
 | `mkv2mp4` | Convert MKV containers to MP4 |
@@ -52,6 +53,8 @@ VidLet is a Windows video utility toolkit that adds right-click context menu opt
 |--------|----------|---------|
 | `whisper.ts` | `src/lib/` | whisper.cpp binary/model management + transcription |
 | `ffmpeg.ts` | `src/lib/` | FFmpeg wrapper (execute, analyze, extract frames) |
+| `vidlet-project.ts` | `src/lib/` | `.vidlet` format v1: zod schema (unknown fields preserved), parse/validate, media resolution (sha256 verify) |
+| `project-create.ts` | `src/lib/` | Build projects from .srt/.vtt/.txt/.md/QuickPeek-plan sources |
 | `gui-server.ts` | `src/lib/` | Express server for GUI with API endpoints |
 | `config.ts` | `src/lib/` | Zod-validated tool configuration |
 
@@ -82,15 +85,25 @@ npm link && vidlet --help
 
 ## MCP Server
 
-`mcp.js` (repo root, bin `vidlet-mcp`) exposes 12 tools over stdio for AI agents: `list_capabilities`,
-`probe_video` (read-only), `generate_captions`, `auto_jump_cut`, `trim_video`, `compress_video`,
-`extract_audio`, `convert_to_gif`, `setup_recording` (opens vidlet.app with a script preloaded into
-the teleprompter via a `#prompter=<base64url>` hash; writes no files), `generate_voiceover`,
-`create_short`, `create_demo`. It imports real tool functions from `dist/mcp-lib.js` (built from
-`src/mcp-lib.ts`, a second tsup entry) rather than shelling out to the CLI. No delete/move tools by
-design; every write defaults to the `VidLet/` subdirectory and never overwrites an existing file
-(numbered `-1`, `-2`, ... via an atomic reserve-then-write, since a plain existsSync check races
-under concurrent tool calls).
+`mcp.js` (repo root, bin `vidlet-mcp`) is a thin stdio bootstrap (transport, protocol-stdout proxy,
+dispatch); the 17 tool schemas/handlers live in `src/mcp/` — `shared.ts` (plumbing: silenced stdout,
+never-overwrite reservation, URL-length guard), `tools-core.ts` (probe/caption/jumpcut/trim/
+compress/audio/gif), `tools-studio.ts` (setup_recording, voiceover, short, demo), `tools-project.ts`
+(.vidlet suite: create_project, validate_project, render_project, open_in_editor,
+add_voiceover_to_project), assembled by `src/mcp/index.ts` and bundled as `dist/mcp-tools.js` (a
+tsup entry, like `dist/mcp-lib.js`) — real tool functions, no shelling out to the CLI.
+`setup_recording`/`open_in_editor` hand data to vidlet.app via `#prompter=`/`#project=` base64url
+hashes, auto-opening the browser only when the URL fits the platform launcher (cmd.exe caps at 8191
+chars on Windows/WSL). No delete/move tools by design; every write defaults to the `VidLet/`
+subdirectory and never overwrites an existing file (numbered `-1`, `-2`, ... via an atomic
+reserve-then-write, since a plain existsSync check races under concurrent tool calls).
+
+## Code Rules
+
+- **500-line cap per source file** — split modules before they cross it.
+- `res/vidlet-1.schema.json` and the spec section of `docs/vidlet-format.md` are vendored from the
+  CC0 `.vidlet` format spec (https://vidlet.app/schema/vidlet-1.json) — update them only from the
+  published spec, never fork the format locally.
 
 ## Release Process
 
