@@ -1,0 +1,49 @@
+    <div class="ft" id="btns">
+      <div class="cache-progress" id="cache-progress" style="display:none">
+        <div class="cache-progress-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83"/></svg>
+        </div>
+        <div class="cache-progress-content">
+          <div class="cache-progress-label" id="cache-progress-label">Caching frames...</div>
+          <div class="cache-progress-bar">
+            <div class="cache-progress-fill" id="cache-progress-fill"></div>
+          </div>
+        </div>
+        <div class="cache-progress-pct" id="cache-progress-pct">0%</div>
+      </div>
+      <button class="btn btn-g" onclick="VidLet.cancel()">Cancel</button>
+      <button class="btn btn-p" id="processBtn" onclick="process()" disabled>Process</button>
+    </div>
+
+    <div class="ld" id="loading">
+      <dotlottie-player class="lottie-loader" src="/bouncing-fruits.lottie" background="transparent" speed="1" loop autoplay></dotlottie-player>
+      <span id="processing-label">Processing...</span>
+      <div class="process-progress" id="process-progress">
+        <div class="process-progress-fill" id="process-progress-fill"></div>
+      </div>
+      <span class="process-pct" id="process-pct"></span>
+      <div class="process-log" id="process-log"></div>
+    </div>
+    <div class="dn" id="done">
+      <h4>Done!</h4>
+      <p id="output"></p>
+      <div class="ai-suggest-row hidden" id="ai-rename-row">
+        <span class="ai-badge">AI</span>
+        <span class="ai-rename-text" id="ai-rename-text"></span>
+        <button class="ai-copy-btn" id="ai-copy-btn" onclick="copyAiRename()" title="Copy">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        </button>
+      </div>
+      <div class="ai-suggest-row hidden" id="ai-caption-row">
+        <span class="ai-badge">AI</span>
+        <span class="ai-caption-text" id="ai-caption-text"></span>
+        <button class="ai-copy-btn" id="ai-caption-copy" onclick="copyAiCaption()" title="Copy">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        </button>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button class="btn btn-g" id="continueBtn" onclick="continueEditing()">Continue</button>
+        <button class="btn btn-p" onclick="VidLet.close()">Done</button>
+      </div>
+    </div>
+

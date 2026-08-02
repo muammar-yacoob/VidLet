@@ -1,19 +1,23 @@
 /**
  * GUI Server - Serves HTML interface and handles API calls for video processing
  */
-import { exec, spawn } from 'node:child_process';
+import { exec } from 'node:child_process';
 import * as fs from 'node:fs';
 import { createServer } from 'node:http';
 import * as os from 'node:os';
-import { basename, dirname, extname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
-import { loadToolsConfig, saveToolsConfig } from './config.js';
+import { type GuiServerOptions, type VideoInfo, registerApiRoutes } from './gui-api.js';
 import { cleanupSignalFiles, signalLoadingComplete } from './loading-window.js';
 import { logToFile } from './logger.js';
-import { getProcessStatus } from './process-status.js';
+
+export type { GuiServerOptions, VideoInfo };
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+/** Long operations like compression get half an hour before the window gives up. */
+const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 
 /**
  * Kill any running FFmpeg processes (Windows compatible)
@@ -27,18 +31,6 @@ function killFFmpegProcesses(): void {
       logToFile('Killed FFmpeg processes on shutdown');
     }
   });
-}
-
-export interface VideoInfo {
-  filePath: string;
-  fileName: string;
-  width: number;
-  height: number;
-  duration: number;
-  fps: number;
-  bitrate: number;
-  fileSize: number;
-  hasAudio: boolean;
 }
 
 /**
@@ -59,81 +51,6 @@ export async function getVideoInfoForGui(filePath: string): Promise<VideoInfo> {
     fileSize: stats.size,
     hasAudio: info.hasAudio,
   };
-}
-
-export interface GuiServerOptions {
-  htmlFile: string;
-  title: string;
-  videoInfo: VideoInfo;
-  defaults: Record<string, unknown>;
-  onPreview?: (options: Record<string, unknown>) => Promise<{
-    success: boolean;
-    imageData?: string;
-    width?: number;
-    height?: number;
-    error?: string;
-  }>;
-  onProcess: (options: Record<string, unknown>) => Promise<{
-    success: boolean;
-    output?: string;
-    error?: string;
-    logs: Array<{ type: string; message: string }>;
-  }>;
-  onLoadVideo?: (data: { filePath: string }) => Promise<{
-    success: boolean;
-    filePath?: string;
-    fileName?: string;
-    width?: number;
-    height?: number;
-    duration?: number;
-    fps?: number;
-    error?: string;
-  }>;
-  onDetectLoops?: (minGap: number) => Promise<{
-    success: boolean;
-    startPoints?: Array<{
-      id: number;
-      time: number;
-      matches: Array<{ end: number; score: number }>;
-    }>;
-    error?: string;
-  }>;
-  onFindMatches?: (
-    referenceTime: number,
-    minGap: number
-  ) => Promise<{
-    success: boolean;
-    matches?: Array<{ time: number; score: number }>;
-    error?: string;
-  }>;
-  onFindBestStart?: (
-    searchRange: number,
-    minGap: number
-  ) => Promise<{
-    success: boolean;
-    startTime?: number;
-    endTime?: number;
-    score?: number;
-    error?: string;
-  }>;
-  onAnalyzeAudio?: () => Promise<{
-    success: boolean;
-    voiceStart?: number;
-    currentLoudness?: number;
-    suggestedNoiseReduction?: number;
-    error?: string;
-  }>;
-  onTranscribe?: () => Promise<{
-    success: boolean;
-    srtContent?: string;
-    segments?: Array<{
-      start: number;
-      end: number;
-      text: string;
-      words: Array<{ word: string; start: number; end: number }>;
-    }>;
-    error?: string;
-  }>;
 }
 
 /**
@@ -178,281 +95,6 @@ export function startGuiServer(options: GuiServerOptions): Promise<boolean> {
       res.sendFile(join(iconsDir, 'tv.ico'));
     });
 
-    app.get('/api/info', (_req, res) => {
-      res.json({
-        fileName: options.videoInfo.fileName,
-        filePath: options.videoInfo.filePath,
-        width: options.videoInfo.width,
-        height: options.videoInfo.height,
-        duration: options.videoInfo.duration,
-        fps: options.videoInfo.fps,
-        bitrate: options.videoInfo.bitrate,
-        fileSize: options.videoInfo.fileSize,
-        hasAudio: options.videoInfo.hasAudio,
-        defaults: options.defaults,
-        sparkAiKey:
-          process.env.SPARK_AI_API_KEY ||
-          process.env.NEXT_PUBLIC_SPARK_AI_API_KEY ||
-          (options.defaults as Record<string, unknown>)?.sparkAiKey ||
-          '',
-      });
-    });
-
-    // Stream video file for preview
-    app.get('/api/video', (_req, res) => {
-      const filePath = options.videoInfo.filePath;
-      res.sendFile(filePath, (err) => {
-        if (err) {
-          logToFile(`Video stream error: ${err.message}`);
-        }
-      });
-    });
-
-    app.post('/api/preview', async (req, res) => {
-      if (!options.onPreview) {
-        res.json({ success: false, error: 'Preview not supported' });
-        return;
-      }
-      try {
-        const result = await options.onPreview(req.body);
-        res.json(result);
-      } catch (err) {
-        res.json({
-          success: false,
-          error: (err as Error).message,
-        });
-      }
-    });
-
-    app.post('/api/process', async (req, res) => {
-      try {
-        const result = await options.onProcess(req.body);
-        processResult = result.success;
-        res.json(result);
-      } catch (err) {
-        processResult = false;
-        res.json({
-          success: false,
-          error: (err as Error).message,
-          logs: [{ type: 'error', message: (err as Error).message }],
-        });
-      }
-    });
-
-    app.get('/api/process-status', (_req, res) => {
-      res.json({ status: getProcessStatus() });
-    });
-
-    app.post('/api/load', async (req, res) => {
-      if (!options.onLoadVideo) {
-        res.json({ success: false, error: 'Load not supported' });
-        return;
-      }
-      try {
-        const result = await options.onLoadVideo(req.body);
-        if (result.success && result.filePath && result.fileName) {
-          options.videoInfo.filePath = result.filePath;
-          options.videoInfo.fileName = result.fileName;
-          options.videoInfo.width = result.width ?? options.videoInfo.width;
-          options.videoInfo.height = result.height ?? options.videoInfo.height;
-          options.videoInfo.duration = result.duration ?? options.videoInfo.duration;
-          options.videoInfo.fps = result.fps ?? options.videoInfo.fps;
-        }
-        res.json(result);
-      } catch (err) {
-        res.json({ success: false, error: (err as Error).message });
-      }
-    });
-
-    app.post('/api/detect-loops', async (req, res) => {
-      if (!options.onDetectLoops) {
-        res.json({ success: false, error: 'Loop detection not supported' });
-        return;
-      }
-      try {
-        const minGap = req.body.minGap || 5;
-        const result = await options.onDetectLoops(minGap);
-        res.json(result);
-      } catch (err) {
-        res.json({ success: false, error: (err as Error).message });
-      }
-    });
-
-    // Find frames from end of video matching a reference time
-    app.post('/api/find-matches', async (req, res) => {
-      if (!options.onFindMatches) {
-        res.json({ success: false, error: 'Match finding not supported' });
-        return;
-      }
-      try {
-        const referenceTime = req.body.referenceTime ?? 0;
-        const minGap = req.body.minGap ?? 3;
-        const result = await options.onFindMatches(referenceTime, minGap);
-        res.json(result);
-      } catch (err) {
-        res.json({ success: false, error: (err as Error).message });
-      }
-    });
-
-    // Find best loop starting point in a time range
-    app.post('/api/find-best-start', async (req, res) => {
-      if (!options.onFindBestStart) {
-        res.json({ success: false, error: 'Best start finding not supported' });
-        return;
-      }
-      try {
-        const searchRange = req.body.searchRange ?? 5;
-        const minGap = req.body.minGap ?? 3;
-        const result = await options.onFindBestStart(searchRange, minGap);
-        res.json(result);
-      } catch (err) {
-        res.json({ success: false, error: (err as Error).message });
-      }
-    });
-
-    app.post('/api/analyze-audio', async (_req, res) => {
-      if (!options.onAnalyzeAudio) {
-        res.json({ success: false, error: 'Audio analysis not supported' });
-        return;
-      }
-      try {
-        const result = await options.onAnalyzeAudio();
-        res.json(result);
-      } catch (err) {
-        res.json({ success: false, error: (err as Error).message });
-      }
-    });
-
-    app.post('/api/transcribe', async (_req, res) => {
-      if (!options.onTranscribe) {
-        res.json({ success: false, error: 'Transcription not supported' });
-        return;
-      }
-      try {
-        const result = await options.onTranscribe();
-        res.json(result);
-      } catch (err) {
-        res.json({ success: false, error: (err as Error).message });
-      }
-    });
-
-    // Upload file (audio/image) and return temp path
-    app.post('/api/upload', (req, res) => {
-      try {
-        const { fileName, data, type } = req.body;
-        if (!fileName || !data) {
-          res.json({ success: false, error: 'Missing file data' });
-          return;
-        }
-
-        // Sanitize filename to prevent path traversal
-        const safeName = basename(fileName).replace(/[^a-zA-Z0-9._-]/g, '_');
-        const ext = extname(safeName) || (type === 'audio' ? '.mp3' : '.png');
-        const tempPath = join(os.tmpdir(), `vidlet_${type}_${Date.now()}${ext}`);
-        const buffer = Buffer.from(data.split(',').pop() || data, 'base64');
-        fs.writeFileSync(tempPath, buffer);
-
-        logToFile(`Uploaded ${type} file: ${tempPath}`);
-        res.json({ success: true, path: tempPath });
-      } catch (err) {
-        res.json({ success: false, error: (err as Error).message });
-      }
-    });
-
-    app.post('/api/cancel', (_req, res) => {
-      processResult = false;
-      killFFmpegProcesses();
-      res.json({ ok: true });
-      shutdown();
-    });
-
-    app.post('/api/close', (_req, res) => {
-      killFFmpegProcesses();
-      res.json({ ok: true });
-      shutdown();
-    });
-
-    app.post('/api/open-url', (req, res) => {
-      const { url } = req.body;
-      if (!url || typeof url !== 'string') {
-        res.json({ success: false, error: 'Missing URL' });
-        return;
-      }
-      // Validate URL scheme to prevent command injection via PowerShell
-      let parsed: URL;
-      try {
-        parsed = new URL(url);
-      } catch {
-        res.json({ success: false, error: 'Invalid URL' });
-        return;
-      }
-      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-        res.json({ success: false, error: 'Only HTTP/HTTPS URLs are allowed' });
-        return;
-      }
-      // Use Start-Process with -ArgumentList to avoid string interpolation injection
-      spawn(
-        'powershell.exe',
-        ['-WindowStyle', 'Hidden', '-Command', 'Start-Process', parsed.href],
-        {
-          detached: true,
-          stdio: 'ignore',
-          windowsHide: true,
-        }
-      ).unref();
-      res.json({ success: true });
-    });
-
-    // Update caching progress (logged for debugging)
-    app.post('/api/progress', (req, res) => {
-      const { percent } = req.body;
-      if (typeof percent === 'number') {
-        logToFile(`Caching progress: ${percent}%`);
-      }
-      res.json({ ok: true });
-    });
-
-    // Save app settings
-    app.post('/api/save-settings', async (req, res) => {
-      try {
-        const { hotkeyPreset, frameSkip } = req.body;
-        const config = await loadToolsConfig();
-        let changed = false;
-
-        if (hotkeyPreset && typeof hotkeyPreset === 'string') {
-          (options.defaults as Record<string, unknown>).hotkeyPreset = hotkeyPreset;
-          config.app = {
-            ...config.app,
-            hotkeyPreset: hotkeyPreset as
-              | 'premiere'
-              | 'resolve'
-              | 'capcut'
-              | 'shotcut'
-              | 'descript'
-              | 'camtasia',
-          };
-          changed = true;
-        }
-
-        if (typeof frameSkip === 'number' && frameSkip >= 2 && frameSkip <= 6) {
-          (options.defaults as Record<string, unknown>).frameSkip = frameSkip;
-          config.app = { ...config.app, frameSkip };
-          changed = true;
-        }
-
-        if (changed) {
-          await saveToolsConfig(config);
-          logToFile(
-            `Settings saved: hotkeyPreset=${config.app.hotkeyPreset}, frameSkip=${config.app.frameSkip}`
-          );
-        }
-        res.json({ success: true });
-      } catch (err) {
-        logToFile(`Failed to save settings: ${(err as Error).message}`);
-        res.json({ success: false, error: (err as Error).message });
-      }
-    });
-
     function shutdown() {
       killFFmpegProcesses();
       setTimeout(() => {
@@ -461,9 +103,16 @@ export function startGuiServer(options: GuiServerOptions): Promise<boolean> {
       }, 100);
     }
 
+    registerApiRoutes(app, options, {
+      setResult: (success) => {
+        processResult = success;
+      },
+      shutdown,
+    });
+
     server = createServer(app);
-    // Set long timeout for processing requests (30 minutes)
-    server.timeout = 30 * 60 * 1000;
+    // Set long timeout for processing requests
+    server.timeout = IDLE_TIMEOUT_MS;
     server.listen(0, '127.0.0.1', () => {
       const addr = server?.address();
       if (typeof addr === 'object' && addr) {
@@ -476,15 +125,11 @@ export function startGuiServer(options: GuiServerOptions): Promise<boolean> {
         signalLoadingComplete(url);
         logToFile('Signaled HTA to open Edge');
 
-        // 30 minute timeout for long operations like compression
-        setTimeout(
-          () => {
-            if (processResult === null) {
-              shutdown();
-            }
-          },
-          30 * 60 * 1000
-        );
+        setTimeout(() => {
+          if (processResult === null) {
+            shutdown();
+          }
+        }, IDLE_TIMEOUT_MS);
       }
     });
 

@@ -1,0 +1,56 @@
+          <div class="opts opts-trim" id="opts-trim">
+            <div class="trim-header">
+              <div class="trim-times">
+                <span class="trim-time-badge" id="trim-start-badge">0:00</span>
+                <span class="trim-arrow">→</span>
+                <span class="trim-time-badge" id="trim-end-badge">0:00</span>
+              </div>
+              <div class="trim-actions">
+                <span id="match-info" class="match-info hidden"></span>
+                <button type="button" class="match-btn hidden" id="cycle-match-btn" onclick="cycleMatch()">Next</button>
+                <button type="button" class="find-btn hidden" id="find-match-btn" onclick="findMatchingFrames()">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                  Find Loop
+                </button>
+              </div>
+              <div class="trim-output">
+                <span class="trim-output-label">Output</span>
+                <span class="trim-output-value" id="trim-duration-badge">0.0s</span>
+              </div>
+            </div>
+            <div class="timeline-wrap" id="trim-controls">
+              <div class="timeline-ticks" id="timeline-ticks"></div>
+              <div class="timeline-viewport" id="timeline-viewport">
+                <div class="timeline" id="timeline">
+                  <div class="timeline-track"></div>
+                  <div class="timeline-dim-left" id="timeline-dim-left"></div>
+                  <div class="timeline-dim-right" id="timeline-dim-right"></div>
+                  <div class="timeline-range" id="timeline-range"></div>
+                  <div id="match-markers"></div>
+                  <div class="timeline-handle timeline-start" id="handle-start"></div>
+                  <div class="timeline-handle timeline-end" id="handle-end"></div>
+                  <div class="timeline-playhead" id="timeline-playhead"></div>
+                </div>
+              </div>
+              <div class="timeline-zoom-hint">Scroll to zoom · Drag to pan</div>
+            </div>
+            <div class="trim-loading hidden" id="trim-loading">
+              <dotlottie-player src="/bouncing-fruits.lottie" background="transparent" speed="1" style="width:80px;height:80px" loop autoplay></dotlottie-player>
+              <span>Finding loops...</span>
+            </div>
+            <input type="hidden" id="trim-start" value="0">
+            <input type="hidden" id="trim-end" value="10">
+            <input type="hidden" id="trim-accurate" value="false">
+            <div class="feature-unlock-hint" id="trim-unlock-hint">
+              <span class="hint-icon">💡</span>
+              <span class="hint-text">
+                <span id="hint-loop" class="hint-item">Under 60s → Find Loop</span>
+                <span class="hint-sep">•</span>
+                <span id="hint-gif" class="hint-item">Under 20s → Export GIF</span>
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+

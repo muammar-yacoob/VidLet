@@ -15,7 +15,10 @@ VidLet is a Windows video utility toolkit that adds right-click context menu opt
 - **FFmpeg**: System FFmpeg (installed via `apt install ffmpeg`)
 
 ### Core Components
-- `src/cli/` - CLI command handlers
+- `src/cli/` - CLI command handlers. `tool-defs.ts` is the registry (metadata +
+  CLI entry point + optional GUI); `gui-runner.ts` builds each tool's `runGUI`
+  from a small spec so no tool repeats the probe/defaults/logs plumbing;
+  `tools.ts` is the lookup surface.
 - `src/tools/` - Video processing tools (compress, trim, loop, etc.)
 - `src/lib/` - Shared utilities (FFmpeg wrapper, config, paths, GUI server)
 - `src/gui/` - HTML/CSS/JS for the GUI interface
@@ -55,8 +58,31 @@ VidLet is a Windows video utility toolkit that adds right-click context menu opt
 | `ffmpeg.ts` | `src/lib/` | FFmpeg wrapper (execute, analyze, extract frames) |
 | `vidlet-project.ts` | `src/lib/` | `.vidlet` format v1: zod schema (unknown fields preserved), parse/validate, media resolution (sha256 verify) |
 | `project-create.ts` | `src/lib/` | Build projects from .srt/.vtt/.txt/.md/QuickPeek-plan sources |
-| `gui-server.ts` | `src/lib/` | Express server for GUI with API endpoints |
+| `gui-server.ts` | `src/lib/` | Express server lifecycle for the GUI (static assets, listen, shutdown) |
+| `gui-api.ts` | `src/lib/` | The `GuiServerOptions` callback contract + every `/api/*` route |
+| `frames.ts` | `src/lib/` | Temp-dir scratch, downscaled frame extraction, pixel similarity |
 | `config.ts` | `src/lib/` | Zod-validated tool configuration |
+
+### GUI Assets
+
+`src/gui/vidlet.html` is a shell of `<!--#include partials/x.html -->` markers,
+expanded at build time by `scripts/assemble-html.mjs` (tsup `onSuccess`) into a
+single `dist/gui/vidlet.html`; `partials/` is a build input and is not shipped.
+Markers sit at column 0 and are replaced whole, so partials keep the exact
+indentation they have in the assembled page.
+
+Styles are split under `src/gui/css/app/` and linked in cascade order —
+`base → preview → options → timeline → player → portrait → overlays → modals`.
+Reordering the `<link>` tags changes the cascade.
+
+The app layer is `src/gui/js/app/` (`state.js` holds the shared state the other
+three mutate: `init.js`, `tools.js`, `process.js`), with `js/vidlet-app.js` as
+the single table of globals the markup's inline `onclick=` handlers call. The
+portrait editor follows the same shape: `portrait-state.js` owns the segment
+list and the redraw, with `portrait-crop.js`, `portrait-segments.js`,
+`portrait-timeline.js` and the `portrait-tool.js` facade on top. Script load
+order in `partials/scripts.html` matters — state before its consumers, facade
+last.
 
 ### Output Directory
 All processed videos are saved to a `VidLet` subdirectory next to the input file.
@@ -97,6 +123,21 @@ hashes, auto-opening the browser only when the URL fits the platform launcher (c
 chars on Windows/WSL). No delete/move tools by design; every write defaults to the `VidLet/`
 subdirectory and never overwrites an existing file (numbered `-1`, `-2`, ... via an atomic
 reserve-then-write, since a plain existsSync check races under concurrent tool calls).
+
+## Cost & Performance
+
+- `getVideoInfo` (`src/lib/ffmpeg.ts`) memoizes probes by path + mtime + size.
+  Chained tools (`autocleanup`, `demo`, `short`) and the GUI probe the same
+  file repeatedly; the key doubles as the invalidation.
+- `frames.ts` decodes each PNG once (`DecodedFrame`) instead of inside every
+  comparison — loop detection compares O(n²) pairs, so this cut ~10,000 PNG
+  decodes to ~120 on a 30s clip.
+- The GUI's Spark AI helper (`js/modules/ai-features.js`) asks for the
+  filename and the social caption in **one** round trip, and memoizes replies
+  per prompt in `sessionStorage`. Both are pure functions of the video
+  metadata, so re-processing the same file costs nothing.
+- whisper.cpp binaries/models and the dots-tts venv are already cached on disk
+  by `existsSync` guards — don't add a second layer.
 
 ## Code Rules
 

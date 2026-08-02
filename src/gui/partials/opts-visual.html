@@ -1,0 +1,220 @@
+          <div class="opts" id="opts-portrait">
+            <div class="portrait-header">
+              <div class="portrait-stats">
+                <div class="portrait-stat">
+                  <span class="stat-label">Segments</span>
+                  <span class="stat-value" id="portrait-segment-count">1</span>
+                </div>
+                <div class="portrait-stat">
+                  <span class="stat-label">Output</span>
+                  <span class="stat-value" id="portrait-total-duration">0.0s</span>
+                </div>
+                <div class="portrait-stat">
+                  <span class="stat-label">Crop</span>
+                  <span class="stat-value" id="portrait-crop-position">Center</span>
+                </div>
+              </div>
+              <div class="portrait-actions">
+                <button type="button" class="portrait-btn" id="portrait-auto-split" onclick="autoSplitSegments()" title="Auto-split into even segments">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+                  Auto Split
+                </button>
+                <button type="button" class="portrait-btn primary" id="portrait-split-btn" onclick="splitPortraitSegment()" title="Split at playhead (Ctrl+K)">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="2" x2="12" y2="22"/><polyline points="8 6 12 2 16 6"/><polyline points="8 18 12 22 16 18"/></svg>
+                  Split Here
+                </button>
+                <button type="button" class="portrait-btn danger" id="portrait-delete-btn" onclick="deleteSelectedSegment(false)" disabled title="Delete segment (keeps gap)">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                </button>
+              </div>
+            </div>
+            <div class="segment-timeline-wrap" id="segment-timeline-wrap">
+              <div class="segment-grid" id="segment-grid"></div>
+              <div class="segment-timeline-base" id="segment-timeline-base"></div>
+              <div class="segment-timeline" id="segment-timeline"></div>
+              <div class="segment-playhead" id="segment-playhead"></div>
+            </div>
+            <div class="portrait-hint">
+              <span class="hint-trim">Using trimmed range</span>
+              <span class="hint-sep">•</span>
+              <span class="hint-drag">Drag edges to adjust</span>
+              <span class="hint-sep">•</span>
+              <span class="hint-gap">Gaps = cut</span>
+            </div>
+            <div class="portrait-transition-row">
+              <label>Transition</label>
+              <select id="portrait-transition" onchange="updateTransitionUI()">
+                <option value="none">Cut</option>
+                <option value="fade" selected>Fade</option>
+                <option value="dissolve">Dissolve</option>
+              </select>
+              <input type="range" id="portrait-transition-duration" min="0.1" max="1.0" step="0.1" value="0.3" oninput="updateTransitionUI()">
+              <span id="portrait-transition-duration-val">0.3s</span>
+            </div>
+          </div>
+
+          <div class="opts" id="opts-filter">
+            <div class="adjust-panel">
+              <div class="adjust-section">
+                <div class="adjust-header">
+                  <span>Adjustments</span>
+                  <button class="reset-btn" onclick="resetColorFilters()" title="Reset">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                  </button>
+                </div>
+                <div class="adjust-sliders">
+                  <div class="adjust-row">
+                    <label>Bright</label>
+                    <input type="range" id="filter-brightness" min="-100" max="100" value="0" oninput="updateFilterPreview()">
+                    <span id="filter-brightness-val">0</span>
+                  </div>
+                  <div class="adjust-row">
+                    <label>Contrast</label>
+                    <input type="range" id="filter-contrast" min="-100" max="100" value="0" oninput="updateFilterPreview()">
+                    <span id="filter-contrast-val">0</span>
+                  </div>
+                  <div class="adjust-row">
+                    <label>Saturate</label>
+                    <input type="range" id="filter-saturation" min="-100" max="100" value="0" oninput="updateFilterPreview()">
+                    <span id="filter-saturation-val">0</span>
+                  </div>
+                </div>
+              </div>
+              <div class="adjust-section">
+                <div class="adjust-header">
+                  <span>Effects</span>
+                  <button class="reset-btn" onclick="resetEffectFilters()" title="Reset">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                  </button>
+                </div>
+                <div class="effect-toggles">
+                  <button class="effect-btn" id="effect-blur" onclick="toggleEffect('blur')">
+                    <span class="effect-icon">◐</span>Blur
+                  </button>
+                  <button class="effect-btn" id="effect-sharpen" onclick="toggleEffect('sharpen')">
+                    <span class="effect-icon">◆</span>Sharpen
+                  </button>
+                  <button class="effect-btn" id="effect-vignette" onclick="toggleEffect('vignette')">
+                    <span class="effect-icon">◯</span>Vignette
+                  </button>
+                  <button class="effect-btn" id="effect-bloom" onclick="toggleEffect('bloom')">
+                    <span class="effect-icon">✦</span>Bloom
+                  </button>
+                </div>
+                <div class="effect-settings hidden" id="settings-blur">
+                  <div class="effect-label">Blur Amount</div>
+                  <div class="adjust-row">
+                    <input type="range" id="filter-blur" min="0" max="10" value="0" step="0.5" oninput="updateFilterPreview()">
+                    <span id="filter-blur-val">0</span>
+                  </div>
+                </div>
+                <div class="effect-settings hidden" id="settings-vignette">
+                  <div class="effect-label">Vignette (render only)</div>
+                  <div class="adjust-row">
+                    <input type="range" id="filter-vignette-intensity" min="0" max="100" value="0" oninput="updateFilterPreview()">
+                    <span id="filter-vignette-val">0</span>
+                  </div>
+                </div>
+                <div class="effect-settings hidden" id="settings-bloom">
+                  <div class="effect-label">Bloom (render only)</div>
+                  <div class="adjust-row">
+                    <input type="range" id="filter-bloom-intensity" min="0" max="100" value="0" oninput="updateFilterPreview()">
+                    <span id="filter-bloom-val">0</span>
+                  </div>
+                </div>
+              </div>
+              <div class="adjust-section">
+                <div class="adjust-header"><span>Filter</span></div>
+                <div class="filter-presets">
+                  <button class="filter-preset active" data-filter="none" onclick="selectFilterPreset('none')">None</button>
+                  <button class="filter-preset" data-filter="grayscale" onclick="selectFilterPreset('grayscale')">B&W</button>
+                  <button class="filter-preset" data-filter="sepia" onclick="selectFilterPreset('sepia')">Sepia</button>
+                  <button class="filter-preset" data-filter="vintage" onclick="selectFilterPreset('vintage')">Vintage</button>
+                  <button class="filter-preset" data-filter="cool" onclick="selectFilterPreset('cool')">Cool</button>
+                  <button class="filter-preset" data-filter="warm" onclick="selectFilterPreset('warm')">Warm</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="opts" id="opts-caption">
+            <div class="caption-panel">
+              <!-- Transcription source toggle -->
+              <div class="caption-row">
+                <label>Source</label>
+                <div class="seg-btns" id="captionSource">
+                  <button type="button" data-val="auto" class="active">Auto-Transcribe</button>
+                  <button type="button" data-val="file">Upload SRT</button>
+                </div>
+              </div>
+
+              <!-- Auto-transcribe controls -->
+              <div id="captionAutoPanel">
+                <button class="btn-secondary caption-transcribe-btn" id="transcribeBtn">
+                  <span id="transcribeBtnText">Transcribe Audio</span>
+                </button>
+              </div>
+
+              <!-- File upload (hidden by default) -->
+              <div class="hidden" id="captionFilePanel">
+                <div class="drop-zone" id="srtDropZone" onclick="$('srtFileInput').click()">
+                  <span id="srtFileName">Drop .srt file or click to browse</span>
+                  <input type="file" id="srtFileInput" accept=".srt" style="display:none" onchange="VidLetCaptionTool.handleFile(this)">
+                </div>
+              </div>
+
+              <!-- Style presets -->
+              <div class="caption-row">
+                <label>Style</label>
+                <div class="seg-btns" id="captionStyle">
+                  <button type="button" data-val="classic">Classic</button>
+                  <button type="button" data-val="hormozi" class="active">Hormozi</button>
+                  <button type="button" data-val="karaoke">Karaoke</button>
+                  <button type="button" data-val="minimal">Minimal</button>
+                </div>
+              </div>
+
+              <!-- Highlight color (for hormozi/karaoke) -->
+              <div class="caption-row" id="captionColorRow">
+                <label>Color</label>
+                <div class="caption-color-picker" id="captionColorPicker">
+                  <button class="color-swatch active" data-color="yellow" style="background:#FFE500" title="Yellow"></button>
+                  <button class="color-swatch" data-color="cyan" style="background:#00E5FF" title="Cyan"></button>
+                  <button class="color-swatch" data-color="red" style="background:#FF4444" title="Red"></button>
+                  <button class="color-swatch" data-color="green" style="background:#44FF44" title="Green"></button>
+                  <button class="color-swatch" data-color="white" style="background:#FFFFFF; border:1px solid var(--brd)" title="White"></button>
+                </div>
+              </div>
+
+              <!-- Position -->
+              <div class="caption-row">
+                <label>Position</label>
+                <div class="seg-btns caption-pos-btns" id="captionPosition">
+                  <button type="button" data-val="top">Top</button>
+                  <button type="button" data-val="center">Center</button>
+                  <button type="button" data-val="bottom" class="active">Bottom</button>
+                </div>
+              </div>
+
+              <!-- Font size -->
+              <div class="caption-row">
+                <label>Size</label>
+                <div class="seg-btns caption-size-btns" id="captionSize">
+                  <button type="button" data-val="36">S</button>
+                  <button type="button" data-val="48" class="active">M</button>
+                  <button type="button" data-val="64">L</button>
+                </div>
+              </div>
+
+              <!-- Status -->
+              <div class="caption-info">
+                <span id="captionStatus">Ready</span>
+              </div>
+            </div>
+            <input type="hidden" id="caption-srt" value="">
+            <input type="hidden" id="caption-style" value="hormozi">
+            <input type="hidden" id="caption-color" value="yellow">
+            <input type="hidden" id="caption-position" value="bottom">
+            <input type="hidden" id="caption-size" value="48">
+          </div>
+

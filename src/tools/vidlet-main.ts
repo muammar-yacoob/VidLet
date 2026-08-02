@@ -8,26 +8,10 @@ import { getToolConfig } from '../lib/config.js';
 import { getVideoInfo } from '../lib/ffmpeg.js';
 import { getVideoInfoForGui, startGuiServer } from '../lib/gui-server.js';
 import { logToFile } from '../lib/logger.js';
-import { addAudio, extractAudio } from './audio.js';
-import { autoCleanup } from './autocleanup.js';
-import { caption } from './caption.js';
-import { analyzeVoice, cleanVoice, ensureDeepFilter } from './cleanvoice.js';
-import { compress } from './compress.js';
-import { demo } from './demo.js';
-import { filter } from './filter.js';
-import { jumpcut } from './jumpcut.js';
-import { findAllLoopPoints, findBestLoopStart, findMatchesFromEnd } from './loop.js';
-import { mkv2mp4 } from './mkv2mp4.js';
-import { removeSilence } from './removesilence.js';
-import { short } from './short.js';
-import { type PortraitSegment, portrait, portraitMultiSegment } from './shorts.js';
-import { shrink } from './shrink.js';
-import { thumb } from './thumb.js';
-import { togif } from './togif.js';
-import { trim, trimAccurate } from './trim.js';
-import { resolveCloneEngine, voiceover } from './voiceover.js';
-
 import { setProcessStatus } from '../lib/process-status.js';
+import { analyzeVoice } from './cleanvoice.js';
+import { findAllLoopPoints, findBestLoopStart, findMatchesFromEnd } from './loop.js';
+import { type ToolOptions, runTool } from './vidlet-run.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -54,441 +38,21 @@ export const config = {
   description: 'Video utility toolkit',
 };
 
-/** Tool-specific options interface */
-interface ToolOptions {
-  tool: string;
-  inputPath?: string; // Custom input path (used for chained workflows)
-  // Compress options
-  bitrate?: number;
-  preset?: string;
-  codec?: 'h264' | 'hevc';
-  // ToGIF options
-  fps?: number;
-  width?: number;
-  dither?: string;
-  // MKV2MP4 options
-  copyStreams?: boolean;
-  crf?: number;
-  // Shrink options
-  targetDuration?: number;
-  // Thumb options
-  imagePath?: string;
-  thumbTimestamp?: number;
-  // Trim options
-  trimStart?: number;
-  trimEnd?: number;
-  accurate?: boolean;
-  // Portrait options
-  mode?: 'crop' | 'blur';
-  cropX?: number;
-  resolution?: number;
-  segments?: PortraitSegment[];
-  transition?: 'none' | 'fade' | 'dissolve';
-  transitionDuration?: number;
-  // Audio options
-  audioPath?: string;
-  audioVolume?: number;
-  audioMix?: boolean;
-  // Extract audio options
-  audioFormat?: 'mp3' | 'aac' | 'wav' | 'flac';
-  audioBitrate?: number;
-  // Clean voice options
-  noiseReduction?: number;
-  targetLoudness?: number;
-  noiseSampleStart?: number;
-  noiseSampleEnd?: number;
-  // Filter options
-  filterBrightness?: number;
-  filterContrast?: number;
-  filterSaturation?: number;
-  filterGrayscale?: boolean;
-  filterSepia?: boolean;
-  filterBlur?: number;
-  filterSharpen?: boolean;
-  filterVignette?: boolean;
-  // Caption options
-  srtContent?: string;
-  captionFontSize?: number;
-  captionPosition?: 'bottom' | 'center' | 'top';
-  captionStyle?: 'classic' | 'hormozi' | 'karaoke' | 'minimal';
-  captionColor?: string;
-  captionAutoTranscribe?: boolean;
-  captionWhisperModel?: 'tiny.en' | 'base.en' | 'small.en';
-  // Jump cut options
-  jumpcutPace?: 'tight' | 'normal' | 'loose';
-  jumpcutZoom?: number;
-  // Remove silence options
-  minSilenceDuration?: number;
-  silenceThreshold?: number;
-  // Auto cleanup options
-  skipContrast?: boolean;
-  cleanupContrast?: number;
-  // AI Short options
-  maxDuration?: number;
-  captions?: boolean;
-  // Voiceover options
-  text?: string;
-  language?: string;
-  gender?: 'female' | 'male';
-  cloneRef?: string;
-  cloneEngine?: string;
-  // Demo options
-  about?: string;
-  makeShort?: boolean;
-}
-
-/** Process result */
-interface ProcessResult {
-  success: boolean;
-  output?: string;
-  error?: string;
-  logs: Array<{ type: string; message: string }>;
-}
-
 /**
- * Run the selected tool with options
+ * Run a GUI callback, turning a throw into the `{ success: false, error }`
+ * reply the pages expect — they parse every response as JSON, so a rejection
+ * must never reach the wire.
  */
-async function runTool(input: string, opts: ToolOptions): Promise<ProcessResult> {
-  const logs: Array<{ type: string; message: string }> = [];
-  const toolId = opts.tool;
-
-  // Use custom input path if provided (for chained workflows)
-  const actualInput = opts.inputPath || input;
-
-  logToFile(`VidLet: Running tool ${toolId} on ${actualInput}`);
-  logToFile(`VidLet: Options: ${JSON.stringify(opts)}`);
-
+async function attempt<T extends object>(
+  label: string,
+  work: () => Promise<T>
+): Promise<(T & { success: true }) | { success: false; error: string }> {
   try {
-    let output: string;
-
-    switch (toolId) {
-      case 'compress': {
-        logs.push({ type: 'info', message: 'Starting compression...' });
-        output = await compress({
-          input: actualInput,
-          bitrate: opts.bitrate,
-          preset: opts.preset as
-            | 'ultrafast'
-            | 'superfast'
-            | 'veryfast'
-            | 'faster'
-            | 'fast'
-            | 'medium'
-            | 'slow'
-            | 'slower'
-            | 'veryslow'
-            | undefined,
-          codec: opts.codec,
-        });
-        logs.push({ type: 'success', message: 'Compression complete!' });
-        break;
-      }
-
-      case 'togif': {
-        logs.push({ type: 'info', message: 'Creating optimized GIF...' });
-        output = await togif({
-          input: actualInput,
-          fps: opts.fps,
-          width: opts.width,
-          dither: opts.dither as
-            | 'none'
-            | 'floyd_steinberg'
-            | 'sierra2'
-            | 'sierra2_4a'
-            | 'bayer'
-            | undefined,
-        });
-        logs.push({ type: 'success', message: 'GIF created!' });
-        break;
-      }
-
-      case 'mkv2mp4': {
-        logs.push({ type: 'info', message: 'Converting MKV to MP4...' });
-        output = await mkv2mp4({
-          input: actualInput,
-          copyStreams: opts.copyStreams,
-          crf: opts.crf,
-        });
-        logs.push({ type: 'success', message: 'Conversion complete!' });
-        break;
-      }
-
-      case 'shrink': {
-        logs.push({ type: 'info', message: 'Shrinking video...' });
-        output = await shrink({
-          input: actualInput,
-          targetDuration: opts.targetDuration,
-        });
-        logs.push({ type: 'success', message: 'Video shrunk!' });
-        break;
-      }
-
-      case 'thumb': {
-        if (!opts.imagePath && opts.thumbTimestamp === undefined) {
-          throw new Error('No image or frame timestamp provided for thumbnail');
-        }
-        logs.push({ type: 'info', message: 'Embedding thumbnail...' });
-        output = await thumb({
-          input: actualInput,
-          image: opts.imagePath,
-          timestamp: opts.thumbTimestamp,
-        });
-        logs.push({ type: 'success', message: 'Thumbnail set!' });
-        break;
-      }
-
-      case 'trim': {
-        if (opts.trimStart === undefined || opts.trimEnd === undefined) {
-          throw new Error('Start and end times are required for trimming');
-        }
-        const isAccurate = opts.accurate ?? false;
-        logs.push({
-          type: 'info',
-          message: isAccurate ? 'Trimming with re-encoding...' : 'Trimming video...',
-        });
-        if (isAccurate) {
-          output = await trimAccurate({
-            input: actualInput,
-            start: opts.trimStart,
-            end: opts.trimEnd,
-          });
-        } else {
-          output = await trim({
-            input: actualInput,
-            start: opts.trimStart,
-            end: opts.trimEnd,
-          });
-        }
-        logs.push({ type: 'success', message: 'Video trimmed!' });
-        break;
-      }
-
-      case 'portrait': {
-        logs.push({ type: 'info', message: 'Creating portrait version...' });
-        // Use multi-segment processing if segments are provided with more than one segment
-        if (opts.segments && opts.segments.length > 1) {
-          output = await portraitMultiSegment({
-            input: actualInput,
-            segments: opts.segments,
-            resolution: opts.resolution || 1080,
-            transition: opts.transition || 'none',
-            transitionDuration: opts.transitionDuration || 0.3,
-          });
-        } else {
-          // Single segment or no segments - use regular portrait
-          const cropX = opts.segments?.[0]?.cropX ?? opts.cropX ?? 0.5;
-          output = await portrait({
-            input: actualInput,
-            mode: opts.mode || 'crop',
-            cropX,
-            resolution: opts.resolution || 1080,
-          });
-        }
-        logs.push({ type: 'success', message: 'Portrait created!' });
-        break;
-      }
-
-      case 'audio': {
-        if (!opts.audioPath) {
-          throw new Error('No audio file provided');
-        }
-        logs.push({ type: 'info', message: 'Adding audio...' });
-        output = await addAudio({
-          input: actualInput,
-          audio: opts.audioPath,
-          volume: opts.audioVolume ?? 0.5,
-          mix: opts.audioMix ?? true,
-        });
-        logs.push({ type: 'success', message: 'Audio added!' });
-        break;
-      }
-
-      case 'filter': {
-        logs.push({ type: 'info', message: 'Applying filters...' });
-        output = await filter({
-          input: actualInput,
-          brightness: opts.filterBrightness,
-          contrast: opts.filterContrast,
-          saturation: opts.filterSaturation,
-          grayscale: opts.filterGrayscale,
-          sepia: opts.filterSepia,
-          blur: opts.filterBlur,
-          sharpen: opts.filterSharpen,
-          vignette: opts.filterVignette,
-        });
-        logs.push({ type: 'success', message: 'Filters applied!' });
-        break;
-      }
-
-      case 'caption': {
-        if (!opts.srtContent && !opts.captionAutoTranscribe) {
-          throw new Error('No subtitle source: provide SRT content or enable auto-transcribe');
-        }
-        logs.push({
-          type: 'info',
-          message: opts.captionAutoTranscribe
-            ? 'Transcribing and adding captions...'
-            : 'Adding captions...',
-        });
-        output = await caption({
-          input: actualInput,
-          srtContent: opts.srtContent,
-          autoTranscribe: opts.captionAutoTranscribe,
-          whisperModel: opts.captionWhisperModel,
-          style: opts.captionStyle,
-          highlightColor: opts.captionColor,
-          fontSize: opts.captionFontSize,
-          position: opts.captionPosition,
-          onProgress: (stage) => {
-            setProcessStatus(stage);
-          },
-        });
-        setProcessStatus('');
-        logs.push({ type: 'success', message: 'Captions added!' });
-        break;
-      }
-
-      case 'jumpcut': {
-        logs.push({ type: 'info', message: 'Creating jump cuts...' });
-        output = await jumpcut({
-          input: actualInput,
-          pace: opts.jumpcutPace,
-          zoom: opts.jumpcutZoom,
-          onProgress: (stage) => {
-            setProcessStatus(stage);
-          },
-        });
-        setProcessStatus('');
-        logs.push({ type: 'success', message: 'Jump cuts complete!' });
-        break;
-      }
-
-      case 'short': {
-        logs.push({ type: 'info', message: 'Creating AI Short...' });
-        output = await short({
-          input: actualInput,
-          maxDuration: opts.maxDuration,
-          captions: opts.captions,
-          onProgress: (stage) => {
-            setProcessStatus(stage);
-          },
-        });
-        setProcessStatus('');
-        logs.push({
-          type: 'success',
-          message: 'AI Short ready! Crops/times editable in the .segments.json beside it.',
-        });
-        break;
-      }
-
-      case 'demo': {
-        logs.push({ type: 'info', message: 'Creating AI demo (trim + narrate + short)...' });
-        output = await demo({
-          input: actualInput,
-          about: opts.about,
-          gender: opts.gender,
-          cloneRef: opts.cloneRef,
-          short: opts.makeShort,
-          captions: opts.captions,
-          onProgress: (stage) => {
-            setProcessStatus(stage);
-          },
-        });
-        setProcessStatus('');
-        logs.push({
-          type: 'success',
-          message: 'Demo ready! Script saved beside it - edit + re-voice any time.',
-        });
-        break;
-      }
-
-      case 'voiceover': {
-        if (!opts.text?.trim()) throw new Error('Narration script is empty');
-        logs.push({ type: 'info', message: 'Generating voiceover...' });
-        output = await voiceover({
-          input: opts.text,
-          video: actualInput,
-          language: opts.language,
-          gender: opts.gender,
-          cloneRef: opts.cloneRef,
-          cloneEngine: resolveCloneEngine(opts.cloneEngine),
-          onProgress: (stage) => {
-            setProcessStatus(stage);
-          },
-        });
-        setProcessStatus('');
-        logs.push({ type: 'success', message: 'Voiceover mixed in!' });
-        break;
-      }
-
-      case 'cleanvoice': {
-        logs.push({ type: 'info', message: 'Cleaning voice audio...' });
-        await ensureDeepFilter().catch(() => {});
-        output = await cleanVoice({
-          input: actualInput,
-          noiseReduction: opts.noiseReduction,
-          targetLoudness: opts.targetLoudness,
-          noiseSampleStart: opts.noiseSampleStart,
-          noiseSampleEnd: opts.noiseSampleEnd,
-          onProgress: (stage) => {
-            setProcessStatus(stage);
-          },
-        });
-        setProcessStatus('');
-        logs.push({ type: 'success', message: 'Voice cleaned!' });
-        break;
-      }
-
-      case 'extractaudio': {
-        logs.push({ type: 'info', message: 'Extracting audio...' });
-        output = await extractAudio({
-          input: actualInput,
-          format: opts.audioFormat ?? 'mp3',
-          bitrate: opts.audioBitrate ?? 192,
-        });
-        logs.push({ type: 'success', message: 'Audio extracted!' });
-        break;
-      }
-
-      case 'removesilence': {
-        logs.push({ type: 'info', message: 'Removing silent segments...' });
-        output = await removeSilence({
-          input: actualInput,
-          minSilenceDuration: opts.minSilenceDuration,
-          silenceThreshold: opts.silenceThreshold,
-        });
-        logs.push({ type: 'success', message: 'Silence removed!' });
-        break;
-      }
-
-      case 'autocleanup': {
-        logs.push({ type: 'info', message: 'Running auto cleanup pipeline...' });
-        output = await autoCleanup({
-          input: actualInput,
-          noiseReduction: opts.noiseReduction,
-          minSilenceDuration: opts.minSilenceDuration,
-          contrast: opts.cleanupContrast,
-          skipContrast: opts.skipContrast,
-          onProgress: (stage) => {
-            setProcessStatus(stage);
-          },
-        });
-        setProcessStatus('');
-        logs.push({ type: 'success', message: 'Auto cleanup complete!' });
-        break;
-      }
-
-      default:
-        throw new Error(`Unknown tool: ${toolId}`);
-    }
-
-    logToFile(`VidLet: Tool ${toolId} completed successfully. Output: ${output}`);
-    return { success: true, output, logs };
+    return { ...(await work()), success: true };
   } catch (err) {
-    const errorMsg = (err as Error).message;
-    logToFile(`VidLet: Tool ${toolId} failed: ${errorMsg}`);
-    logs.push({ type: 'error', message: errorMsg });
-    return { success: false, error: errorMsg, logs };
+    const error = (err as Error).message;
+    logToFile(`VidLet: ${label} failed: ${error}`);
+    return { success: false, error };
   }
 }
 
@@ -502,8 +66,7 @@ export async function runGUI(input: string): Promise<boolean> {
   const ext = path.extname(input).toLowerCase();
 
   // Check if video is landscape (16:9 or wider, aspect ratio >= 1.7)
-  const aspectRatio = videoInfo.width / videoInfo.height;
-  const isLandscape = aspectRatio >= 1.7;
+  const isLandscape = videoInfo.width / videoInfo.height >= 1.7;
 
   // Load defaults for all tools
   const appConfig = await getToolConfig('app');
@@ -536,8 +99,8 @@ export async function runGUI(input: string): Promise<boolean> {
     onProcess: async (opts) => {
       return runTool(currentInput, opts as unknown as ToolOptions);
     },
-    onLoadVideo: async (data: { filePath: string }) => {
-      try {
+    onLoadVideo: (data: { filePath: string }) =>
+      attempt('Load video', async () => {
         logToFile(`VidLet: Loading new video: ${data.filePath}`);
         const newInfo = await getVideoInfo(data.filePath);
         const stats = fs.statSync(data.filePath);
@@ -555,35 +118,17 @@ export async function runGUI(input: string): Promise<boolean> {
         logToFile(
           `VidLet: Loaded ${videoInfo.fileName} (${videoInfo.width}x${videoInfo.height}, ${videoInfo.duration}s)`
         );
-        return {
-          success: true,
-          filePath: data.filePath,
-          fileName: videoInfo.fileName,
-          width: videoInfo.width,
-          height: videoInfo.height,
-          duration: videoInfo.duration,
-          fps: videoInfo.fps,
-          fileSize: videoInfo.fileSize,
-          hasAudio: videoInfo.hasAudio,
-        };
-      } catch (err) {
-        logToFile(`VidLet: Failed to load video: ${(err as Error).message}`);
-        return { success: false, error: (err as Error).message };
-      }
-    },
-    onDetectLoops: async (minGap: number) => {
-      try {
+        return { ...videoInfo };
+      }),
+    onDetectLoops: (minGap: number) =>
+      attempt('Loop detection', async () => {
         logToFile(`VidLet: Detecting loop points with minGap=${minGap}s`);
         const startPoints = await findAllLoopPoints(currentInput, videoInfo.duration, minGap);
         logToFile(`VidLet: Found ${startPoints.length} start points`);
-        return { success: true, startPoints };
-      } catch (err) {
-        logToFile(`VidLet: Loop detection failed: ${(err as Error).message}`);
-        return { success: false, error: (err as Error).message };
-      }
-    },
-    onFindMatches: async (referenceTime: number, minGap: number) => {
-      try {
+        return { startPoints };
+      }),
+    onFindMatches: (referenceTime: number, minGap: number) =>
+      attempt('Match finding', async () => {
         logToFile(`VidLet: Finding matches from end, ref=${referenceTime}s, minGap=${minGap}s`);
         const matches = await findMatchesFromEnd(
           currentInput,
@@ -592,14 +137,10 @@ export async function runGUI(input: string): Promise<boolean> {
           minGap
         );
         logToFile(`VidLet: Found ${matches.length} matches from end`);
-        return { success: true, matches };
-      } catch (err) {
-        logToFile(`VidLet: Match finding failed: ${(err as Error).message}`);
-        return { success: false, error: (err as Error).message };
-      }
-    },
-    onFindBestStart: async (searchRange: number, minGap: number) => {
-      try {
+        return { matches };
+      }),
+    onFindBestStart: (searchRange: number, minGap: number) =>
+      attempt('Best start finding', async () => {
         logToFile(`VidLet: Finding best loop start in first ${searchRange}s`);
         const result = await findBestLoopStart(
           currentInput,
@@ -607,57 +148,46 @@ export async function runGUI(input: string): Promise<boolean> {
           searchRange,
           minGap
         );
-        if (result) {
-          logToFile(
-            `VidLet: Best start at ${result.startTime.toFixed(2)}s -> ${result.endTime.toFixed(2)}s`
-          );
-          return { success: true, ...result };
+        if (!result) {
+          return { startTime: 0, endTime: 0, score: 0 };
         }
-        return { success: true, startTime: 0, endTime: 0, score: 0 };
-      } catch (err) {
-        logToFile(`VidLet: Best start finding failed: ${(err as Error).message}`);
-        return { success: false, error: (err as Error).message };
-      }
-    },
-    onAnalyzeAudio: async () => {
-      try {
+        logToFile(
+          `VidLet: Best start at ${result.startTime.toFixed(2)}s -> ${result.endTime.toFixed(2)}s`
+        );
+        return result;
+      }),
+    onAnalyzeAudio: () =>
+      attempt('Audio analysis', async () => {
         logToFile('VidLet: Analyzing voice audio...');
         const result = await analyzeVoice(currentInput);
         logToFile(
           `VidLet: Analysis: voiceStart=${result.voiceStart.toFixed(2)}s, loudness=${result.currentLoudness.toFixed(1)} LUFS, suggestedNR=${result.suggestedNoiseReduction}dB`
         );
-        return { success: true, ...result };
-      } catch (err) {
-        logToFile(`VidLet: Audio analysis failed: ${(err as Error).message}`);
-        return { success: false, error: (err as Error).message };
-      }
-    },
-    onTranscribe: async () => {
-      try {
+        return result;
+      }),
+    onTranscribe: () =>
+      attempt('Transcription', async () => {
         logToFile('VidLet: Starting transcription...');
         const { transcribe, segmentsToSrt, ensureWhisper, ensureWhisperModel } = await import(
           '../lib/whisper.js'
         );
-        setProcessStatus('Downloading whisper...');
-        const hasWhisper = await ensureWhisper();
-        if (!hasWhisper) {
-          throw new Error('Could not download whisper.cpp binary for this platform');
+        try {
+          setProcessStatus('Downloading whisper...');
+          const hasWhisper = await ensureWhisper();
+          if (!hasWhisper) {
+            throw new Error('Could not download whisper.cpp binary for this platform');
+          }
+          setProcessStatus('Downloading model...');
+          await ensureWhisperModel();
+          setProcessStatus('Transcribing audio...');
+          const result = await transcribe(currentInput, {
+            onProgress: (stage) => setProcessStatus(stage),
+          });
+          logToFile(`VidLet: Transcribed ${result.segments.length} segments`);
+          return { segments: result.segments, srtContent: segmentsToSrt(result.segments) };
+        } finally {
+          setProcessStatus('');
         }
-        setProcessStatus('Downloading model...');
-        await ensureWhisperModel();
-        setProcessStatus('Transcribing audio...');
-        const result = await transcribe(currentInput, {
-          onProgress: (stage) => setProcessStatus(stage),
-        });
-        setProcessStatus('');
-        const srtContent = segmentsToSrt(result.segments);
-        logToFile(`VidLet: Transcribed ${result.segments.length} segments`);
-        return { success: true, segments: result.segments, srtContent };
-      } catch (err) {
-        setProcessStatus('');
-        logToFile(`VidLet: Transcription failed: ${(err as Error).message}`);
-        return { success: false, error: (err as Error).message };
-      }
-    },
+      }),
   });
 }

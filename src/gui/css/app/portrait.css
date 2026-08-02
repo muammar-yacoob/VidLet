@@ -1,0 +1,381 @@
+/* Portrait crop overlay and the multi-segment timeline. */
+
+/* Portrait Crop Overlay */
+.crop-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  display: none;
+}
+.crop-overlay.active {
+  display: block;
+  pointer-events: auto;
+}
+.crop-side {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+}
+.crop-left {
+  left: 0;
+}
+.crop-right {
+  right: 0;
+}
+.crop-overlay.blur-mode .crop-side {
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  background: rgba(0, 0, 0, 0.3);
+}
+.crop-window {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: transparent;
+  border: 2px solid var(--acc);
+  cursor: ew-resize;
+  z-index: 1;
+}
+.crop-window::before {
+  content: "9:16";
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  color: var(--acc);
+  background: rgba(0, 0, 0, 0.7);
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+.crop-handle {
+  position: absolute;
+  top: 50%;
+  width: 10px;
+  height: 36px;
+  background: var(--acc);
+  border-radius: 3px;
+  transform: translateY(-50%);
+  cursor: ew-resize;
+  z-index: 2;
+}
+.crop-handle-l {
+  left: -5px;
+}
+.crop-handle-r {
+  right: -5px;
+}
+
+/* Portrait Segment Timeline */
+.portrait-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  gap: 12px;
+}
+.portrait-stats {
+  display: flex;
+  gap: 16px;
+}
+.portrait-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.portrait-stat .stat-label {
+  font-size: 9px;
+  color: var(--txt3);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.portrait-stat .stat-value {
+  font-size: 12px;
+  color: var(--acc);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.portrait-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+.portrait-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 10px;
+  background: var(--bg2);
+  border: 1px solid var(--brd);
+  border-radius: 5px;
+  color: var(--txt2);
+  font-size: 10px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all .15s;
+}
+.portrait-btn:hover {
+  border-color: var(--txt3);
+  color: var(--txt);
+  background: var(--bg3);
+}
+.portrait-btn.primary {
+  border-color: var(--acc);
+  color: var(--acc);
+  background: rgba(168, 85, 247, 0.1);
+}
+.portrait-btn.primary:hover {
+  background: var(--acc);
+  color: #fff;
+}
+.portrait-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+.portrait-btn.danger:hover:not(:disabled) {
+  border-color: #ef4444;
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+}
+.portrait-btn.accent {
+  border-color: #3b82f6;
+  color: #3b82f6;
+  background: rgba(59, 130, 246, 0.1);
+}
+.portrait-btn.accent:hover {
+  background: #3b82f6;
+  color: #fff;
+}
+.portrait-btn svg {
+  width: 14px;
+  height: 14px;
+}
+.portrait-btn svg.spin {
+  animation: spin 1s linear infinite;
+}
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Timeline with base track */
+.segment-timeline-wrap {
+  position: relative;
+  height: 48px;
+  background: #000;
+  border-radius: 8px;
+  cursor: pointer;
+  border: 1px solid var(--brd);
+  overflow: hidden;
+}
+.segment-timeline-base {
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: 8px;
+  right: 8px;
+  border-radius: 4px;
+}
+.segment-grid {
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: 8px;
+  right: 8px;
+  pointer-events: none;
+  overflow: hidden;
+}
+.segment-grid-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.1);
+}
+.segment-grid-line.major {
+  background: rgba(255, 255, 255, 0.25);
+}
+.keyframe-marker {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  width: 4px;
+  background: #3b82f6;
+  border-radius: 2px;
+  cursor: pointer;
+  transform: translateX(-50%);
+  z-index: 10;
+  transition: transform .1s;
+}
+.keyframe-marker:hover {
+  transform: translateX(-50%) scaleY(1.2);
+  background: #60a5fa;
+}
+.segment-timeline {
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: 8px;
+  right: 8px;
+}
+.portrait-segment {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 4px;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: all .12s;
+  min-width: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.9);
+  font-weight: 600;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  box-sizing: border-box;
+}
+.portrait-segment:hover {
+  filter: brightness(1.15);
+  transform: scaleY(1.05);
+}
+.portrait-segment.selected {
+  box-shadow: 0 0 0 2px #fff, 0 0 12px rgba(255, 255, 255, 0.5);
+  z-index: 5;
+}
+.portrait-segment .segment-label {
+  pointer-events: none;
+}
+.segment-gap {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 3px,
+    rgba(255, 255, 255, 0.03) 3px,
+    rgba(255, 255, 255, 0.03) 6px
+  );
+  border-radius: 4px;
+  pointer-events: none;
+}
+.segment-handle {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 8px;
+  cursor: ew-resize;
+  z-index: 6;
+  pointer-events: auto;
+}
+.segment-handle-left {
+  left: -4px;
+}
+.segment-handle-right {
+  right: -4px;
+}
+.segment-handle::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 4px;
+  height: 20px;
+  background: rgba(255, 255, 255, 0.4);
+  border-radius: 2px;
+  opacity: 0;
+  transition: all .15s;
+}
+.portrait-segment:hover .segment-handle::after,
+.segment-handle:hover::after {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.8);
+}
+.segment-playhead {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  background: #fff;
+  border-radius: 1px;
+  pointer-events: none;
+  z-index: 15;
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.9);
+  transition: opacity 0.15s;
+}
+.segment-timeline-wrap.zoomed {
+  border-color: var(--acc);
+}
+.segment-timeline-wrap.zoomed .segment-timeline-base {
+  opacity: 0.3;
+}
+.segment-timeline-wrap.panning {
+  cursor: grabbing;
+}
+.segment-timeline-wrap.panning .portrait-segment {
+  pointer-events: none;
+}
+.portrait-hint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 10px;
+  color: var(--txt3);
+}
+.portrait-hint .hint-sep {
+  opacity: 0.4;
+}
+.portrait-hint .hint-trim {
+  color: var(--acc2);
+}
+.portrait-hint .hint-gap {
+  color: var(--warn);
+}
+.portrait-transition-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--brd);
+}
+.portrait-transition-row label {
+  font-size: 11px;
+  color: var(--txt2);
+  min-width: 55px;
+}
+.portrait-transition-row select {
+  flex: 0 0 80px;
+  height: 26px;
+  padding: 0 6px;
+  background: var(--bg2);
+  border: 1px solid var(--brd);
+  border-radius: 4px;
+  color: var(--txt);
+  font-size: 11px;
+}
+.portrait-transition-row input[type="range"] {
+  flex: 1;
+  height: 4px;
+}
+.portrait-transition-row span {
+  font-size: 11px;
+  color: var(--txt2);
+  min-width: 30px;
+  text-align: right;
+}
+.portrait-transition-row.disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}

@@ -1,5 +1,7 @@
-import { cpSync } from 'node:fs';
+import { cpSync, rmSync, writeFileSync } from 'node:fs';
 import { defineConfig } from 'tsup';
+// @ts-expect-error - plain JS build helper, no types needed
+import { assembleHtml } from './scripts/assemble-html.mjs';
 
 const isWatch = process.argv.includes('--watch');
 
@@ -24,6 +26,11 @@ export default defineConfig({
 	onSuccess: async () => {
 		// Copy GUI assets
 		cpSync('src/gui', 'dist/gui', { recursive: true });
+
+		// Expand the shell page's <!--#include --> markers; the partials
+		// themselves are build inputs, not files the server should serve
+		writeFileSync('dist/gui/vidlet.html', assembleHtml('src/gui/vidlet.html'));
+		rmSync('dist/gui/partials', { recursive: true, force: true });
 
 		// Copy icons
 		cpSync('src/icons', 'dist/icons', { recursive: true });

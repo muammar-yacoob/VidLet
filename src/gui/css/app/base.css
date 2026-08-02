@@ -1,0 +1,257 @@
+/* Root variables, scrollbars, header, page layout and the tool sidebar. */
+
+/* VidLet App Styles */
+:root {
+  --bg: #09090b;
+  --bg2: #18181b;
+  --bg3: #27272a;
+  --brd: #3f3f46;
+  --txt: #fafafa;
+  --txt2: #a1a1aa;
+  --txt3: #71717a;
+  --acc: #a855f7;
+  --acc2: #c084fc;
+  --warn: #f59e0b;
+}
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+body {
+  background: var(--bg);
+  color: var(--txt);
+  font: 12px / 1.4 system-ui, -apple-system, sans-serif;
+  overflow-x: hidden;
+}
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--bg3);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--txt3);
+}
+::-webkit-scrollbar-corner {
+  background: var(--bg);
+}
+
+/* Header */
+.hd {
+  display: flex;
+  flex-direction: column;
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid var(--brd);
+}
+.hd-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+.hd-brand {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.hd-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.hd-title b {
+  font-size: 18px;
+  color: var(--acc);
+  letter-spacing: -0.5px;
+  font-weight: 700;
+}
+.hd-subtitle {
+  font-size: 9px;
+  color: var(--acc2);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  opacity: 0.9;
+}
+.hd-desc {
+  font-size: 10px;
+  color: var(--txt3);
+  margin-top: 1px;
+}
+.hd-links {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.hd-link {
+  font-size: 9px;
+  color: var(--acc);
+  text-decoration: none;
+  padding: 5px 10px;
+  background: rgba(168, 85, 247, 0.1);
+  border: 1px solid rgba(168, 85, 247, 0.3);
+  border-radius: 4px;
+  transition: all .2s;
+  font-weight: 500;
+}
+.hd-link:hover {
+  color: #000;
+  border-color: var(--acc);
+  background: var(--acc);
+}
+.hd-coffee {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 9px;
+  color: #ffdd00;
+  text-decoration: none;
+  padding: 5px 8px;
+  background: rgba(255, 221, 0, 0.1);
+  border: 1px solid rgba(255, 221, 0, 0.25);
+  border-radius: 4px;
+  transition: all .2s;
+  font-weight: 500;
+}
+.hd-coffee:hover {
+  color: #000;
+  border-color: #ffdd00;
+  background: #ffdd00;
+}
+.hd-coffee svg {
+  width: 12px;
+  height: 12px;
+  fill: currentColor;
+}
+.hd-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 10px;
+  color: var(--txt3);
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--brd);
+}
+.hd-meta b {
+  color: var(--txt2);
+  font-weight: 500;
+  margin-left: 3px;
+}
+
+/* Main Layout */
+.main {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* Sidebar */
+.side {
+  width: 160px;
+  border-right: 1px solid var(--brd);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+.tools {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px;
+}
+.export-section {
+  padding: 6px;
+}
+.export-tool {
+  background: rgba(168, 85, 247, 0.1);
+  border: 1px dashed rgba(168, 85, 247, 0.3);
+}
+.export-tool:hover {
+  border-color: var(--acc);
+  background: rgba(168, 85, 247, 0.15);
+}
+.export-tool.active {
+  border-style: solid;
+}
+.tool {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all .12s;
+  margin-bottom: 2px;
+}
+.tool:hover {
+  background: var(--bg2);
+}
+.tool.active {
+  background: var(--acc);
+  color: #fff;
+}
+.tool.active svg {
+  stroke: #fff;
+}
+.tool.disabled {
+  opacity: 0.3;
+  pointer-events: none;
+}
+.tool svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+.tool span {
+  font-size: 11px;
+  font-weight: 500;
+}
+.tool.done span::after {
+  content: " ✓";
+  color: #22c55e;
+}
+.tool.new-feature {
+  animation: btnGlow 1.5s ease-in-out infinite;
+}
+.feature-star {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%) scale(0.8);
+  color: #fbbf24;
+  font-size: 12px;
+  opacity: 0;
+  transition: opacity .3s ease;
+  pointer-events: none;
+}
+.feature-star.show {
+  opacity: 1;
+  animation: starPulse 1.5s ease-in-out infinite;
+}
+@keyframes starPulse {
+  0%,
+  100% {
+    transform: translateY(-50%) scale(1);
+    text-shadow: 0 0 4px rgba(251, 191, 36, 0.6);
+  }
+  50% {
+    transform: translateY(-50%) scale(1.3);
+    text-shadow: 0 0 12px rgba(251, 191, 36, 0.9);
+  }
+}

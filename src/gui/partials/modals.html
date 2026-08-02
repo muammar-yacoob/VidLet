@@ -1,0 +1,143 @@
+    <div class="modal-overlay" id="settingsModal" onclick="if(event.target===this)closeSettings()">
+      <div class="modal" style="width:280px">
+        <div class="modal-header">
+          <h3>Defaults</h3>
+          <button class="modal-close" onclick="closeSettings()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <div class="modal-section">
+          <div class="modal-section-title">Compress</div>
+          <div class="modal-row">
+            <label>Quality</label>
+            <div class="seg-btns" id="settingsCompressQuality">
+              <button type="button" data-val="fast">Fast</button>
+              <button type="button" data-val="medium" class="active">Balanced</button>
+              <button type="button" data-val="slow">Quality</button>
+            </div>
+          </div>
+        </div>
+        <div class="modal-section">
+          <div class="modal-section-title">GIF</div>
+          <div class="modal-row">
+            <label>FPS</label>
+            <div class="seg-btns" id="settingsGifFps">
+              <button type="button" data-val="10">10</button>
+              <button type="button" data-val="15" class="active">15</button>
+              <button type="button" data-val="24">24</button>
+            </div>
+          </div>
+          <div class="modal-row">
+            <label>Width</label>
+            <div class="seg-btns" id="settingsGifWidth">
+              <button type="button" data-val="320">320</button>
+              <button type="button" data-val="480" class="active">480</button>
+              <button type="button" data-val="720">720</button>
+            </div>
+          </div>
+        </div>
+        <div class="modal-section">
+          <div class="modal-section-title">MKV to MP4</div>
+          <div class="modal-row">
+            <label>Quality</label>
+            <div class="seg-btns" id="settingsMkvQuality">
+              <button type="button" data-val="18">High</button>
+              <button type="button" data-val="23" class="active">Medium</button>
+              <button type="button" data-val="28">Low</button>
+            </div>
+          </div>
+        </div>
+        <div class="modal-section">
+          <div class="modal-section-title">Trim</div>
+          <div class="modal-row">
+            <label>Mode</label>
+            <div class="seg-btns" id="settingsTrimMode">
+              <button type="button" data-val="fast" class="active">Fast</button>
+              <button type="button" data-val="accurate">Accurate</button>
+            </div>
+          </div>
+        </div>
+        <div class="modal-section">
+          <div class="modal-section-title">Hotkey Style</div>
+          <div class="modal-row">
+            <select id="settingsHotkeyPreset" onchange="setHotkeyPreset(this.value)">
+              <option value="premiere">Adobe Premiere</option>
+              <option value="resolve">DaVinci Resolve</option>
+              <option value="capcut">CapCut</option>
+              <option value="shotcut">Shotcut</option>
+              <option value="descript">Descript</option>
+              <option value="camtasia">Camtasia</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-section">
+          <div class="modal-section-title">Loading</div>
+          <div class="modal-row">
+            <label>Frame Skip</label>
+            <input type="range" class="modal-slider" id="settingsFrameSkip" min="2" max="6" step="1" value="3" oninput="updateFrameSkipLabel()">
+            <span class="slider-val" id="frameSkipVal">3</span>
+          </div>
+        </div>
+        <div class="modal-section" style="border-bottom:none;padding-bottom:4px">
+          <div class="modal-section-title" style="margin-bottom:4px">Current Hotkeys</div>
+          <table class="hotkey-table" id="hotkeyDisplay">
+            <tr><td>Space</td><td>Play</td><td>←→</td><td>Seek</td></tr>
+            <tr><td>J/K/L</td><td>Speed</td><td>M</td><td>Mute</td></tr>
+            <tr><td id="hk-markIn">I</td><td>Set In</td><td id="hk-markOut">O</td><td>Set Out</td></tr>
+            <tr><td id="hk-split">Ctrl+K</td><td>Split</td><td id="hk-delete">Del</td><td>Delete</td></tr>
+            <tr><td id="hk-ripple">Shift+Del</td><td>Ripple</td><td></td><td></td></tr>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-overlay" id="confirmModal" onclick="if(event.target===this)closeConfirmModal(false)">
+      <div class="modal confirm-modal">
+        <div class="confirm-icon" id="confirmIcon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+        </div>
+        <div class="confirm-title" id="confirmTitle">Confirm Action</div>
+        <div class="confirm-message" id="confirmMessage">Are you sure?</div>
+        <div class="confirm-buttons">
+          <button class="btn btn-g" onclick="closeConfirmModal(false)">Cancel</button>
+          <button class="btn btn-p" id="confirmOkBtn" onclick="closeConfirmModal(true)">OK</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-overlay" id="extractAudioModal" onclick="if(event.target===this)closeExtractAudioModal()">
+      <div class="modal" style="width:240px">
+        <div class="modal-header">
+          <h3>Extract Audio</h3>
+          <button class="modal-close" onclick="closeExtractAudioModal()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <div class="modal-section">
+          <div class="modal-row">
+            <label>Format</label>
+            <div class="seg-btns" id="audio-format-btns">
+              <button type="button" class="active" data-val="mp3" onclick="setAudioFormat('mp3')">MP3</button>
+              <button type="button" data-val="aac" onclick="setAudioFormat('aac')">AAC</button>
+              <button type="button" data-val="wav" onclick="setAudioFormat('wav')">WAV</button>
+              <button type="button" data-val="flac" onclick="setAudioFormat('flac')">FLAC</button>
+            </div>
+          </div>
+          <div class="modal-row" id="audio-bitrate-row">
+            <label>Bitrate</label>
+            <div class="seg-btns" id="audio-bitrate-btns">
+              <button type="button" data-val="128" onclick="setAudioBitrate(128)">128k</button>
+              <button type="button" class="active" data-val="192" onclick="setAudioBitrate(192)">192k</button>
+              <button type="button" data-val="320" onclick="setAudioBitrate(320)">320k</button>
+            </div>
+          </div>
+        </div>
+        <div class="modal-section" style="border-bottom:none;padding:12px">
+          <button class="btn btn-p" style="width:100%" onclick="extractAudio()">Extract</button>
+        </div>
+        <input type="hidden" id="extract-audio-format" value="mp3">
+        <input type="hidden" id="extract-audio-bitrate" value="192">
+      </div>
+    </div>
+  </div>
+

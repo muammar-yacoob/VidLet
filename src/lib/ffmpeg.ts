@@ -1,3 +1,4 @@
+import { statSync } from 'node:fs';
 import * as fs from 'node:fs/promises';
 import { type ExecaError, execa } from 'execa';
 import { logToFile } from './logger.js';
@@ -103,7 +104,27 @@ export async function checkNvenc(): Promise<boolean> {
 /**
  * Get video information using ffprobe
  */
+/**
+ * Probe results, keyed by path + mtime + size.
+ *
+ * Pipelines like `autocleanup` and `demo` chain several tools over one file
+ * and each probes it again; the GUI re-probes on nearly every interaction.
+ * A file whose mtime and size are unchanged cannot have a different probe,
+ * so the key doubles as the invalidation.
+ */
+const probeCache = new Map<string, VideoInfo>();
+
 export async function getVideoInfo(inputPath: string): Promise<VideoInfo> {
+  let cacheKey: string | null = null;
+  try {
+    const { mtimeMs, size } = statSync(inputPath);
+    cacheKey = `${inputPath}:${mtimeMs}:${size}`;
+    const hit = probeCache.get(cacheKey);
+    if (hit) return hit;
+  } catch {
+    // Unstattable (a pipe, a race) - just probe it
+  }
+
   const { stdout } = await execa('ffprobe', [
     '-v',
     'quiet',
@@ -139,7 +160,7 @@ export async function getVideoInfo(inputPath: string): Promise<VideoInfo> {
   const hasAudio = !!audioStream;
   const sampleRate = hasAudio ? Number.parseInt(audioStream.sample_rate || '0', 10) : 0;
 
-  return {
+  const info: VideoInfo = {
     duration: Number.parseFloat(data.format?.duration || '0'),
     width: videoStream.width || 0,
     height: videoStream.height || 0,
@@ -149,6 +170,9 @@ export async function getVideoInfo(inputPath: string): Promise<VideoInfo> {
     hasAudio,
     sampleRate,
   };
+
+  if (cacheKey) probeCache.set(cacheKey, info);
+  return info;
 }
 
 /**

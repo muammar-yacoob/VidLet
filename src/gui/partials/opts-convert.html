@@ -1,0 +1,175 @@
+          <div class="opts" id="opts-autocleanup">
+            <div class="opts-row"><label>Denoise</label>
+              <div class="slider-row">
+                <input type="range" id="cleanup-denoise" min="1" max="10" value="3" oninput="$('cleanup-denoise-val').textContent=this.value">
+                <span class="slider-val" id="cleanup-denoise-val">3</span>
+              </div>
+            </div>
+            <div class="opts-row"><label>Silence cut</label>
+              <div class="slider-row">
+                <input type="range" id="cleanup-silence" min="0.1" max="3.0" step="0.1" value="0.5" oninput="$('cleanup-silence-val').textContent=`${this.value}s`">
+                <span class="slider-val" id="cleanup-silence-val">0.5s</span>
+              </div>
+            </div>
+            <div class="opts-row"><label>Contrast</label>
+              <div class="toggle on" id="cleanup-contrast-toggle" onclick="toggleCleanupContrast()"><div class="toggle-track"></div><span class="toggle-label" id="cleanup-contrast-label">On</span></div>
+            </div>
+            <div class="opts-row" style="justify-content:center">
+              <button class="ai-suggest-btn hidden" id="ai-suggest-btn" onclick="aiSuggestSettings()">
+                <span class="ai-badge">AI</span> Suggest settings
+              </button>
+            </div>
+            <input type="hidden" id="cleanup-skip-contrast" value="false">
+          </div>
+
+          <div class="opts" id="opts-removesilence">
+            <div class="opts-row"><label>Min duration</label>
+              <div class="slider-row">
+                <input type="range" id="silence-duration" min="0.1" max="5.0" step="0.1" value="0.5" oninput="$('silence-duration-val').textContent=`${this.value}s`">
+                <span class="slider-val" id="silence-duration-val">0.5s</span>
+              </div>
+            </div>
+            <div class="opts-row"><label>Threshold</label>
+              <div class="slider-row">
+                <input type="range" id="silence-threshold" min="-60" max="-10" step="1" value="-30" oninput="$('silence-threshold-val').textContent=`${this.value}dB`">
+                <span class="slider-val" id="silence-threshold-val">-30dB</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="opts" id="opts-compress">
+            <div class="opts-row"><label>Quality</label>
+              <div class="preset-btns">
+                <button type="button" class="preset-btn" onclick="setCompressQuality('low')">Small</button>
+                <button type="button" class="preset-btn active" onclick="setCompressQuality('medium')">Balanced</button>
+                <button type="button" class="preset-btn" onclick="setCompressQuality('high')">Quality</button>
+              </div>
+            </div>
+            <div class="opts-row estimate-row"><span id="compress-estimate" class="estimate-text"></span></div>
+            <input type="hidden" id="compress-bitrate" value="2500">
+            <input type="hidden" id="compress-preset" value="medium">
+            <input type="hidden" id="compress-codec" value="h264">
+          </div>
+
+          <div class="opts" id="opts-togif">
+            <div class="opts-row"><label>Quality</label>
+              <div class="preset-btns">
+                <button type="button" class="preset-btn" onclick="setGifQuality('low')">Small</button>
+                <button type="button" class="preset-btn active" onclick="setGifQuality('medium')">Balanced</button>
+                <button type="button" class="preset-btn" onclick="setGifQuality('high')">Smooth</button>
+              </div>
+            </div>
+            <div class="opts-row estimate-row"><span id="togif-estimate" class="estimate-text"></span></div>
+            <input type="hidden" id="togif-fps" value="15">
+            <input type="hidden" id="togif-width" value="480">
+            <input type="hidden" id="togif-dither" value="floyd_steinberg">
+          </div>
+
+          <div class="opts" id="opts-mkv2mp4">
+            <div class="opts-row"><label>Mode</label>
+              <div class="preset-btns">
+                <button type="button" class="preset-btn active" id="mkv-fast" onclick="setMkvMode('fast')">Quick</button>
+                <button type="button" class="preset-btn" id="mkv-compat" onclick="setMkvMode('compat')">Compatible</button>
+              </div>
+            </div>
+            <input type="hidden" id="mkv2mp4-quality" value="23">
+          </div>
+
+          <div class="opts" id="opts-shrink">
+            <div class="opts-row"><label>Target</label>
+              <div class="slider-row shrink-slider-wrap">
+                <div class="shrink-slider-container">
+                  <input type="range" id="shrink-duration" min="10" max="300" step="0.1" value="60" oninput="updateShrinkLabel()">
+                  <div class="shrink-marker" id="shrink-marker-60"></div>
+                </div>
+                <button type="button" class="shrink-60-btn" id="shrink-60-btn" onclick="setShrinkTo60()">60s</button>
+                <span class="slider-val" id="shrink-val">60s</span>
+              </div>
+            </div>
+            <div class="opts-row estimate-row"><span id="shrink-estimate" class="estimate-text"></span></div>
+            <div class="feature-unlock-hint" id="shrink-unlock-hint">
+              <span class="hint-icon">💡</span>
+              <span class="hint-text">
+                <span class="hint-item">Under 60s → Find Loop</span>
+                <span class="hint-sep">•</span>
+                <span class="hint-item">Under 20s → Export GIF</span>
+              </span>
+            </div>
+          </div>
+
+          <div class="opts" id="opts-thumb">
+            <div class="thumb-row">
+              <div class="thumb-option" id="thumbCapture" onclick="captureCurrentFrame()">
+                <div class="thumb-preview-box">
+                  <canvas id="thumbCanvas" width="120" height="68"></canvas>
+                </div>
+                <span class="thumb-label">Use current frame</span>
+                <span class="thumb-info" id="thumbFrameTime">0:00.0</span>
+              </div>
+              <div class="thumb-divider">or</div>
+              <div class="thumb-option" id="thumbUpload" onclick="VidLetThumbTool.handleClick()">
+                <div class="thumb-preview-box">
+                  <img id="thumbPreview" src="" alt="">
+                  <span class="thumb-drop-hint" id="thumbDropHint">Drop or click</span>
+                </div>
+                <span class="thumb-label">Use custom image</span>
+                <a href="#" class="thumb-replace" id="thumbReplace" onclick="event.stopPropagation();$('thumbFileInput').click()">Replace</a>
+                <input type="file" id="thumbFileInput" accept="image/*" style="display:none" onchange="VidLetThumbTool.handleFile(this)">
+              </div>
+            </div>
+            <input type="hidden" id="thumb-image" value="">
+            <input type="hidden" id="thumb-timestamp" value="">
+            <input type="hidden" id="thumb-source" value="video">
+          </div>
+
+          <div class="opts" id="opts-audio">
+            <div class="opts-row"><label>Mode</label>
+              <div class="preset-btns" id="audio-mode-btns">
+                <button type="button" class="preset-btn active" data-mode="add" onclick="setAudioMode('add')">Add Track</button>
+                <button type="button" class="preset-btn" data-mode="clean" onclick="setAudioMode('clean')">Clean Voice</button>
+              </div>
+            </div>
+            <div id="audio-add-opts">
+              <div class="opts-row">
+                <div class="drop-zone" id="audioDropZone" onclick="$('audioFileInput').click()">
+                  <span id="audioFileName">Drop audio file or click to browse</span>
+                  <input type="file" id="audioFileInput" accept="audio/*" style="display:none" onchange="VidLetAudioTool.handleFile(this)">
+                </div>
+              </div>
+              <div class="opts-row"><label>Volume</label>
+                <div class="slider-row">
+                  <input type="range" id="audio-volume" min="0" max="100" value="50" oninput="updateAudioVolume()">
+                  <span class="slider-val" id="audio-vol-val">50%</span>
+                </div>
+              </div>
+              <div class="opts-row"><label>Mix</label><div class="toggle on" id="audio-toggle" onclick="toggleAudioMix()"><div class="toggle-track"></div><span class="toggle-label">Blend with original</span></div></div>
+              <input type="hidden" id="audio-path" value="">
+              <audio id="audioPreview" style="display:none"></audio>
+            </div>
+            <div id="audio-clean-opts" style="display:none">
+              <div class="opts-row"><label>Denoise</label>
+                <div class="slider-row">
+                  <input type="range" id="clean-noise" min="1" max="10" value="5" oninput="updateCleanNoiseLabel()">
+                  <span class="slider-val" id="clean-noise-val">5</span>
+                </div>
+              </div>
+              <div class="opts-row"><label>Loudness</label>
+                <div class="slider-row">
+                  <input type="range" id="clean-loudness" min="-24" max="-10" value="-14" oninput="updateCleanLoudnessLabel()">
+                  <span class="slider-val" id="clean-loudness-val">-14 LUFS</span>
+                </div>
+              </div>
+              <div class="opts-row"><label>Noise sample</label>
+                <div style="display:flex;gap:6px;align-items:center">
+                  <input type="number" id="clean-noise-start" min="0" step="0.1" placeholder="start" style="width:56px">
+                  <span class="slider-val">→</span>
+                  <input type="number" id="clean-noise-end" min="0" step="0.1" placeholder="end" style="width:56px">
+                  <span class="slider-val" style="font-size:10px">sec</span>
+                </div>
+              </div>
+              <div class="opts-row" style="justify-content:center">
+                <span id="clean-analysis-info" class="slider-val">Select to analyze audio...</span>
+              </div>
+            </div>
+          </div>
+

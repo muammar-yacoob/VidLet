@@ -1,0 +1,63 @@
+      <div class="content">
+        <div class="preview-container" id="previewContainer">
+          <div class="preview-wrap" id="previewWrap">
+            <video id="videoPreview"></video>
+            <div class="scrub-overlay" id="scrub-overlay" style="display:none">
+              <img id="scrub-frame" alt="">
+            </div>
+            <div class="player-bar" id="playerBar">
+              <div class="player-row">
+                <div class="player-seek" id="playerSeek">
+                  <div class="player-seek-cached" id="playerCached"></div>
+                  <div class="player-seek-progress" id="playerProgress"></div>
+                  <div class="player-seek-thumb" id="playerThumb"></div>
+                </div>
+              </div>
+              <div class="player-row">
+                <button class="player-btn" id="playBtn" onclick="togglePlay()">
+                  <svg id="playIcon" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
+                  <svg id="pauseIcon" viewBox="0 0 24 24" fill="currentColor" style="display:none"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+                </button>
+                <span class="player-time" id="playerTime">0:00 / 0:00</span>
+                <div class="player-volume">
+                  <button class="player-btn" id="muteBtn" onclick="toggleMute()">
+                    <svg id="volIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11,5 6,9 2,9 2,15 6,15 11,19" fill="currentColor"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
+                    <svg id="mutedIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none"><polygon points="11,5 6,9 2,9 2,15 6,15 11,19" fill="currentColor"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
+                  </button>
+                  <div class="player-volume-slider" id="volumeSlider">
+                    <div class="player-volume-level" id="volumeLevel" style="width:100%"></div>
+                  </div>
+                </div>
+                <div class="speed-control">
+                  <button class="speed-adj" onclick="adjustSpeed(-0.5)">−</button>
+                  <span class="speed-val" id="speedVal" onclick="resetSpeed()">1x</span>
+                  <button class="speed-adj" onclick="adjustSpeed(0.5)">+</button>
+                </div>
+                <div class="undo-controls">
+                  <button class="player-btn" id="undo-btn" onclick="undo()" disabled title="Undo (Ctrl+Z)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>
+                  </button>
+                  <button class="player-btn" id="redo-btn" onclick="redo()" disabled title="Redo (Ctrl+Y)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13"/></svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div class="hotkey-hint" id="playerHotkeyHint">Space: Play | ←→: 1s | Alt+←→: Frame | M: Mute</div>
+            <div class="caption-overlay hidden" id="captionOverlay">
+              <div class="caption-text" id="captionOverlayText">Sample caption text</div>
+            </div>
+            <div class="vignette-overlay hidden" id="vignetteOverlay"></div>
+            <div class="bloom-overlay hidden" id="bloomOverlay"></div>
+            <div class="crop-overlay" id="cropOverlay">
+              <div class="crop-side crop-left" id="cropLeft"></div>
+              <div class="crop-window" id="cropWindow">
+                <div class="crop-handle crop-handle-l"></div>
+                <div class="crop-handle crop-handle-r"></div>
+              </div>
+              <div class="crop-side crop-right" id="cropRight"></div>
+            </div>
+          </div>
+          <div class="resize-divider" id="resizeDivider"></div>
+        </div>
+

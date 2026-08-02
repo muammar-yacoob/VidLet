@@ -1,0 +1,75 @@
+      <div class="side">
+        <div class="tools">
+          <div class="tool hidden" id="t-mkv2mp4" onclick="selectTool('mkv2mp4')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14,2 14,8 20,8"/></svg>
+            <span>MKV → MP4</span>
+          </div>
+          <div class="tool" id="t-autocleanup" onclick="selectTool('autocleanup')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83"/><circle cx="12" cy="12" r="4"/></svg>
+            <span>Auto Cleanup</span>
+          </div>
+          <div class="tool" id="t-trim" onclick="hideTrimStar(); selectTool('trim')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></svg>
+            <span>Trim</span>
+          </div>
+          <div class="tool" id="t-removesilence" onclick="selectTool('removesilence')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
+            <span>De-silence</span>
+          </div>
+          <div class="tool" id="t-compress" onclick="selectTool('compress')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18m-6-6 6 6 6-6M6 9l6-6 6 6"/></svg>
+            <span>Compress</span>
+          </div>
+          <div class="tool" id="t-shrink" onclick="selectTool('shrink')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg>
+            <span>Shrink</span>
+          </div>
+          <div class="tool hidden" id="t-portrait" onclick="selectTool('portrait')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="7" y="2" width="10" height="20" rx="2"/><line x1="12" y1="18" x2="12" y2="18.01"/></svg>
+            <span>Portrait</span>
+          </div>
+          <div class="tool" id="t-audio" onclick="selectTool('audio')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+            <span>Audio</span>
+          </div>
+          <div class="tool" id="t-filter" onclick="selectTool('filter')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+            <span>Adjust</span>
+          </div>
+          <div class="tool" id="t-caption" onclick="selectTool('caption')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M7 15h4M15 15h2M7 11h2M13 11h4"/></svg>
+            <span>Captions</span>
+          </div>
+          <div class="tool" id="t-jumpcut" onclick="selectTool('jumpcut')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.5 4h-5L7 7H2v13h20V7h-5l-2.5-3z"/><circle cx="12" cy="14" r="3"/></svg>
+            <span>Jump Cut</span>
+          </div>
+          <div class="tool" id="t-demo" onclick="selectTool('demo')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 18v3"/><path d="m9.5 8.5 5 2.5-5 2.5v-5z"/></svg>
+            <span>AI Demo</span>
+          </div>
+          <div class="tool" id="t-short" onclick="selectTool('short')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="7" y="2" width="10" height="20" rx="2"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
+            <span>AI Short</span>
+          </div>
+          <div class="tool" id="t-voiceover" onclick="selectTool('voiceover')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
+            <span>Voiceover</span>
+          </div>
+          <div class="tool" id="t-thumb" onclick="selectTool('thumb')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+            <span>Thumbnail</span>
+          </div>
+        </div>
+        <div class="export-section">
+          <div class="tool export-tool" id="t-extractaudio" onclick="openExtractAudioModal()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+            <span>Extract Audio</span>
+          </div>
+          <div class="tool export-tool" id="t-togif" onclick="hideGifStar(); selectTool('togif')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+            <span>Export as GIF</span>
+          </div>
+        </div>
+      </div>
+

@@ -12,8 +12,7 @@ import { handleError, resolveInputPath } from '../utils.js';
  * already installed, confirmed, or running non-interactively (scripts/CI).
  */
 async function confirmCloneInstall(engine: CloneEngine): Promise<boolean> {
-  const installed =
-    engine === 'dots' ? await isDotsTtsInstalled() : await isChatterboxInstalled();
+  const installed = engine === 'dots' ? await isDotsTtsInstalled() : await isChatterboxInstalled();
   if (installed || !process.stdin.isTTY || !process.stdout.isTTY) return true;
 
   const size =

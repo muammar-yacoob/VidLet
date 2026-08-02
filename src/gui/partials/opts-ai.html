@@ -1,0 +1,129 @@
+          <div class="opts" id="opts-jumpcut">
+            <div class="caption-panel">
+              <div class="caption-row">
+                <label>Pace</label>
+                <div class="seg-btns" id="jumpcutPace">
+                  <button type="button" data-val="tight">Tight</button>
+                  <button type="button" data-val="normal" class="active">Normal</button>
+                  <button type="button" data-val="loose">Loose</button>
+                </div>
+              </div>
+              <div class="caption-row">
+                <label>Zoom</label>
+                <div class="seg-btns" id="jumpcutZoom">
+                  <button type="button" data-val="0">Off</button>
+                  <button type="button" data-val="3" class="active">3%</button>
+                  <button type="button" data-val="5">5%</button>
+                  <button type="button" data-val="8">8%</button>
+                </div>
+              </div>
+              <div class="caption-info">
+                <span>Cuts silence + alternating punch-in zoom</span>
+              </div>
+            </div>
+            <input type="hidden" id="jumpcut-pace" value="normal">
+            <input type="hidden" id="jumpcut-zoom" value="3">
+          </div>
+
+          <div class="opts" id="opts-demo">
+            <div class="caption-panel">
+              <div class="caption-row">
+                <label>About (optional)</label>
+                <input type="text" id="demo-about" maxlength="200" placeholder="e.g. Bottled, an email tool for indie makers" style="width:100%;">
+              </div>
+              <div class="caption-row">
+                <label>Voice</label>
+                <select id="demo-gender">
+                  <option value="female" selected>Female</option>
+                  <option value="male">Male</option>
+                </select>
+              </div>
+              <div class="caption-row">
+                <label>Clone (optional)</label>
+                <input type="text" id="demo-clone" placeholder="/path/to/your-voice.wav" style="width:100%;">
+              </div>
+              <div class="caption-row">
+                <label>Also make Short</label>
+                <select id="demo-short">
+                  <option value="true" selected>Yes (9:16 + captions)</option>
+                  <option value="false">No, full video only</option>
+                </select>
+              </div>
+              <div class="caption-info">
+                <span>For silent screen recordings: trims idle spans, AI watches keyframes and writes + speaks the narration. No mic needed. Requires GROQ_API_KEY.</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="opts" id="opts-short">
+            <div class="caption-panel">
+              <div class="caption-row">
+                <label>Target length</label>
+                <select id="short-duration">
+                  <option value="30">30s</option>
+                  <option value="45">45s</option>
+                  <option value="57" selected>57s (Shorts max)</option>
+                </select>
+              </div>
+              <div class="caption-row">
+                <label>Burn captions</label>
+                <select id="short-captions">
+                  <option value="true" selected>Yes (hormozi)</option>
+                  <option value="false">No</option>
+                </select>
+              </div>
+              <div class="caption-info">
+                <span>Local transcript + Groq AI picks the highlights; 9:16 crop follows the on-screen action. Needs GROQ_API_KEY (free: console.groq.com/keys).</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="opts" id="opts-voiceover">
+            <div class="caption-panel">
+              <div class="caption-row">
+                <label>Script</label>
+                <textarea id="vo-text" rows="4" maxlength="5000" placeholder="Narration text - mixed over this video, original audio auto-ducks" style="width:100%;resize:vertical;"></textarea>
+              </div>
+              <div class="caption-row">
+                <label>Language</label>
+                <select id="vo-lang">
+                  <option value="en" selected>English</option>
+                  <option value="es">Spanish</option>
+                  <option value="fr">French</option>
+                  <option value="de">German</option>
+                  <option value="it">Italian</option>
+                  <option value="pt">Portuguese</option>
+                  <option value="ja">Japanese</option>
+                  <option value="ko">Korean</option>
+                  <option value="zh">Chinese</option>
+                  <option value="ar">Arabic</option>
+                  <option value="hi">Hindi</option>
+                  <option value="ru">Russian</option>
+                  <option value="tr">Turkish</option>
+                  <option value="nl">Dutch</option>
+                </select>
+              </div>
+              <div class="caption-row">
+                <label>Voice</label>
+                <select id="vo-gender">
+                  <option value="female" selected>Female</option>
+                  <option value="male">Male</option>
+                </select>
+              </div>
+              <div class="caption-row">
+                <label>Clone (optional)</label>
+                <input type="text" id="vo-clone" placeholder="/path/to/your-voice.wav (~10s sample)" style="width:100%;">
+              </div>
+              <div class="caption-row">
+                <label>Clone engine</label>
+                <select id="vo-clone-engine">
+                  <option value="chatterbox" selected>Chatterbox (CPU or GPU)</option>
+                  <option value="dots">dots.tts (best quality, NVIDIA GPU)</option>
+                </select>
+              </div>
+              <div class="caption-info">
+                <span>Free Edge TTS. With a clone sample: local voice cloning — Chatterbox or dots.tts (first use installs a few GB).</span>
+              </div>
+            </div>
+          </div>
+
