@@ -40,3 +40,4 @@ export { demo, type DemoOptions } from './demo.js';
 export { short, type ShortOptions } from './short.js';
 export { speedup, type SpeedupOptions } from './speedup.js';
 export { voiceover, type VoiceoverOptions } from './voiceover.js';
+export { overlay, type OverlayOptions, type OverlayLayer } from './overlay.js';

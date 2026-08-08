@@ -16,6 +16,7 @@ import { demo } from './demo.js';
 import { filter } from './filter.js';
 import { jumpcut } from './jumpcut.js';
 import { mkv2mp4 } from './mkv2mp4.js';
+import { type OverlayLayer, overlay } from './overlay.js';
 import { removeSilence } from './removesilence.js';
 import { short } from './short.js';
 import { type PortraitSegment, portrait, portraitMultiSegment } from './shorts.js';
@@ -106,6 +107,8 @@ export interface ToolOptions {
   // Demo options
   about?: string;
   makeShort?: boolean;
+  // Overlay options
+  overlayLayers?: OverlayLayer[];
 }
 
 /** Process result */
@@ -360,6 +363,17 @@ const TOOL_STEPS: Record<string, ToolStep> = {
         skipContrast: o.skipContrast,
         onProgress,
       }),
+  },
+
+  overlay: {
+    start: (o) => `Applying ${o.overlayLayers?.length ?? 0} overlay(s)...`,
+    done: 'Overlays applied!',
+    run: (input, o) => {
+      if (!o.overlayLayers?.length) {
+        throw new Error('No overlay layers provided');
+      }
+      return overlay({ input, layers: o.overlayLayers });
+    },
   },
 };
 
