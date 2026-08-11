@@ -24,6 +24,7 @@ import {
   rephraseScript,
   resolveScriptSource,
 } from '../tools/autoshort.js';
+import { maskSensitive } from '../tools/mask.js';
 import { previewMusic } from '../tools/music-preview.js';
 import {
   type ToolDefinition,
@@ -86,6 +87,50 @@ export const AUTOSHORT_TOOLS: ToolDefinition[] = [
         output_path: { type: 'string', description: 'Optional explicit output path.' },
       },
       required: ['path', 'music'],
+    },
+  },
+  {
+    name: 'mask_sensitive',
+    description:
+      'Scan a video for sensitive information on screen (card numbers validated by Luhn, ' +
+      'emails, phone numbers, IBANs, SSNs, API keys, street addresses, postcodes) and cover ' +
+      'each with a pixel mosaic. Detection needs tesseract installed; without it the tool ' +
+      'reports that clearly instead of silently masking nothing. `regions` always works ' +
+      'regardless, for areas you pick yourself. Use dry_run to see what WOULD be covered ' +
+      'before writing a video. Never overwrites the input.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Video to scan.' },
+        sample_fps: {
+          type: 'number',
+          description: 'Frames per second sampled for OCR. Default 0.5, one every two seconds.',
+        },
+        regions: {
+          type: 'array',
+          description: 'Explicit boxes to cover, in SOURCE pixels. Supplying this skips detection.',
+          items: {
+            type: 'object',
+            properties: {
+              x: { type: 'number' },
+              y: { type: 'number' },
+              width: { type: 'number' },
+              height: { type: 'number' },
+            },
+            required: ['x', 'y', 'width', 'height'],
+          },
+        },
+        blockiness: {
+          type: 'number',
+          description: 'Mosaic coarseness, 0-1. Default 0.12.',
+        },
+        dry_run: {
+          type: 'boolean',
+          description: 'Report the regions found and write nothing.',
+        },
+        output_path: { type: 'string', description: 'Optional explicit output path.' },
+      },
+      required: ['path'],
     },
   },
   {
@@ -152,6 +197,13 @@ export const AUTOSHORT_TOOLS: ToolDefinition[] = [
         lead_in: {
           type: 'number',
           description: 'Silence before the first word, in seconds. Default 1.',
+        },
+        mask_sensitive: {
+          type: 'boolean',
+          description:
+            'Scan the footage for on-screen card numbers, emails, phones, keys and ' +
+            'addresses and pixelate them. Default true, but it needs tesseract installed; ' +
+            'when missing, the result says so in `masking` rather than silently skipping.',
         },
         title: {
           type: 'string',
@@ -344,6 +396,60 @@ async function handleGenerateShort(args: {
   });
 }
 
+async function handleMaskSensitive({
+  path,
+  sample_fps,
+  regions,
+  blockiness,
+  dry_run,
+  output_path,
+}: {
+  path?: string;
+  sample_fps?: number;
+  regions?: Array<{ x: number; y: number; width: number; height: number }>;
+  blockiness?: number;
+  dry_run?: boolean;
+  output_path?: string;
+}) {
+  const input = resolveInputPath(path);
+  return withSilencedStdout(async () => {
+    const supplied = regions?.map((r) => ({ ...r, kinds: [] as never[] }));
+    // Dry runs and no-op scans must not reserve an output path; they write
+    // nothing, and a reserved placeholder would litter the folder.
+    if (dry_run || supplied === undefined) {
+      const probe = await maskSensitive({
+        input,
+        output: '',
+        sampleFps: sample_fps,
+        regions: supplied,
+        blockiness,
+        dryRun: true,
+      });
+      if (dry_run || probe.regions.length === 0) {
+        return jsonContent({ ...probe, masked: false });
+      }
+      const desired = output_path ? resolve(output_path) : getOutputPath(input, '_masked');
+      const output = safeOutputPath(input, desired);
+      return runWriteTool(output, async () => {
+        const result = await maskSensitive({
+          input,
+          output,
+          regions: probe.regions,
+          blockiness,
+        });
+        return jsonContent({ ...result, masked: true, url: fileUrl(output) });
+      });
+    }
+
+    const desired = output_path ? resolve(output_path) : getOutputPath(input, '_masked');
+    const output = safeOutputPath(input, desired);
+    return runWriteTool(output, async () => {
+      const result = await maskSensitive({ input, output, regions: supplied, blockiness });
+      return jsonContent({ ...result, masked: true, url: fileUrl(output) });
+    });
+  });
+}
+
 async function handleAddMusic({
   path,
   music,
@@ -384,5 +490,6 @@ async function handleAddMusic({
 export const AUTOSHORT_HANDLERS: Record<string, ToolHandler> = {
   preview_music: handlePreviewMusic,
   add_music: handleAddMusic,
+  mask_sensitive: handleMaskSensitive,
   generate_short: handleGenerateShort,
 };

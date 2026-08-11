@@ -93,6 +93,8 @@ export interface AutoShortResult {
   narration: 'tts' | 'original-voice' | 'none';
   narrationSeconds: number;
   captionsBurned: boolean;
+  /** Output canvas, chosen from how much detail the sources actually have. */
+  resolution: string;
   music: ResolvedTrack | null;
   /** Wall-clock per stage, so a slow render can be attributed. */
   stageSeconds: Record<string, number>;
@@ -101,12 +103,28 @@ export interface AutoShortResult {
 const SHORT_W = 1080;
 const SHORT_H = 1920;
 /**
- * The background copy is blurred at a quarter resolution and scaled back up.
- * gblur cost scales with area, and a sigma-32 blur at full size is visually
- * indistinguishable from sigma-8 at quarter size once it is upscaled.
+ * Smaller 9:16 canvas, used when the source has nowhere near enough pixels
+ * to justify the full one. A 320x360 screen capture upscaled to 1080x1920
+ * is 3.4x of invented detail; 720x1280 is still 2.25x and costs 45% less
+ * to filter and encode (measured: 5.55s vs 3.03s on the same chain).
  */
-const BLUR_W = 270;
-const BLUR_H = 480;
+const SMALL_W = 720;
+const SMALL_H = 1280;
+/** Below this source height, the full canvas buys nothing but render time. */
+const SMALL_CANVAS_MAX_SOURCE_H = 540;
+
+/** Output canvas: full size unless every source is far too small to use it. */
+export function chooseCanvas(sourceHeights: number[]): { width: number; height: number } {
+  const tallest = Math.max(0, ...sourceHeights);
+  return tallest > SMALL_CANVAS_MAX_SOURCE_H
+    ? { width: SHORT_W, height: SHORT_H }
+    : { width: SMALL_W, height: SMALL_H };
+}
+/**
+ * The background copy is blurred at a quarter of the output resolution and
+ * scaled back up. gblur cost scales with area, and a sigma-32 blur at full
+ * size is indistinguishable from sigma-8 at quarter size once upscaled.
+ */
 /** Words per second Edge neural TTS actually delivers (~175 wpm). */
 const TTS_WPS = 2.9;
 /** Fraction of the runtime narration should cover. Not 100%: it needs air. */
@@ -282,6 +300,38 @@ export async function planShort(
   return { outputDuration: kept / speed, voiced, videos: files.videos.length };
 }
 
+/** Speak the script and pad it with the lead-in silence. */
+async function synthesizeNarration(
+  script: string,
+  workDir: string,
+  leadIn: number,
+  options: Pick<AutoShortOptions, 'language' | 'gender'>
+): Promise<string> {
+  const raw = await generateNarrationAudio({
+    input: script,
+    output: join(workDir, 'narration-raw.mp3'),
+    language: options.language,
+    gender: options.gender,
+  });
+  // Lead-in silence so the Short does not open mid-syllable, and the first
+  // caption has a beat to land in.
+  const padded = join(workDir, 'narration.m4a');
+  const ms = Math.round(leadIn * 1000);
+  await executeFFmpegRaw([
+    '-y',
+    '-i',
+    raw,
+    '-af',
+    `adelay=${ms}|${ms}`,
+    '-c:a',
+    'aac',
+    '-b:a',
+    '192k',
+    padded,
+  ]);
+  return padded;
+}
+
 interface PreparedClip {
   source: string;
   spans: TimeSegment[];
@@ -381,8 +431,10 @@ export function buildRenderGraph(opts: {
   musicIndex?: number;
   musicVolume: number;
   outputDuration: number;
+  canvas?: { width: number; height: number };
 }): string {
   const { clips, speed, contrast, keepSourceAudio, assPath, ttsIndex, musicIndex } = opts;
+  const { width: outW, height: outH } = opts.canvas ?? { width: SHORT_W, height: SHORT_H };
   const chains: string[] = [];
 
   const measured = clips.flatMap((c) => (c.luma ? [c.luma] : []));
@@ -403,12 +455,12 @@ export function buildRenderGraph(opts: {
         `eq=contrast=${grade.contrast}:brightness=${grade.brightness},split=2[bg${i}][fg${i}]`
     );
     chains.push(
-      `[bg${i}]scale=${BLUR_W}:${BLUR_H}:force_original_aspect_ratio=increase,` +
-        `crop=${BLUR_W}:${BLUR_H},gblur=sigma=8,scale=${SHORT_W}:${SHORT_H},` +
+      `[bg${i}]scale=${Math.round(outW / 4)}:${Math.round(outH / 4)}:force_original_aspect_ratio=increase,` +
+        `crop=${Math.round(outW / 4)}:${Math.round(outH / 4)},gblur=sigma=8,scale=${outW}:${outH},` +
         `drawbox=x=0:y=0:w=iw:h=ih:color=black@0.4:thickness=fill[bgb${i}]`
     );
     chains.push(
-      `[fg${i}]scale=${SHORT_W}:${SHORT_H}:force_original_aspect_ratio=decrease:flags=lanczos[fgs${i}]`
+      `[fg${i}]scale=${outW}:${outH}:force_original_aspect_ratio=decrease:flags=lanczos[fgs${i}]`
     );
     chains.push(`[bgb${i}][fgs${i}]overlay=(W-w)/2:(H-h)/2,setsar=1[n${i}]`);
     if (keepSourceAudio) {
@@ -462,6 +514,17 @@ export function buildRenderGraph(opts: {
   return chains.join(';');
 }
 
+/**
+ * Encoder for the final pass. Real GPU encoders are worth it; integrated
+ * VAAPI is not, because the expensive part of this graph is the CPU-side
+ * blur and scale, and hwupload only adds a transfer.
+ */
+async function fastEncoderArgs(): Promise<string[]> {
+  const gpu = await videoEncoderArgs();
+  if (gpu.includes('h264_nvenc')) return gpu;
+  return ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20'];
+}
+
 export async function autoShort(options: AutoShortOptions): Promise<AutoShortResult> {
   const { inputs, output } = options;
   const maxDuration = Math.min(59, options.maxDuration ?? 57);
@@ -498,19 +561,33 @@ export async function autoShort(options: AutoShortOptions): Promise<AutoShortRes
     // Settled up front: it decides whether denoising is worth doing at all.
     const keepVoice = mode !== 'tts';
 
-    const clips = await time('analyse', async () => {
-      const prepared: PreparedClip[] = [];
-      for (let i = 0; i < files.videos.length; i++) {
-        prepared.push(await prepareClip(files.videos[i], i, keepVoice, workDir, progress));
-      }
-      return prepared;
-    });
+    // Clips are independent, so they analyse concurrently. ffmpeg and
+    // whisper are each single-clip-bound; on any multi-core box this is
+    // close to free.
+    const clipsPromise = time('analyse', () =>
+      Promise.all(
+        files.videos.map((video, i) => prepareClip(video, i, keepVoice, workDir, progress))
+      )
+    );
+
+    // An approved script has no dependency on the footage, so the narration
+    // is synthesised WHILE the clips are analysed. TTS is mostly network
+    // wait, and it was the single longest stage when run on its own.
+    const earlyTts =
+      options.scriptIsFinal && rawScript && mode !== 'keep'
+        ? time('tts', () => synthesizeNarration(rawScript, workDir, leadIn, options))
+        : null;
+
+    const clips = await clipsPromise;
 
     const voiced = clips.some((c) => c.voiced);
     const keptDuration = clips.reduce((n, c) => n + c.kept, 0);
     const sourceDuration = (
       await Promise.all(files.videos.map(async (v) => (await getVideoInfo(v)).duration))
     ).reduce((a, b) => a + b, 0);
+    const canvas = chooseCanvas(
+      await Promise.all(files.videos.map(async (v) => (await getVideoInfo(v)).height))
+    );
     const speed = speedFor(keptDuration, maxDuration);
     const outputDuration = keptDuration / speed;
     console.log(
@@ -532,31 +609,10 @@ export async function autoShort(options: AutoShortOptions): Promise<AutoShortRes
     let narrationSeconds = 0;
     if (wantTts) {
       progress('generating narration');
-      ttsPath = await time('tts', async () => {
-        const raw = await generateNarrationAudio({
-          input: script,
-          output: join(workDir, 'narration-raw.mp3'),
-          language: options.language,
-          gender: options.gender,
-        });
-        // Lead-in silence so the Short does not open mid-syllable, and the
-        // first caption has a beat to land in.
-        const padded = join(workDir, 'narration.m4a');
-        const ms = Math.round(leadIn * 1000);
-        await executeFFmpegRaw([
-          '-y',
-          '-i',
-          raw,
-          '-af',
-          `adelay=${ms}|${ms}`,
-          '-c:a',
-          'aac',
-          '-b:a',
-          '192k',
-          padded,
-        ]);
-        return padded;
-      });
+      // Already in flight when the script was pre-approved.
+      ttsPath = earlyTts
+        ? await earlyTts
+        : await time('tts', () => synthesizeNarration(script, workDir, leadIn, options));
       narrationSeconds = await getMediaDuration(ttsPath);
     }
 
@@ -571,8 +627,8 @@ export async function autoShort(options: AutoShortOptions): Promise<AutoShortRes
         const entries: SrtEntry[] = segmentsToEntries(t.segments);
         const ass = generateShortsAss({
           entries,
-          videoWidth: SHORT_W,
-          videoHeight: SHORT_H,
+          videoWidth: canvas.width,
+          videoHeight: canvas.height,
           fontSize: 48,
           fontName: 'Arial Black',
           position: 'bottom',
@@ -611,6 +667,7 @@ export async function autoShort(options: AutoShortOptions): Promise<AutoShortRes
         musicIndex,
         musicVolume,
         outputDuration,
+        canvas,
       });
       const graphPath = join(workDir, 'graph.txt');
       writeFileSync(graphPath, graph, 'utf8');
@@ -629,9 +686,11 @@ export async function autoShort(options: AutoShortOptions): Promise<AutoShortRes
           ...(hasAudio ? ['-map', '[a]', '-c:a', 'aac', '-b:a', '192k'] : ['-an']),
           '-t',
           outputDuration.toFixed(3),
-          // NVENC when the box has it; the blur-and-scale to 1080x1920 is
-          // the only heavy step left, so this is where the time is.
-          ...(await videoEncoderArgs()),
+          // The graph is filter-bound, not encoder-bound: VAAPI on an
+          // integrated Radeon measured SLOWER than this once hwupload was
+          // paid for, and libx264 medium/crf18 cost 20% more than
+          // veryfast/crf20 for no visible gain at phone size.
+          ...(await fastEncoderArgs()),
           '-movflags',
           '+faststart',
         ],
@@ -646,6 +705,7 @@ export async function autoShort(options: AutoShortOptions): Promise<AutoShortRes
       outputDuration,
       speed,
       videos: files.videos.length,
+      resolution: `${canvas.width}x${canvas.height}`,
       spansKept: clips.reduce((n, c) => n + c.spans.length, 0),
       retakesDropped: clips.reduce((n, c) => n + c.retakesDropped, 0),
       voiced,
