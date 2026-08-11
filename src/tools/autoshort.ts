@@ -17,7 +17,7 @@
  *  6. single render: select + grade + pad + concat + speed + captions,
  *     with narration over a ducked music bed
  */
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -43,6 +43,7 @@ import { type TimeSegment, detectSilence, invertSegments } from '../lib/segments
 import { transcribe } from '../lib/whisper.js';
 import { type SrtEntry, generateShortsAss, segmentsToEntries } from './caption.js';
 import { cleanVoice } from './cleanvoice.js';
+import { maskSensitive as runMask } from './mask.js';
 import { buildSpeedupAudioFilters } from './speedup.js';
 import { buildSelectExpr, escapeFilterPath } from './timelapse.js';
 import { generateNarrationAudio } from './voiceover.js';
@@ -74,6 +75,14 @@ export interface AutoShortOptions {
   voiceover?: 'auto' | 'tts' | 'keep';
   /** Silence before the first word, so it does not open mid-syllable. */
   leadIn?: number;
+  /**
+   * Scan the FINISHED Short for on-screen card numbers, emails, keys and
+   * addresses and pixelate them. Default true. Deliberately run on the
+   * output rather than the sources: only the frames that survived the cut
+   * can leak anything, and there are a few dozen of them instead of tens of
+   * thousands.
+   */
+  maskSensitive?: boolean;
   output?: string;
   language?: string;
   gender?: 'female' | 'male';
@@ -95,6 +104,8 @@ export interface AutoShortResult {
   captionsBurned: boolean;
   /** Output canvas, chosen from how much detail the sources actually have. */
   resolution: string;
+  /** What the sensitive-data scan did, and why, so it is never silent. */
+  masking: { scanned: boolean; regionsMasked: number; note?: string };
   music: ResolvedTrack | null;
   /** Wall-clock per stage, so a slow render can be attributed. */
   stageSeconds: Record<string, number>;
@@ -697,9 +708,34 @@ export async function autoShort(options: AutoShortOptions): Promise<AutoShortRes
       });
     });
 
+    let masking: AutoShortResult['masking'] = {
+      scanned: false,
+      regionsMasked: 0,
+      note: 'Sensitive-data scan disabled by the caller.',
+    };
+    if (options.maskSensitive !== false) {
+      progress('scanning for sensitive info');
+      masking = await time('mask', async () => {
+        const scan = await runMask({ input: output, output: '', dryRun: true, sampleFps: 0.5 });
+        if (!scan.ocrAvailable) {
+          return { scanned: false, regionsMasked: 0, note: scan.note };
+        }
+        if (scan.regions.length === 0) {
+          return { scanned: true, regionsMasked: 0, note: 'Nothing sensitive found.' };
+        }
+        // Mask into a temp file, then replace the output in place so the
+        // caller only ever sees one finished video at the promised path.
+        const masked = join(workDir, 'masked.mp4');
+        await runMask({ input: output, output: masked, regions: scan.regions });
+        copyFileSync(masked, output);
+        return { scanned: true, regionsMasked: scan.regions.length };
+      });
+    }
+
     success(`Output: ${output}`);
     return {
       output,
+      masking,
       sourceDuration,
       keptDuration,
       outputDuration,

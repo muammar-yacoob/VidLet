@@ -261,6 +261,7 @@ async function handleGenerateShort(args: {
   contrast?: number;
   voiceover?: 'auto' | 'tts' | 'keep';
   lead_in?: number;
+  mask_sensitive?: boolean;
   title?: string;
   language?: string;
   gender?: 'female' | 'male';
@@ -375,6 +376,7 @@ async function handleGenerateShort(args: {
         contrast: args.contrast,
         voiceover,
         leadIn: args.lead_in,
+        maskSensitive: args.mask_sensitive,
         language: args.language,
         gender: args.gender,
         output,
