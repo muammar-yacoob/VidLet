@@ -2,6 +2,15 @@
   "_comment": "Every track here must be CC0 / public domain: VidLet redistributes these inside the published package, so any attribution or share-alike condition would propagate to every user of the tool. Record provenance for anything added.",
   "tracks": [
     {
+      "file": "lofi-roof-tops.mp3",
+      "title": "Roof Tops",
+      "artist": "HoliznaCC0",
+      "license": "CC0 1.0 Universal",
+      "source": "https://freemusicarchive.org/music/holiznacc0/summer-air-lo-fi",
+      "mood": "lofi",
+      "duration": 0
+    },
+    {
       "file": "upbeat-ruby-chiptune.mp3",
       "title": "Ruby 2",
       "artist": "HoliznaCC0",

@@ -294,3 +294,48 @@ export function timeWordsInLine(text: string, start: number, duration: number): 
   if (timed.length > 0) timed[timed.length - 1].end = start + duration;
   return timed;
 }
+
+/** A stretch of output time belonging to one source clip. */
+export interface SectionWindow {
+  start: number;
+  end: number;
+}
+
+/**
+ * Split lines across sections in proportion to how long each section runs.
+ *
+ * A script written as "first we model, then we rig" only lines up if the
+ * modelling lines play over the modelling clip. Spreading every line evenly
+ * across the whole timeline ignores that the clips are different lengths,
+ * so the rigging narration starts while the modelling footage is still on
+ * screen. Lines keep their order; only the boundaries move.
+ */
+export function allocateLinesToSections<T extends { duration: number }>(
+  lines: T[],
+  windows: SectionWindow[]
+): T[][] {
+  if (windows.length <= 1 || lines.length === 0) return [lines];
+
+  const totalWindow = windows.reduce((n, w) => n + (w.end - w.start), 0);
+  const totalSpeech = lines.reduce((n, l) => n + l.duration, 0);
+
+  const groups: T[][] = windows.map(() => []);
+  let spoken = 0;
+  for (const line of lines) {
+    // Place the line by where its MIDPOINT falls in the speech, so a long
+    // line straddling a boundary lands where most of it belongs.
+    const mid = (spoken + line.duration / 2) / (totalSpeech || 1);
+    let acc = 0;
+    let target = windows.length - 1;
+    for (let i = 0; i < windows.length; i++) {
+      acc += (windows[i].end - windows[i].start) / (totalWindow || 1);
+      if (mid <= acc) {
+        target = i;
+        break;
+      }
+    }
+    groups[target].push(line);
+    spoken += line.duration;
+  }
+  return groups;
+}

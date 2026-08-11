@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  allocateLinesToSections,
   planNarrationBeats,
   realSpeechWords,
   slugifyTitle,
@@ -7,7 +8,7 @@ import {
   timeWordsInLine,
   titleFromScript,
 } from '../lib/autoshort-plan.js';
-import { buildRenderGraph, ydifToIdleSpans } from './autoshort.js';
+import { buildRenderGraph, clipWindows, ydifToIdleSpans } from './autoshort.js';
 import {
   classifyInputs,
   dedupeRetakes,
@@ -343,5 +344,63 @@ describe('timeWordsInLine', () => {
 
   it('returns nothing for empty text', () => {
     expect(timeWordsInLine('   ', 0, 2)).toEqual([]);
+  });
+});
+
+describe('allocateLinesToSections', () => {
+  const line = (duration: number, id: string) => ({ duration, id });
+
+  it('sends more lines to the longer section', () => {
+    const lines = [line(2, 'a'), line(2, 'b'), line(2, 'c'), line(2, 'd')];
+    const groups = allocateLinesToSections(lines, [
+      { start: 0, end: 30 },
+      { start: 30, end: 40 },
+    ]);
+    expect(groups[0].length).toBeGreaterThan(groups[1].length);
+  });
+
+  it('keeps script order within and across sections', () => {
+    const lines = [line(1, 'a'), line(1, 'b'), line(1, 'c'), line(1, 'd')];
+    const groups = allocateLinesToSections(lines, [
+      { start: 0, end: 10 },
+      { start: 10, end: 20 },
+    ]);
+    expect(groups.flat().map((l) => l.id)).toEqual(['a', 'b', 'c', 'd']);
+  });
+
+  it('puts the rigging half of a script in the rigging clip', () => {
+    // Four lines, two equal clips: modelling lines land in clip one.
+    const lines = [line(3, 'model1'), line(3, 'model2'), line(3, 'rig1'), line(3, 'rig2')];
+    const groups = allocateLinesToSections(lines, [
+      { start: 0, end: 20 },
+      { start: 20, end: 40 },
+    ]);
+    expect(groups[0].map((l) => l.id)).toEqual(['model1', 'model2']);
+    expect(groups[1].map((l) => l.id)).toEqual(['rig1', 'rig2']);
+  });
+
+  it('passes everything through untouched for a single clip', () => {
+    const lines = [line(1, 'a'), line(1, 'b')];
+    expect(allocateLinesToSections(lines, [{ start: 0, end: 10 }])).toEqual([lines]);
+  });
+
+  it('loses no lines', () => {
+    const lines = Array.from({ length: 9 }, (_, i) => line(1, `l${i}`));
+    const groups = allocateLinesToSections(lines, [
+      { start: 0, end: 5 },
+      { start: 5, end: 9 },
+      { start: 9, end: 30 },
+    ]);
+    expect(groups.flat()).toHaveLength(9);
+  });
+});
+
+describe('clipWindows', () => {
+  it('lays clips end to end after the intro, at output speed', () => {
+    const w = clipWindows([{ kept: 20 }, { kept: 10 }], 2, 5);
+    expect(w).toEqual([
+      { start: 5, end: 15 },
+      { start: 15, end: 20 },
+    ]);
   });
 });

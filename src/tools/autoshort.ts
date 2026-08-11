@@ -64,6 +64,7 @@ export {
   subtitleToText,
   timeWordsInLine,
 } from '../lib/autoshort-plan.js';
+import { type SectionWindow, allocateLinesToSections } from '../lib/autoshort-plan.js';
 
 export interface AutoShortOptions {
   inputs: string[];
@@ -81,6 +82,12 @@ export interface AutoShortOptions {
   voiceover?: 'auto' | 'tts' | 'keep';
   /** Silence before the first word, so it does not open mid-syllable. */
   leadIn?: number;
+  /**
+   * Seconds of picture kept after the last word. Ending on the final
+   * syllable feels like the file was truncated; a short tail lets the music
+   * fade and the last frame land.
+   */
+  tailPad?: number;
   /**
    * A clip to open with, played at NATURAL speed. Intros are branding, not
    * footage: sweeping a 6s logo animation into an 18x timelapse would leave
@@ -156,6 +163,8 @@ const TTS_WPS = 2.9;
 const NARRATION_COVERAGE = 0.85;
 /** Default silence before the first word. */
 const DEFAULT_LEAD_IN = 1;
+/** Default picture kept after the last word, for the music to breathe out. */
+const DEFAULT_TAIL_PAD = 1.8;
 /**
  * Mean absolute inter-frame luma difference below which a sampled step is
  * "nothing happened". ffmpeg computes this natively as signalstats YDIF,
@@ -347,6 +356,7 @@ async function synthesizeNarration(
   leadIn: number,
   outputDuration: number,
   boundaries: number[],
+  sections: SectionWindow[],
   options: Pick<AutoShortOptions, 'language' | 'gender'>
 ): Promise<{ path: string; takes: PlacedTake[] }> {
   const sentences = splitSentences(script);
@@ -364,7 +374,29 @@ async function synthesizeNarration(
     })
   );
 
-  const beats = planNarrationBeats(takes, boundaries, outputDuration, leadIn);
+  // `outputDuration` here is already the runtime MINUS the end tail, so the
+  // sections have to be clamped to it. Leaving them at the full runtime is
+  // what let the closing line run to the final frame despite the padding.
+  const usable = sections.map((w) => ({
+    start: Math.min(w.start, outputDuration),
+    end: Math.min(w.end, outputDuration),
+  }));
+  // Lines are allocated to the clip they describe, then placed inside that
+  // clip's own window, so "then we rig it" cannot start while the modelling
+  // footage is still on screen.
+  const groups = allocateLinesToSections(takes, usable);
+  const beats: ReturnType<typeof planNarrationBeats> = [];
+  groups.forEach((group, i) => {
+    if (group.length === 0) return;
+    const win = usable[i] ?? { start: leadIn, end: outputDuration };
+    const placed = planNarrationBeats(
+      group,
+      boundaries.filter((b) => b >= win.start && b < win.end),
+      win.end,
+      Math.max(win.start, i === 0 ? leadIn : win.start)
+    );
+    beats.push(...placed);
+  });
   const output = join(workDir, 'narration.m4a');
 
   // One line needs no mixing, just its offset.
@@ -400,6 +432,22 @@ async function synthesizeNarration(
       duration: b.duration,
     })),
   };
+}
+
+/** Output-time window each clip occupies, after any intro. */
+export function clipWindows(
+  clips: Array<{ kept: number }>,
+  speed: number,
+  offset: number
+): SectionWindow[] {
+  const out: SectionWindow[] = [];
+  let elapsed = offset;
+  for (const clip of clips) {
+    const end = elapsed + clip.kept / speed;
+    out.push({ start: elapsed, end });
+    elapsed = end;
+  }
+  return out;
 }
 
 /**
@@ -645,6 +693,7 @@ export async function autoShort(options: AutoShortOptions): Promise<AutoShortRes
   const contrast = options.contrast ?? 1.25;
   const musicVolume = options.musicVolume ?? 0.08;
   const leadIn = options.leadIn ?? DEFAULT_LEAD_IN;
+  const tailPad = options.tailPad ?? DEFAULT_TAIL_PAD;
   const mode = options.voiceover ?? 'auto';
   const progress = options.onProgress ?? ((s: string) => console.log(fmt.dim(`  ${s}...`)));
 
@@ -723,8 +772,9 @@ export async function autoShort(options: AutoShortOptions): Promise<AutoShortRes
           script,
           workDir,
           leadIn + introSeconds,
-          outputDuration,
+          Math.max(introSeconds + 1, outputDuration - tailPad),
           cutBoundaries(clips, speed, introSeconds),
+          clipWindows(clips, speed, introSeconds),
           options
         )
       );
