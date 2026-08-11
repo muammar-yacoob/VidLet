@@ -11,7 +11,7 @@ import { logToFile } from '../lib/logger.js';
 import { getOutputPath } from '../lib/paths.js';
 import type { TranscriptSegment } from '../lib/whisper.js';
 
-export type CaptionStyle = 'classic' | 'hormozi' | 'karaoke' | 'minimal';
+export type CaptionStyle = 'classic' | 'hormozi' | 'karaoke' | 'minimal' | 'shorts';
 export type CaptionPosition = 'bottom' | 'center' | 'top';
 
 export interface CaptionOptions {
@@ -23,6 +23,8 @@ export interface CaptionOptions {
   whisperModel?: 'tiny.en' | 'base.en' | 'small.en';
   // Style
   style?: CaptionStyle;
+  /** 'shorts' only: characters per line before wrapping to a new cue. */
+  maxChars?: number;
   highlightColor?: string; // User-friendly name: 'yellow', 'cyan', 'red', 'green', 'white'
   fontSize?: number;
   fontName?: string;
@@ -123,7 +125,7 @@ function segmentsToEntries(segments: TranscriptSegment[]): SrtEntry[] {
 
 // ============ ASS GENERATION ============
 
-interface AssContext {
+export interface AssContext {
   entries: SrtEntry[];
   videoWidth: number;
   videoHeight: number;
@@ -131,6 +133,83 @@ interface AssContext {
   fontName: string;
   position: CaptionPosition;
   highlightColor: string; // ASS BGR format
+  maxChars: number;
+}
+
+/** Requested line budget for 'shorts'; narrowed to whatever actually fits. */
+export const SHORTS_MAX_CHARS = 28;
+
+/**
+ * Average glyph advance as a fraction of font size for a heavy display face
+ * (Arial Black / DejaVu Bold). Measured from rendered output rather than
+ * font metrics - close enough to keep a line inside the frame.
+ */
+const GLYPH_WIDTH_RATIO = 0.62;
+
+/**
+ * Characters that actually fit one line at this width and size. Without
+ * this a nominally "28 char" line renders wider than the frame and gets
+ * clipped at both edges.
+ */
+export function fittingMaxChars(
+  videoWidth: number,
+  fontSize: number,
+  sideMargin: number,
+  requested: number
+): number {
+  const usable = Math.max(1, videoWidth - sideMargin * 2);
+  const fits = Math.floor(usable / (fontSize * GLYPH_WIDTH_RATIO));
+  return Math.max(8, Math.min(requested, fits));
+}
+
+export interface CaptionWord {
+  word: string;
+  start: number;
+  end: number;
+}
+
+/**
+ * whisper emits punctuation, and contraction tails like "'s", as their own
+ * timed tokens - which render as a lone comma in its own highlight, or
+ * "it 's". Glue both onto the previous word, extending its timing.
+ */
+export function mergePunctuationTokens(words: CaptionWord[]): CaptionWord[] {
+  const out: CaptionWord[] = [];
+  for (const w of words) {
+    const isPunctOnly = /^[\p{P}\p{S}]+$/u.test(w.word);
+    const isContractionTail = /^['\u2019]\p{L}{1,2}$/u.test(w.word);
+    if ((isPunctOnly || isContractionTail) && out.length > 0) {
+      const prev = out[out.length - 1];
+      out[out.length - 1] = { word: prev.word + w.word, start: prev.start, end: w.end };
+    } else {
+      out.push(w);
+    }
+  }
+  return out;
+}
+
+/**
+ * Pack words into single lines of at most maxChars, so only ONE short line
+ * is ever on screen. A word longer than the budget gets its own line rather
+ * than being dropped or split.
+ */
+export function chunkWordsToLines(words: CaptionWord[], maxChars: number): CaptionWord[][] {
+  const lines: CaptionWord[][] = [];
+  let current: CaptionWord[] = [];
+  let width = 0;
+  for (const w of words) {
+    const added = current.length === 0 ? w.word.length : width + 1 + w.word.length;
+    if (current.length > 0 && added > maxChars) {
+      lines.push(current);
+      current = [w];
+      width = w.word.length;
+    } else {
+      current.push(w);
+      width = added;
+    }
+  }
+  if (current.length > 0) lines.push(current);
+  return lines;
 }
 
 /**
@@ -300,6 +379,64 @@ function distributeWords(
   }));
 }
 
+/**
+ * Shorts style: the modern IG/TikTok caption - one short line at a time,
+ * big bold white, with only the word being spoken turned yellow.
+ *
+ * Built as one Dialogue event per word (whole line redrawn, current word
+ * recoloured) rather than ASS \\k karaoke: \\k paints every already-sung word
+ * in the highlight colour, which ends up as a wall of yellow. Per-word
+ * events keep exactly one word lit.
+ */
+export function generateShortsAss(ctx: AssContext): string {
+  const { videoHeight, fontName, highlightColor } = ctx;
+  // Big: roughly a sixteenth of frame height is the IG/CapCut proportion.
+  const fontSize = Math.max(ctx.fontSize, Math.round(videoHeight / 18));
+  const marginV = Math.round(videoHeight * 0.16);
+  const sideMargin = 60;
+  const outline = Math.max(4, Math.round(fontSize / 12));
+  const maxChars = fittingMaxChars(ctx.videoWidth, fontSize, sideMargin, ctx.maxChars);
+
+  const header = `[Script Info]
+Title: VidLet Captions
+ScriptType: v4.00+
+PlayResX: ${ctx.videoWidth}
+PlayResY: ${videoHeight}
+ScaledBorderAndShadow: yes
+WrapStyle: 0
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Shorts,${fontName},${fontSize},&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,${outline},2,2,${sideMargin},${sideMargin},${marginV},1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+`;
+
+  const lines: string[] = [];
+  for (const entry of ctx.entries) {
+    const raw = entry.words ?? distributeWords(entry.text, entry.startTime, entry.endTime);
+    const words = mergePunctuationTokens(raw);
+    if (words.length === 0) continue;
+
+    for (const lineWords of chunkWordsToLines(words, maxChars)) {
+      for (let i = 0; i < lineWords.length; i++) {
+        const text = lineWords
+          .map((w, j) => (j === i ? `{\\c${highlightColor}}${w.word}{\\c&HFFFFFF&}` : w.word))
+          .join(' ');
+        // Hold the last word until the line's end so the line never flickers
+        // out early between cues.
+        const end = i === lineWords.length - 1 ? lineWords[i].end : lineWords[i + 1].start;
+        lines.push(
+          `Dialogue: 0,${toAssTime(lineWords[i].start)},${toAssTime(end)},Shorts,,0,0,0,,${text}`
+        );
+      }
+    }
+  }
+
+  return header + lines.join('\n');
+}
+
 // ============ STYLE DISPATCH ============
 
 const STYLE_GENERATORS: Record<CaptionStyle, (ctx: AssContext) => string> = {
@@ -307,6 +444,7 @@ const STYLE_GENERATORS: Record<CaptionStyle, (ctx: AssContext) => string> = {
   hormozi: generateHormoziAss,
   karaoke: generateKaraokeAss,
   minimal: generateMinimalAss,
+  shorts: generateShortsAss,
 };
 
 // ============ DEFAULT SRT ============
@@ -340,6 +478,7 @@ export async function caption(opts: CaptionOptions): Promise<string> {
     autoTranscribe = false,
     whisperModel = 'base.en',
     style = 'hormozi',
+    maxChars = SHORTS_MAX_CHARS,
     highlightColor = 'yellow',
     fontSize = 48,
     fontName = 'Arial Black',
@@ -387,6 +526,7 @@ export async function caption(opts: CaptionOptions): Promise<string> {
     fontName,
     position,
     highlightColor: colorNameToAss(highlightColor),
+    maxChars,
   };
 
   // Generate ASS content using the selected style

@@ -13,7 +13,7 @@ import { describe, expect, it } from 'vitest';
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
 const built = existsSync(join(repoRoot, 'dist', 'mcp-tools.js'));
 
-const EXPECTED_TOOL_COUNT = 17;
+const EXPECTED_TOOL_COUNT = 20;
 
 interface JsonRpcMessage {
   id?: number;
@@ -102,6 +102,9 @@ describe.runIf(built)('mcp.js smoke (stdio JSON-RPC)', () => {
     for (const name of [
       'list_capabilities',
       'probe_video',
+      'speed_up_video',
+      'create_timelapse_short',
+      'generate_short',
       'generate_captions',
       'setup_recording',
       'generate_voiceover',

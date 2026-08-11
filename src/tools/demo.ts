@@ -10,15 +10,14 @@
  * 4. TTS speaks it (free Edge voices, or your cloned voice)
  * 5. outputs BOTH the full 16:9 narrated demo and a 9:16 Short
  */
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { PNG } from 'pngjs';
 import { z } from 'zod';
 import { checkFFmpeg, executeFFmpegRaw, getVideoInfo, videoEncoderArgs } from '../lib/ffmpeg.js';
 import { GROQ_MODELS, groqChatJSON, visionMessage } from '../lib/groq.js';
 import { fmt, header, separator, success } from '../lib/logger.js';
-import { diffCentroidX, estimateCropX } from '../lib/motion.js';
+import { detectIdleSpans, estimateCropX } from '../lib/motion.js';
 import { getOutputPath } from '../lib/paths.js';
 import { type TimeSegment, invertSegments } from '../lib/segments.js';
 import { type CaptionStyle, caption } from './caption.js';
@@ -49,34 +48,10 @@ export interface DemoOptions {
 /** Words-per-second budget for comfortable TTS narration. */
 export const NARRATION_WPS = 2.3;
 export const SHORT_MAX_SECONDS = 55;
-/** A static stretch must last this long before it is cut as idle. */
-export const MIN_IDLE_SECONDS = 2;
-
-/**
- * Convert per-step static flags (flags[i] = "nothing moved between sample i
- * and i+1") into idle TimeSegments of at least minIdleSeconds.
- */
-export function idleRunsToSegments(
-  staticFlags: boolean[],
-  interval: number,
-  minIdleSeconds: number
-): TimeSegment[] {
-  const minSteps = Math.max(1, Math.ceil(minIdleSeconds / interval));
-  const idle: TimeSegment[] = [];
-  let runStart = -1;
-  for (let i = 0; i <= staticFlags.length; i++) {
-    if (i < staticFlags.length && staticFlags[i]) {
-      if (runStart === -1) runStart = i;
-    } else if (runStart !== -1) {
-      const runLength = i - runStart;
-      if (runLength >= minSteps) {
-        idle.push({ start: runStart * interval, end: i * interval });
-      }
-      runStart = -1;
-    }
-  }
-  return idle;
-}
+// Idle detection now lives in lib/motion.ts, next to the pixel diff it uses,
+// so the timelapse pipeline can reach it without importing this module (and
+// with it Groq, TTS and captioning). Re-exported for existing callers.
+export { MIN_IDLE_SECONDS, idleRunsToSegments } from '../lib/motion.js';
 
 /** Pick chronological spans totaling at most maxTotal seconds, longest-first preference. */
 export function pickShortSpans(spans: TimeSegment[], maxTotal: number): TimeSegment[] {
@@ -96,45 +71,6 @@ export function pickShortSpans(spans: TimeSegment[], maxTotal: number): TimeSegm
     chosen.push({ start: s.start, end: Math.min(s.end, s.start + maxTotal) });
   }
   return chosen.sort((a, b) => a.start - b.start);
-}
-
-/**
- * Sample frames at a fixed rate and flag the steps where nothing moved.
- * Reuses the tuned per-pixel diff from lib/motion.ts, which detects even a
- * lone cursor - exactly what screen-recording idle detection needs.
- */
-async function detectIdleSpans(
-  input: string,
-  duration: number,
-  workDir: string
-): Promise<TimeSegment[]> {
-  const fps = duration > 900 ? 1 : 2;
-  const interval = 1 / fps;
-  const framesDir = join(workDir, 'frames');
-  mkdirSync(framesDir, { recursive: true });
-  await executeFFmpegRaw([
-    '-y',
-    '-i',
-    input,
-    '-vf',
-    `fps=${fps},scale=320:-1`,
-    '-loglevel',
-    'error',
-    join(framesDir, 'f%05d.png'),
-  ]);
-
-  const files = readdirSync(framesDir).sort();
-  const flags: boolean[] = [];
-  let prev: PNG | null = null;
-  for (const file of files) {
-    const png = PNG.sync.read(readFileSync(join(framesDir, file)));
-    if (prev && prev.width === png.width && prev.height === png.height) {
-      flags.push(diffCentroidX(prev.data, png.data, png.width, png.height) === null);
-    }
-    prev = png;
-  }
-
-  return idleRunsToSegments(flags, interval, MIN_IDLE_SECONDS);
 }
 
 const scriptSchema = z.object({
@@ -226,12 +162,7 @@ async function writeScript(
   const raw = await groqChatJSON<unknown>([
     {
       role: 'system',
-      content:
-        'You write voiceover scripts for silent product screen recordings. Plain human voice, ' +
-        'no hype words, no emojis, benefit-first, present tense, as if the maker is casually ' +
-        'showing a friend. Respond with JSON {"narration": "<script, about ' +
-        `${fullWords} words, matching the pacing of the visuals>", "short_narration": ` +
-        `"<standalone hook-first version, at most ${shortWords} words>"}`,
+      content: `You write voiceover scripts for silent product screen recordings. Plain human voice, no hype words, no emojis, benefit-first, present tense, as if the maker is casually showing a friend. Respond with JSON {"narration": "<script, about ${fullWords} words, matching the pacing of the visuals>", "short_narration": "<standalone hook-first version, at most ${shortWords} words>"}`,
     },
     { role: 'user', content: context },
   ]);

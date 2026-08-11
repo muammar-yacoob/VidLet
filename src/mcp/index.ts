@@ -6,6 +6,7 @@ import { type ToolDefinition, type ToolHandler, errorContent, jsonContent } from
  * (recording/voiceover/short/demo) and tools-project.ts (.vidlet projects);
  * shared plumbing in shared.ts.
  */
+import { AUTOSHORT_HANDLERS, AUTOSHORT_TOOLS } from './tools-autoshort.js';
 import { CORE_HANDLERS, CORE_TOOLS } from './tools-core.js';
 import { PROJECT_HANDLERS, PROJECT_TOOLS } from './tools-project.js';
 import { STUDIO_HANDLERS, STUDIO_TOOLS } from './tools-studio.js';
@@ -21,6 +22,7 @@ export const TOOLS: ToolDefinition[] = [
   LIST_CAPABILITIES,
   ...CORE_TOOLS,
   ...STUDIO_TOOLS,
+  ...AUTOSHORT_TOOLS,
   ...PROJECT_TOOLS,
 ];
 
@@ -35,6 +37,7 @@ export const TOOL_HANDLERS: Record<string, ToolHandler> = {
   list_capabilities: handleListCapabilities,
   ...CORE_HANDLERS,
   ...STUDIO_HANDLERS,
+  ...AUTOSHORT_HANDLERS,
   ...PROJECT_HANDLERS,
 };
 

@@ -64,8 +64,10 @@ export const JumpcutConfigSchema = z.object({
   zoom: z.number().min(0).max(8).default(3),
 });
 
+// The 60x ceiling is for timelapse work (a 10-minute screen recording
+// collapsing into a Short); speech stays intelligible only to about 2x.
 export const SpeedupConfigSchema = z.object({
-  speed: z.number().min(0.25).max(4).default(1.5),
+  speed: z.number().min(0.25).max(60).default(1.5),
   pitchShift: z.number().min(-5).max(5).default(-0.03),
 });
 

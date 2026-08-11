@@ -1,0 +1,41 @@
+{
+  "_comment": "Every track here must be CC0 / public domain: VidLet redistributes these inside the published package, so any attribution or share-alike condition would propagate to every user of the tool. Record provenance for anything added.",
+  "tracks": [
+    {
+      "file": "upbeat-spring-on-the-horizon.mp3",
+      "title": "Spring On The Horizon",
+      "artist": "HoliznaCC0",
+      "license": "CC0 1.0 Universal",
+      "source": "https://freemusicarchive.org/music/holiznacc0/background-music",
+      "mood": "upbeat",
+      "duration": 91.788
+    },
+    {
+      "file": "calm-drifting-piano.mp3",
+      "title": "Drifting Piano",
+      "artist": "HoliznaCC0",
+      "license": "CC0 1.0 Universal",
+      "source": "https://freemusicarchive.org/music/holiznacc0/background-music",
+      "mood": "calm",
+      "duration": 110.484
+    },
+    {
+      "file": "tense-dangerous-voyage.mp3",
+      "title": "Dangerous Voyage",
+      "artist": "HoliznaCC0",
+      "license": "CC0 1.0 Universal",
+      "source": "https://freemusicarchive.org/music/holiznacc0/background-music",
+      "mood": "tense",
+      "duration": 179.796
+    },
+    {
+      "file": "playful-ost-music-box-1.mp3",
+      "title": "OST Music Box 1",
+      "artist": "HoliznaCC0",
+      "license": "CC0 1.0 Universal",
+      "source": "https://freemusicarchive.org/music/holiznacc0/background-music",
+      "mood": "playful",
+      "duration": 77.964
+    }
+  ]
+}

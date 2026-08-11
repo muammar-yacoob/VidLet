@@ -4,11 +4,12 @@
  * recordings. Pure ffmpeg + pngjs (already a dependency): sample frame
  * pairs, diff pixels, take the horizontal centroid of what changed.
  */
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PNG } from 'pngjs';
 import { executeFFmpegRaw } from './ffmpeg.js';
+import type { TimeSegment } from './segments.js';
 
 /** Downscaled analysis width - enough to localize a cursor, cheap to diff. */
 const ANALYSIS_WIDTH = 320;
@@ -113,4 +114,78 @@ export async function estimateCropX(
   if (centroids.length === 0) return 0.5;
   const mean = centroids.reduce((s, c) => s + c, 0) / centroids.length;
   return centroidToCropX(mean, inWidth, inHeight);
+}
+
+// ============ IDLE-SPAN DETECTION ============
+// Screen recordings spend most of their length doing nothing. These helpers
+// find the static stretches so callers can drop them; they live here rather
+// than in a pipeline module because both the demo and timelapse pipelines
+// need them, and the per-pixel diff above is what makes them work.
+
+/** A static stretch must last this long before it is cut as idle. */
+export const MIN_IDLE_SECONDS = 2;
+
+/**
+ * Convert per-step static flags (flags[i] = "nothing moved between sample i
+ * and i+1") into idle TimeSegments of at least minIdleSeconds.
+ */
+export function idleRunsToSegments(
+  staticFlags: boolean[],
+  interval: number,
+  minIdleSeconds: number
+): TimeSegment[] {
+  const minSteps = Math.max(1, Math.ceil(minIdleSeconds / interval));
+  const idle: TimeSegment[] = [];
+  let runStart = -1;
+  for (let i = 0; i <= staticFlags.length; i++) {
+    if (i < staticFlags.length && staticFlags[i]) {
+      if (runStart === -1) runStart = i;
+    } else if (runStart !== -1) {
+      const runLength = i - runStart;
+      if (runLength >= minSteps) {
+        idle.push({ start: runStart * interval, end: i * interval });
+      }
+      runStart = -1;
+    }
+  }
+  return idle;
+}
+
+/**
+ * Sample frames at a fixed rate and flag the steps where nothing moved.
+ * Reuses the tuned per-pixel diff above, which detects even a lone cursor -
+ * exactly what screen-recording idle detection needs.
+ */
+export async function detectIdleSpans(
+  input: string,
+  duration: number,
+  workDir: string
+): Promise<TimeSegment[]> {
+  const fps = duration > 900 ? 1 : 2;
+  const interval = 1 / fps;
+  const framesDir = join(workDir, 'frames');
+  mkdirSync(framesDir, { recursive: true });
+  await executeFFmpegRaw([
+    '-y',
+    '-i',
+    input,
+    '-vf',
+    `fps=${fps},scale=${ANALYSIS_WIDTH}:-1`,
+    '-loglevel',
+    'error',
+    join(framesDir, 'f%05d.png'),
+  ]);
+
+  const files = readdirSync(framesDir).sort();
+  const flags: boolean[] = [];
+  let prev: PNG | null = null;
+  for (const file of files) {
+    const png = PNG.sync.read(readFileSync(join(framesDir, file)));
+    if (prev && prev.width === png.width && prev.height === png.height) {
+      flags.push(diffCentroidX(prev.data, png.data, png.width, png.height) === null);
+    }
+    prev = png;
+  }
+
+  return idleRunsToSegments(flags, interval, MIN_IDLE_SECONDS);
 }

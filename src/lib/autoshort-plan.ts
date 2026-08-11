@@ -1,0 +1,146 @@
+/**
+ * Pure planning logic for the AutoShort pipeline - input classification,
+ * pause/retake maths and caption timing. No ffmpeg, no filesystem: split
+ * from tools/autoshort.ts for the 500-line cap and so every decision here
+ * is unit-testable without rendering anything.
+ */
+import type { TimeSegment } from './segments.js';
+
+const VIDEO_EXTS = new Set(['.mp4', '.mkv', '.webm', '.mov', '.avi', '.m4v']);
+const SUBTITLE_EXTS = new Set(['.srt', '.vtt']);
+const TEXT_EXTS = new Set(['.txt', '.md']);
+const AUDIO_EXTS = new Set(['.mp3', '.wav', '.m4a', '.aac', '.ogg', '.flac']);
+
+export interface ClassifiedInputs {
+  videos: string[];
+  subtitlePath?: string;
+  narrationPath?: string;
+  musicPath?: string;
+  ignored: string[];
+}
+
+/** Sort a mixed attachment list into roles by extension. Order is preserved. */
+export function classifyInputs(paths: string[]): ClassifiedInputs {
+  const out: ClassifiedInputs = { videos: [], ignored: [] };
+  for (const p of paths) {
+    const ext = p.slice(p.lastIndexOf('.')).toLowerCase();
+    if (VIDEO_EXTS.has(ext)) out.videos.push(p);
+    else if (SUBTITLE_EXTS.has(ext)) out.subtitlePath ??= p;
+    else if (TEXT_EXTS.has(ext)) out.narrationPath ??= p;
+    else if (AUDIO_EXTS.has(ext)) out.musicPath ??= p;
+    else out.ignored.push(p);
+  }
+  return out;
+}
+
+/** Strip .srt/.vtt down to its spoken text. */
+export function subtitleToText(content: string): string {
+  return content
+    .replace(/^WEBVTT.*$/m, '')
+    .split(/\r?\n/)
+    .filter((line) => {
+      const t = line.trim();
+      return t !== '' && !/^\d+$/.test(t) && !t.includes('-->');
+    })
+    .map((l) => l.replace(/<[^>]+>/g, '').trim())
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** Speed multiplier that lands the kept footage inside the ceiling. */
+export function speedFor(keptSeconds: number, maxSeconds: number): number {
+  if (keptSeconds <= maxSeconds) return 1;
+  return Math.min(60, keptSeconds / maxSeconds);
+}
+
+const tokenSet = (text: string): Set<string> =>
+  new Set(
+    text
+      .toLowerCase()
+      .replace(/[^a-z0-9\s']/g, ' ')
+      .split(/\s+/)
+      .filter((w) => w.length > 2)
+  );
+
+function overlapSimilarity(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0;
+  let hits = 0;
+  for (const w of a) if (b.has(w)) hits += 1;
+  return hits / Math.min(a.size, b.size);
+}
+
+export interface SpokenSpan extends TimeSegment {
+  text: string;
+}
+
+/**
+ * Collapse retakes: spans whose transcripts substantially overlap are the
+ * same step recorded more than once - keep the longest unique take. Spans
+ * with too little text to judge always survive.
+ */
+export function dedupeRetakes(spans: SpokenSpan[], threshold = 0.55): SpokenSpan[] {
+  const kept: SpokenSpan[] = [];
+  for (const span of spans) {
+    const tokens = tokenSet(span.text);
+    const twin =
+      tokens.size >= 4
+        ? kept.findIndex((k) => overlapSimilarity(tokens, tokenSet(k.text)) >= threshold)
+        : -1;
+    if (twin === -1) {
+      kept.push(span);
+    } else if (span.end - span.start > kept[twin].end - kept[twin].start) {
+      kept[twin] = span;
+    }
+  }
+  return kept.sort((a, b) => a.start - b.start);
+}
+
+/** Attach transcript text to each kept span by timestamp overlap. */
+export function spansWithText(
+  spans: TimeSegment[],
+  transcript: Array<{ start: number; end: number; text: string }>
+): SpokenSpan[] {
+  return spans.map((s) => ({
+    ...s,
+    text: transcript
+      .filter((seg) => seg.start < s.end && seg.end > s.start)
+      .map((seg) => seg.text)
+      .join(' ')
+      .trim(),
+  }));
+}
+
+/** Proportional SRT: split the script across the runtime by sentence length. */
+export function scriptToSrt(script: string, durationSeconds: number): string {
+  const sentences = script.match(/[^.!?]+[.!?]*/g)?.map((s) => s.trim()) ?? [script];
+  const totalChars = sentences.reduce((n, s) => n + s.length, 0) || 1;
+  const stamp = (t: number): string => {
+    const ms = Math.round(t * 1000);
+    const h = Math.floor(ms / 3_600_000);
+    const m = Math.floor((ms % 3_600_000) / 60_000);
+    const s = Math.floor((ms % 60_000) / 1000);
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')},${String(ms % 1000).padStart(3, '0')}`;
+  };
+  let t = 0;
+  return sentences
+    .map((sentence, i) => {
+      const len = (sentence.length / totalChars) * durationSeconds;
+      const entry = `${i + 1}\n${stamp(t)} --> ${stamp(Math.min(t + len, durationSeconds))}\n${sentence}\n`;
+      t += len;
+      return entry;
+    })
+    .join('\n');
+}
+
+/**
+ * Words that remain once whisper's non-speech markers ([BLANK_AUDIO],
+ * [Music], (soft piano)...) are stripped. Constant background hum passes a
+ * volume check but transcribes to nothing - THIS is the honest voice test.
+ */
+export function realSpeechWords(text: string): number {
+  return text
+    .replace(/\[[^\]]*\]|\([^)]*\)/g, ' ')
+    .split(/\s+/)
+    .filter((w) => /[a-z0-9]/i.test(w)).length;
+}

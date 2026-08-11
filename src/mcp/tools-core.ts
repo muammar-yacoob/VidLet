@@ -11,6 +11,7 @@ import { extractAudio } from '../tools/audio.js';
 import { caption } from '../tools/caption.js';
 import { compress } from '../tools/compress.js';
 import { jumpcut } from '../tools/jumpcut.js';
+import { speedup } from '../tools/speedup.js';
 import { togif } from '../tools/togif.js';
 import { trim } from '../tools/trim.js';
 import {
@@ -65,6 +66,31 @@ export const CORE_TOOLS: ToolDefinition[] = [
           description:
             'Silence threshold in dB (more negative = more sensitive). Default -30 (normal pace).',
         },
+      },
+      required: ['path'],
+    },
+  },
+  {
+    name: 'speed_up_video',
+    description:
+      'Change playback speed. Audio keeps its pitch via chained atempo, so speech stays natural ' +
+      'up to about 2x; past that treat the audio as texture (or mute it). Never overwrites ' +
+      'input; default output is "<name>_speedup.<ext>" in a VidLet/ subfolder, numbered if that ' +
+      'already exists.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...PATH_PROPERTY,
+        speed: {
+          type: 'number',
+          description:
+            'Playback multiplier, 0.25-60. Default 1.5. 15 suits screen-recording timelapse.',
+        },
+        pitch_shift: {
+          type: 'number',
+          description: 'Optional pitch nudge in percent (-5 to 5). Default -0.03.',
+        },
+        output_path: { type: 'string', description: 'Optional explicit output path.' },
       },
       required: ['path'],
     },
@@ -216,6 +242,28 @@ async function handleAutoJumpCut({
   );
 }
 
+async function handleSpeedUpVideo({
+  path,
+  speed,
+  pitch_shift,
+  output_path,
+}: {
+  path?: string;
+  speed?: number;
+  pitch_shift?: number;
+  output_path?: string;
+}) {
+  const input = resolveInputPath(path);
+  const desired = output_path ? resolve(output_path) : getOutputPath(input, '_speedup');
+  const output = safeOutputPath(input, desired);
+  return runWriteTool(output, () =>
+    withSilencedStdout(async () => {
+      const result = await speedup({ input, output, speed, pitchShift: pitch_shift });
+      return jsonContent({ output: result });
+    })
+  );
+}
+
 async function handleTrimVideo({
   path,
   start,
@@ -311,6 +359,7 @@ export const CORE_HANDLERS: Record<string, ToolHandler> = {
   probe_video: handleProbeVideo,
   generate_captions: handleGenerateCaptions,
   auto_jump_cut: handleAutoJumpCut,
+  speed_up_video: handleSpeedUpVideo,
   trim_video: handleTrimVideo,
   compress_video: handleCompressVideo,
   extract_audio: handleExtractAudio,

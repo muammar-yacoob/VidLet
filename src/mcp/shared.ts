@@ -5,6 +5,7 @@
 import { spawn } from 'node:child_process';
 import { existsSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { basename, dirname, extname, join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 export interface ToolDefinition {
   name: string;
@@ -114,6 +115,15 @@ export async function runWriteTool<T>(output: string, fn: () => Promise<T>): Pro
     releaseIfEmpty(output);
     throw e;
   }
+}
+
+/**
+ * A clickable file:// URL for a rendered output. Returned alongside the raw
+ * path so a chat client can open the result directly instead of the user
+ * hunting for it on disk.
+ */
+export function fileUrl(absPath: string): string {
+  return pathToFileURL(absPath).href;
 }
 
 export function jsonContent(data: unknown): ToolResult {

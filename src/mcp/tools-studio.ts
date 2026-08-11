@@ -7,15 +7,18 @@
  */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { resolveMusicChoice } from '../lib/music.js';
 import { changeExtension, getOutputPath } from '../lib/paths.js';
 import { demo } from '../tools/demo.js';
 import { short } from '../tools/short.js';
+import { timelapse } from '../tools/timelapse.js';
 import { resolveCloneEngine, voiceover } from '../tools/voiceover.js';
 import {
   PATH_PROPERTY,
   type ToolDefinition,
   type ToolHandler,
   editorBaseUrl,
+  fileUrl,
   jsonContent,
   maxSafeUrlLength,
   openInBrowser,
@@ -119,6 +122,49 @@ export const STUDIO_TOOLS: ToolDefinition[] = [
           type: 'string',
           description:
             'Path to an edited .segments.json to re-render from (skips transcription + AI).',
+        },
+        output_path: { type: 'string', description: 'Optional explicit output path.' },
+      },
+      required: ['path'],
+    },
+  },
+  {
+    name: 'create_timelapse_short',
+    description:
+      'Turn a long screen recording into a fast 9:16 Short: static stretches are cut (per-pixel ' +
+      'motion, so a moving cursor still counts as activity), what is left is sped up, the frame ' +
+      'is padded to 1080x1920 over a blurred copy of itself, and a progress bar + real ' +
+      'source-time readout are burned on. Original audio is dropped (at these speeds it is ' +
+      'noise) and replaced with a bundled CC0 music bed. Every setting has a working default: ' +
+      'calling this with just `path` produces a finished, scored Short. Never overwrites input; default output is ' +
+      '"<name>_timelapse.mp4" in a VidLet/ subfolder, numbered if that already exists.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...PATH_PROPERTY,
+        speed: {
+          type: 'number',
+          description: 'Playback multiplier applied after idle cutting, 0.25-60. Default 15.',
+        },
+        music: {
+          type: 'string',
+          description:
+            'A bundled CC0 mood ("upbeat", "calm", "tense", "playful"), a path to your own ' +
+            'audio file, or "none" for silence. Beds are looped and faded to fit. Defaults to a ' +
+            'bundled upbeat track — omit it and the Short comes out scored.',
+        },
+        music_volume: { type: 'number', description: 'Music level 0-1. Default 0.35.' },
+        cut_idle: {
+          type: 'boolean',
+          description: 'Drop static stretches before speeding up. Default true.',
+        },
+        overlay: {
+          type: 'boolean',
+          description: 'Burn the progress bar + source-time readout. Default true.',
+        },
+        portrait: {
+          type: 'boolean',
+          description: 'Frame 9:16 for Shorts. Default true; false keeps the source aspect.',
         },
         output_path: { type: 'string', description: 'Optional explicit output path.' },
       },
@@ -289,6 +335,59 @@ async function handleCreateShort({
   );
 }
 
+async function handleCreateTimelapseShort({
+  path,
+  speed,
+  music,
+  music_volume,
+  cut_idle,
+  overlay,
+  portrait,
+  output_path,
+}: {
+  path?: string;
+  speed?: number;
+  music?: string;
+  music_volume?: number;
+  cut_idle?: boolean;
+  overlay?: boolean;
+  portrait?: boolean;
+  output_path?: string;
+}) {
+  const input = resolveInputPath(path);
+  // Resolved before the output path is reserved: a bad mood name should not
+  // leave an empty placeholder file behind.
+  const track = resolveMusicChoice(music);
+  const desired = output_path ? resolve(output_path) : getOutputPath(input, '_timelapse');
+  const output = safeOutputPath(input, desired);
+  return runWriteTool(output, () =>
+    withSilencedStdout(async () => {
+      const result = await timelapse({
+        input,
+        output,
+        speed,
+        music: track?.path,
+        musicVolume: music_volume,
+        cutIdle: cut_idle,
+        overlay,
+        portrait,
+      });
+      return jsonContent({
+        ...result,
+        url: fileUrl(result.output),
+        music: track
+          ? {
+              title: track.title,
+              artist: track.artist,
+              license: track.license,
+              source: track.source,
+            }
+          : null,
+      });
+    })
+  );
+}
+
 async function handleCreateDemo({
   path,
   about,
@@ -340,5 +439,6 @@ export const STUDIO_HANDLERS: Record<string, ToolHandler> = {
   setup_recording: handleSetupRecording,
   generate_voiceover: handleGenerateVoiceover,
   create_short: handleCreateShort,
+  create_timelapse_short: handleCreateTimelapseShort,
   create_demo: handleCreateDemo,
 };

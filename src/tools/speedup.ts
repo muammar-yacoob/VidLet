@@ -82,7 +82,11 @@ export async function speedup(options: SpeedupOptions): Promise<string> {
 /**
  * Build audio filter chain: atempo for speed, asetrate+aresample for pitch shift
  */
-function buildSpeedupAudioFilters(speed: number, pitchFactor: number, sampleRate: number): string {
+export function buildSpeedupAudioFilters(
+  speed: number,
+  pitchFactor: number,
+  sampleRate: number
+): string {
   const filters: string[] = [];
 
   // atempo changes tempo without affecting pitch (range 0.5-2.0 per instance)
