@@ -1,66 +1,79 @@
 /**
- * AutoShort - "generate a video short from these files", end to end:
+ * AutoShort - "generate a video short from these files", end to end.
  *
- * 1. classify the inputs (videos, .srt/.vtt, narration .txt/.md, music audio)
- * 2. denoise each voiced recording (cleanvoice: DeepFilter or afftdn)
- * 3. cut the obvious dead air - long silences on voiced clips, motion-idle
- *    stretches on silent ones - then drop RETAKES: whisper transcribes the
- *    kept spans and near-duplicate spans (same step re-recorded) collapse to
- *    the longest take
- * 4. stitch what survived, in the order the files were given
- * 5. speed the stitch up just enough to fit the target length (<=59s)
- * 6. grade with a contrast bump and frame 9:16 over a blurred pad
- * 7. narration: supplied text/SRT is punched up by Groq when a key is set;
- *    silent recordings get that script as a TTS voice with captions timed to
- *    it (whisper re-times the actual audio), voiced ones keep their own
- *    (pitch-preserved) voice and burn the script proportionally
- * 8. optional music bed, looped, faded, mixed under whatever voice exists
+ * Analysis first, then ONE ffmpeg pass. Earlier versions encoded four times
+ * (trim each clip, stitch, burn captions, mux music); every stage after the
+ * first ran at 1080x1920 through a gaussian blur, which is where the
+ * wall-clock went. Everything now resolves before rendering - spans, grade,
+ * narration audio, caption timings - so the single graph is the only time a
+ * frame is touched.
+ *
+ * Pipeline:
+ *  1. classify inputs (videos, .srt/.vtt, narration .txt/.md, music)
+ *  2. per clip, ONE analysis pass yields both idle spans and luma stats
+ *  3. drop retakes on voiced clips (whisper transcript similarity)
+ *  4. speed = whatever lands the kept footage under the ceiling
+ *  5. narration: Groq rewrite -> TTS -> whisper the TTS for caption timing
+ *  6. single render: select + grade + pad + concat + speed + captions,
+ *     with narration over a ducked music bed
  */
-import { copyFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   classifyInputs,
   dedupeRetakes,
   realSpeechWords,
+  spansWithText,
+  speedFor,
+  subtitleToText,
+} from '../lib/autoshort-plan.js';
+import {
+  executeFFmpegAnalysis,
+  executeFFmpegRaw,
+  executeFFmpegWithProgress,
+  getMediaDuration,
+  getVideoInfo,
+  videoEncoderArgs,
+} from '../lib/ffmpeg.js';
+import { type LumaStats, averageStats, matchGrade, parseLumaStats } from '../lib/grade.js';
+import { fmt, header, separator, success } from '../lib/logger.js';
+import { type ResolvedTrack, resolveMusicChoice } from '../lib/music.js';
+import { type TimeSegment, detectSilence, invertSegments } from '../lib/segments.js';
+import { transcribe } from '../lib/whisper.js';
+import { type SrtEntry, generateShortsAss, segmentsToEntries } from './caption.js';
+import { cleanVoice } from './cleanvoice.js';
+import { buildSpeedupAudioFilters } from './speedup.js';
+import { buildSelectExpr, escapeFilterPath } from './timelapse.js';
+import { generateNarrationAudio } from './voiceover.js';
+
+export {
+  type ClassifiedInputs,
+  type SpokenSpan,
+  classifyInputs,
+  dedupeRetakes,
   scriptToSrt,
   spansWithText,
   speedFor,
   subtitleToText,
 } from '../lib/autoshort-plan.js';
-import { executeFFmpegAnalysis, executeFFmpegRaw, getVideoInfo } from '../lib/ffmpeg.js';
-import { type LumaStats, averageStats, matchGrade, parseLumaStats } from '../lib/grade.js';
-import { fmt, header, separator, success } from '../lib/logger.js';
-import { detectIdleSpans } from '../lib/motion.js';
-import { type ResolvedTrack, resolveMusicChoice } from '../lib/music.js';
-import { type TimeSegment, detectSilence, invertSegments } from '../lib/segments.js';
-import { transcribe } from '../lib/whisper.js';
-import { caption } from './caption.js';
-import { cleanVoice } from './cleanvoice.js';
-
-import { buildSpeedupAudioFilters } from './speedup.js';
-import { buildSelectExpr } from './timelapse.js';
-import { generateNarrationAudio } from './voiceover.js';
 
 export interface AutoShortOptions {
-  /** Videos in story order; may include .srt/.vtt, .txt/.md and music audio. */
   inputs: string[];
-  /** Inline narration text (alternative to a .txt/.md/.srt input). */
+  /** Narration text. Used verbatim when `scriptIsFinal`, else rewritten. */
   narration?: string;
-  /** Music: bundled mood, file path, "none", or "auto" (default bundled bed). */
+  /** Skip the AI rewrite - this text was already approved by a human. */
+  scriptIsFinal?: boolean;
   music?: string;
-  /** Hard length ceiling in seconds. Default 57 (Shorts allow 60). */
+  /** Bed level, 0-1. Default 0.08 - it sits under the voice, not beside it. */
+  musicVolume?: number;
   maxDuration?: number;
-  /** Burn captions when a script exists. Default true. */
   captions?: boolean;
-  /** Contrast boost applied on top of per-clip matching. Default 1.25. */
+  /** Contrast boost on top of per-clip matching. Default 1.25. */
   contrast?: number;
-  /**
-   * Whose voice carries the Short. 'auto' keeps real speech and only falls
-   * back to TTS for silent footage; 'tts' always narrates (use when the
-   * source audio is not worth keeping); 'keep' never generates a voice.
-   */
   voiceover?: 'auto' | 'tts' | 'keep';
+  /** Silence before the first word, so it does not open mid-syllable. */
+  leadIn?: number;
   output?: string;
   language?: string;
   gender?: 'female' | 'male';
@@ -78,32 +91,87 @@ export interface AutoShortResult {
   retakesDropped: number;
   voiced: boolean;
   narration: 'tts' | 'original-voice' | 'none';
-  scriptRephrased: boolean;
+  narrationSeconds: number;
   captionsBurned: boolean;
   music: ResolvedTrack | null;
+  /** Wall-clock per stage, so a slow render can be attributed. */
+  stageSeconds: Record<string, number>;
 }
 
-// Re-exported so the MCP layer and tests reach the planning logic through
-// the pipeline module they already import.
-export {
-  type ClassifiedInputs,
-  type SpokenSpan,
-  classifyInputs,
-  dedupeRetakes,
-  scriptToSrt,
-  spansWithText,
-  speedFor,
-  subtitleToText,
-} from '../lib/autoshort-plan.js';
+const SHORT_W = 1080;
+const SHORT_H = 1920;
+/**
+ * The background copy is blurred at a quarter resolution and scaled back up.
+ * gblur cost scales with area, and a sigma-32 blur at full size is visually
+ * indistinguishable from sigma-8 at quarter size once it is upscaled.
+ */
+const BLUR_W = 270;
+const BLUR_H = 480;
+/** Words per second Edge neural TTS actually delivers (~175 wpm). */
+const TTS_WPS = 2.9;
+/** Fraction of the runtime narration should cover. Not 100%: it needs air. */
+const NARRATION_COVERAGE = 0.85;
+/** Default silence before the first word. */
+const DEFAULT_LEAD_IN = 1;
+/**
+ * Mean absolute inter-frame luma difference below which a sampled step is
+ * "nothing happened". ffmpeg computes this natively as signalstats YDIF,
+ * replacing a pass that decoded every sampled frame to PNG and diffed it in
+ * JavaScript.
+ */
+const IDLE_YDIF = 0.45;
+/** Analysis sampling rate, frames per second. */
+const ANALYSIS_FPS = 2;
+
+export interface ClipAnalysis {
+  idle: TimeSegment[];
+  luma: LumaStats | null;
+}
+
+/** Runs of low inter-frame difference, as idle time segments. */
+export function ydifToIdleSpans(
+  ydif: number[],
+  interval: number,
+  minIdleSeconds: number
+): TimeSegment[] {
+  const minSteps = Math.max(1, Math.ceil(minIdleSeconds / interval));
+  const spans: TimeSegment[] = [];
+  let runStart = -1;
+  for (let i = 0; i <= ydif.length; i++) {
+    if (i < ydif.length && ydif[i] < IDLE_YDIF) {
+      if (runStart === -1) runStart = i;
+    } else if (runStart !== -1) {
+      if (i - runStart >= minSteps) {
+        spans.push({ start: runStart * interval, end: i * interval });
+      }
+      runStart = -1;
+    }
+  }
+  return spans;
+}
 
 /**
- * Sample luma statistics across a clip (a frame every 2s) so several
- * recordings can be graded onto a common look instead of each keeping its
- * own exposure.
+ * Sample the clip once and derive both signals from the same decode.
+ * signalstats reports YDIF (inter-frame motion) alongside YAVG/YLOW/YHIGH,
+ * so idle detection and contrast measurement share a pass.
  */
+export async function analyzeClip(input: string, minIdleSeconds = 2): Promise<ClipAnalysis> {
+  const log = await executeFFmpegAnalysis(input, [
+    '-vf',
+    `fps=${ANALYSIS_FPS},scale=320:-1,signalstats,metadata=print`,
+  ]);
+  const ydif = [...log.matchAll(/lavfi\.signalstats\.YDIF=([\d.]+)/g)].map((m) =>
+    Number.parseFloat(m[1])
+  );
+  return {
+    idle: ydifToIdleSpans(ydif, 1 / ANALYSIS_FPS, minIdleSeconds),
+    luma: parseLumaStats(log),
+  };
+}
+
+/** Luma profile of a clip, for cross-clip contrast matching. */
 export async function measureLuma(input: string): Promise<LumaStats | null> {
-  const log = await executeFFmpegAnalysis(input, ['-vf', 'fps=1/2,signalstats,metadata=print']);
-  return parseLumaStats(log);
+  return (await analyzeClip(input)).luma;
 }
 
 /** True when the file has an audio stream with actual signal in it. */
@@ -116,9 +184,8 @@ export async function detectVoicedAudio(input: string): Promise<boolean> {
 
 /**
  * True when the audio contains actual SPEECH, not just signal. A constant
- * desktop-audio hum passes the volume check but transcribes to
- * [BLANK_AUDIO] - so whisper a ~60s slice from the middle and count real
- * words. Threshold: 8 words/min, well under the slowest narration.
+ * desktop hum passes the volume check but transcribes to [BLANK_AUDIO], so
+ * whisper a ~60s slice from the middle and count real words.
  */
 export async function sniffSpeech(input: string): Promise<boolean> {
   const info = await getVideoInfo(input);
@@ -126,7 +193,8 @@ export async function sniffSpeech(input: string): Promise<boolean> {
   const start = Math.max(0, info.duration / 2 - sliceLen / 2);
   const workDir = mkdtempSync(join(tmpdir(), 'vidlet-sniff-'));
   try {
-    const slice = join(workDir, 'slice.mp4');
+    // Audio-only slice: whisper never needs the pixels.
+    const slice = join(workDir, 'slice.m4a');
     await executeFFmpegRaw([
       '-y',
       '-ss',
@@ -135,8 +203,9 @@ export async function sniffSpeech(input: string): Promise<boolean> {
       input,
       '-t',
       sliceLen.toFixed(2),
-      '-c',
-      'copy',
+      '-vn',
+      '-c:a',
+      'aac',
       slice,
     ]);
     const result = await transcribe(slice, { model: 'base.en' });
@@ -147,8 +216,12 @@ export async function sniffSpeech(input: string): Promise<boolean> {
   }
 }
 
-/** AI pass over the narration - hook-first, engaging, sized to the runtime. */
-async function rephraseScript(raw: string, outputSeconds: number): Promise<string | null> {
+/**
+ * Rewrite narration in a modern, cheerful creator voice, sized to the
+ * runtime. Exported so the MCP layer can put the draft in front of a human
+ * BEFORE anything renders.
+ */
+export async function rephraseScript(raw: string, outputSeconds: number): Promise<string | null> {
   if (!process.env.GROQ_API_KEY?.trim()) return null;
   const { groqChatJSON } = await import('../lib/groq.js');
   const targetWords = Math.max(12, Math.round(outputSeconds * TTS_WPS * NARRATION_COVERAGE));
@@ -156,7 +229,7 @@ async function rephraseScript(raw: string, outputSeconds: number): Promise<strin
     const result = await groqChatJSON<{ script: string }>([
       {
         role: 'system',
-        content: `You write voiceover for YouTube Shorts that people actually finish. Rewrite the draft in a warm, upbeat, modern creator voice - how a friendly YouTuber talks to camera. Hook the viewer in the first three words. Short punchy sentences of four to ten words. Second person, present tense, contractions. Sound genuinely delighted by the thing rather than salesy. Vary the rhythm so it never drones. End on a satisfying payoff line, not a call to action. Never use: "dive in", "unleash", "game-changer", "in this video", "let\'s explore", "journey", "buckle up". No emojis, no hashtags, no stage directions, no headings - this is read aloud by TTS, so plain spoken words only. Length matters: write ${targetWords} words, and never fewer than ${Math.round(targetWords * 0.9)}, because this is read aloud over a ${Math.round(outputSeconds)} second video and has to carry most of it. Respond with JSON {"script": "<${targetWords} words of spoken narration>"}`,
+        content: `You write voiceover for YouTube Shorts that people actually finish. Rewrite the draft in a warm, upbeat, modern creator voice - how a friendly YouTuber talks to camera. Hook the viewer in the first three words. Short punchy sentences of four to ten words. Mirror the draft's own voice and person: if the draft says "I", stay in first person and keep it personal; if it addresses the viewer, stay in second person. Present tense, contractions. If the draft opens with a specific line, keep that opening intact. Sound genuinely delighted by the thing rather than salesy. Vary the rhythm so it never drones. End on a satisfying payoff line, not a call to action. Never use: "dive in", "unleash", "game-changer", "in this video", "let's explore", "journey", "buckle up". No emojis, no hashtags, no stage directions, no headings, and never an em dash or any dash used as punctuation, because TTS reads it as an odd pause. Use commas or full stops. This is read aloud, so plain spoken words only. Length matters: write ${targetWords} words, and never fewer than ${Math.round(targetWords * 0.9)}, because this is read aloud over a ${Math.round(outputSeconds)} second video and has to carry most of it. Respond with JSON {"script": "<${targetWords} words of spoken narration>"}`,
       },
       { role: 'user', content: raw },
     ]);
@@ -166,38 +239,69 @@ async function rephraseScript(raw: string, outputSeconds: number): Promise<strin
   }
 }
 
+/** Narration text from whichever source the caller supplied. */
+export function resolveScriptSource(
+  files: ReturnType<typeof classifyInputs>,
+  narration?: string
+): string {
+  if (narration?.trim()) return narration.trim();
+  if (files.narrationPath) return readFileSync(files.narrationPath, 'utf8').trim();
+  if (files.subtitlePath) return subtitleToText(readFileSync(files.subtitlePath, 'utf8'));
+  return '';
+}
+
 /**
- * Words per second Edge neural TTS actually delivers (~175 wpm). demo.ts
- * budgets 2.3 for hand-paced narration; using that here produced a script a
- * third too short, so the voice - and with it the captions - died halfway
- * through the Short.
+ * Everything the MCP layer needs to ask its questions without rendering:
+ * how long the Short will be, and whether the footage already has a voice.
  */
-const TTS_WPS = 2.9;
-/** Fraction of the runtime narration should cover. Not 100%: it needs air. */
-const NARRATION_COVERAGE = 0.85;
+export async function planShort(
+  inputs: string[],
+  maxDuration = 57
+): Promise<{ outputDuration: number; voiced: boolean; videos: number }> {
+  const files = classifyInputs(inputs);
+  if (files.videos.length === 0) throw new Error('No video files among the inputs.');
+  let kept = 0;
+  let voiced = false;
+  for (const video of files.videos) {
+    const info = await getVideoInfo(video);
+    const analysis = await analyzeClip(video);
+    const spans = invertSegments(info.duration, analysis.idle, { padding: 0.35, minLength: 0.8 });
+    kept += (spans.length > 0 ? spans : [{ start: 0, end: info.duration }]).reduce(
+      (n, s) => n + (s.end - s.start),
+      0
+    );
+    if (!voiced && (await detectVoicedAudio(video))) {
+      try {
+        voiced = await sniffSpeech(video);
+      } catch {
+        voiced = true;
+      }
+    }
+  }
+  const speed = speedFor(kept, Math.min(59, maxDuration));
+  return { outputDuration: kept / speed, voiced, videos: files.videos.length };
+}
 
-const SHORT_W = 1080;
-const SHORT_H = 1920;
-
-interface PreparedVideo {
-  cutPath: string;
-  /** Luma profile of the source, for cross-clip contrast matching. */
+interface PreparedClip {
+  source: string;
+  spans: TimeSegment[];
   luma: LumaStats | null;
   kept: number;
-  spans: number;
   retakesDropped: number;
   voiced: boolean;
 }
 
-/** Denoise (if voiced), find keepable spans, drop retakes, extract the cut. */
-async function prepareVideo(
+/**
+ * Decide what to keep from one clip. Nothing is encoded here - the spans go
+ * straight into the single render pass as a select expression.
+ */
+async function prepareClip(
   input: string,
   index: number,
+  keepVoice: boolean,
   workDir: string,
   progress: (stage: string) => void
-): Promise<PreparedVideo> {
-  // Signal alone is not voice: desktop-audio hum volumes like speech but
-  // transcribes to nothing. Only real speech earns the voiced pipeline.
+): Promise<PreparedClip> {
   let voiced = false;
   if (await detectVoicedAudio(input)) {
     progress(`listening for speech in clip ${index + 1}`);
@@ -207,9 +311,11 @@ async function prepareVideo(
       voiced = true; // whisper unavailable - trust the volume signal
     }
   }
-  let source = input;
 
-  if (voiced) {
+  // Denoising only earns its cost when the voice survives into the output.
+  // Under a TTS narration the source audio is discarded anyway.
+  let source = input;
+  if (voiced && keepVoice) {
     progress(`denoising clip ${index + 1}`);
     source = await cleanVoice({
       input,
@@ -219,11 +325,13 @@ async function prepareVideo(
   }
 
   const info = await getVideoInfo(source);
-  progress(`cutting dead air in clip ${index + 1}`);
+  progress(`analysing clip ${index + 1}`);
+  const analysis = await analyzeClip(source);
+
   let spans: TimeSegment[];
   if (voiced) {
-    // The ORIGINAL file, deliberately: cleanvoice loudnorms to -14 LUFS,
-    // which lifts quiet passages right past silencedetect's threshold.
+    // The ORIGINAL file deliberately: cleanVoice loudnorms to -14 LUFS,
+    // which lifts quiet passages past silencedetect's threshold.
     const silences = await detectSilence(input, {
       minDuration: 1.2,
       thresholdDb: -32,
@@ -231,15 +339,12 @@ async function prepareVideo(
     });
     spans = invertSegments(info.duration, silences, { padding: 0.25, minLength: 0.6 });
   } else {
-    const idle = await detectIdleSpans(source, info.duration, join(workDir, `idle-${index}`));
-    spans = invertSegments(info.duration, idle, { padding: 0.35, minLength: 0.8 });
+    spans = invertSegments(info.duration, analysis.idle, { padding: 0.35, minLength: 0.8 });
   }
   if (spans.length === 0) spans = [{ start: 0, end: info.duration }];
 
   let retakesDropped = 0;
-  // transcribe() self-installs whisper.cpp on first use; failure just
-  // means retakes are kept, not that the render dies.
-  if (voiced) {
+  if (voiced && keepVoice) {
     try {
       progress(`transcribing clip ${index + 1} for retakes`);
       const transcript = await transcribe(source, { model: 'base.en' });
@@ -247,189 +352,114 @@ async function prepareVideo(
       retakesDropped = spans.length - unique.length;
       spans = unique;
     } catch {
-      // whisper unavailable/failed - keep all spans rather than dying
+      // whisper unavailable - keep every span rather than dying
     }
   }
 
-  const cutPath = join(workDir, `cut-${index}.mp4`);
-  const select = buildSelectExpr(spans);
-  // A silent clip still gets an audio track: concat needs every input to
-  // carry the same streams, and a mixed batch (one voiced clip, one silent)
-  // would otherwise fail at the stitch.
-  const hasAudio = (await getVideoInfo(source)).hasAudio;
-  const graph = hasAudio
-    ? `[0:v]select='${select}',setpts=N/FRAME_RATE/TB[v];[0:a]aselect='${select}',asetpts=N/SR/TB[a]`
-    : `[0:v]select='${select}',setpts=N/FRAME_RATE/TB[v];anullsrc=r=48000:cl=stereo[a]`;
-  await executeFFmpegRaw([
-    '-y',
-    '-i',
-    source,
-    '-filter_complex',
-    graph,
-    '-map',
-    '[v]',
-    '-map',
-    '[a]',
-    '-c:a',
-    'aac',
-    '-b:a',
-    '192k',
-    '-shortest',
-    '-c:v',
-    'libx264',
-    '-preset',
-    'ultrafast',
-    '-crf',
-    '18',
-    cutPath,
-  ]);
-
   return {
-    cutPath,
-    luma: await measureLuma(cutPath).catch(() => null),
+    source,
+    spans,
+    luma: analysis.luma,
     kept: spans.reduce((n, s) => n + (s.end - s.start), 0),
-    spans: spans.length,
     retakesDropped,
     voiced,
   };
 }
 
-/** Stitch cuts, apply speed + contrast, frame 9:16. Returns the video path. */
-async function renderBase(
-  cuts: PreparedVideo[],
-  speed: number,
-  contrast: number,
-  voiced: boolean,
-  workDir: string
-): Promise<string> {
-  const out = join(workDir, 'base.mp4');
-  const n = cuts.length;
-  const inputs = cuts.flatMap((c) => ['-i', c.cutPath]);
+/**
+ * The whole edit as one filtergraph: per-clip trim and grade, framed to a
+ * common canvas, concatenated, sped up, captions burned, narration over a
+ * ducked bed.
+ */
+export function buildRenderGraph(opts: {
+  clips: Array<{ spans: TimeSegment[]; luma: LumaStats | null }>;
+  speed: number;
+  contrast: number;
+  keepSourceAudio: boolean;
+  assPath?: string;
+  ttsIndex?: number;
+  musicIndex?: number;
+  musicVolume: number;
+  outputDuration: number;
+}): string {
+  const { clips, speed, contrast, keepSourceAudio, assPath, ttsIndex, musicIndex } = opts;
+  const chains: string[] = [];
 
-  // Every clip is framed to the SAME canvas before concat: the filter needs
-  // identical width/height/SAR, and mixing a 320x360 capture with an
-  // already-vertical 1080x1920 clip otherwise fails outright.
-  const measured = cuts.flatMap((c) => (c.luma ? [c.luma] : []));
+  const measured = clips.flatMap((c) => (c.luma ? [c.luma] : []));
   const target = measured.length > 0 ? averageStats(measured) : null;
 
-  const chains: string[] = [];
-  for (let i = 0; i < n; i++) {
-    // Per-clip grade lands each recording on the shared look; the creative
-    // boost rides on top so the whole Short reads as one piece.
-    const clipLuma = cuts[i].luma;
+  clips.forEach((clip, i) => {
     const grade =
-      target && clipLuma ? matchGrade(clipLuma, target, contrast) : { contrast, brightness: 0 };
-    const eq = `eq=contrast=${grade.contrast}:brightness=${grade.brightness}`;
-    chains.push(`[${i}:v]${eq},fps=30,split=2[bg${i}][fg${i}]`);
+      target && clip.luma ? matchGrade(clip.luma, target, contrast) : { contrast, brightness: 0 };
+    const select = buildSelectExpr(clip.spans);
+    // Trim, grade and frame in one go. Every clip lands on the same canvas
+    // because concat demands identical width/height/SAR.
+    // Speed is applied HERE, before the scale/blur, not after the concat.
+    // The kept footage is several times longer than the finished Short, so
+    // scaling it to 1080x1920 first means blurring thousands of frames that
+    // are about to be dropped - the single biggest cost in the render.
     chains.push(
-      `[bg${i}]scale=${SHORT_W}:${SHORT_H}:force_original_aspect_ratio=increase,crop=${SHORT_W}:${SHORT_H},gblur=sigma=32,drawbox=x=0:y=0:w=iw:h=ih:color=black@0.4:thickness=fill[bgb${i}]`
+      `[${i}:v]select='${select}',setpts=N/FRAME_RATE/TB,setpts=PTS/${speed},fps=30,` +
+        `eq=contrast=${grade.contrast}:brightness=${grade.brightness},split=2[bg${i}][fg${i}]`
+    );
+    chains.push(
+      `[bg${i}]scale=${BLUR_W}:${BLUR_H}:force_original_aspect_ratio=increase,` +
+        `crop=${BLUR_W}:${BLUR_H},gblur=sigma=8,scale=${SHORT_W}:${SHORT_H},` +
+        `drawbox=x=0:y=0:w=iw:h=ih:color=black@0.4:thickness=fill[bgb${i}]`
     );
     chains.push(
       `[fg${i}]scale=${SHORT_W}:${SHORT_H}:force_original_aspect_ratio=decrease:flags=lanczos[fgs${i}]`
     );
-    chains.push(`[bgb${i}][fgs${i}]overlay=(W-w)/2:(H-h)/2,setsar=1,format=yuv420p[n${i}]`);
+    chains.push(`[bgb${i}][fgs${i}]overlay=(W-w)/2:(H-h)/2,setsar=1[n${i}]`);
+    if (keepSourceAudio) {
+      chains.push(`[${i}:a]aselect='${select}',asetpts=N/SR/TB[na${i}]`);
+    }
+  });
+
+  const vIn = clips.map((_, i) => `[n${i}]`).join('');
+  chains.push(`${vIn}concat=n=${clips.length}:v=1:a=0[cv]`);
+  const captions = assPath ? `,ass='${escapeFilterPath(assPath)}'` : '';
+  chains.push(`[cv]${captions ? captions.slice(1) : 'null'},format=yuv420p[v]`);
+
+  // ---- audio ----
+  let voiceLabel: string | null = null;
+  if (ttsIndex !== undefined) {
+    chains.push(`[${ttsIndex}:a]aresample=48000,aformat=channel_layouts=stereo,apad[voice]`);
+    voiceLabel = '[voice]';
+  } else if (keepSourceAudio) {
+    const aIn = clips.map((_, i) => `[na${i}]`).join('');
+    // Video speed happens per clip; the source audio still needs the same
+    // factor applied here, pitch-preserved.
+    chains.push(
+      `${aIn}concat=n=${clips.length}:v=0:a=1,${buildSpeedupAudioFilters(speed, 1, 48000)},aresample=48000[srcaud]`
+    );
+    voiceLabel = '[srcaud]';
   }
 
-  const vLabels = cuts.map((_, i) => `[n${i}]`).join('');
-  if (voiced) {
-    // prepareVideo guarantees every cut carries an audio stream (silence
-    // where there was none), so concat can always take v=1:a=1.
-    const aLabels = cuts.map((_, i) => `[${i}:a]`).join('');
-    chains.push(`${vLabels}concat=n=${n}:v=1:a=0[cv]`);
-    chains.push(`${aLabels}concat=n=${n}:v=0:a=1[ca]`);
-    chains.push(`[cv]setpts=PTS/${speed},fps=30[v]`);
-    chains.push(`[ca]${buildSpeedupAudioFilters(speed, 1, 48000)}[a]`);
-  } else {
-    chains.push(`${vLabels}concat=n=${n}:v=1:a=0[cv]`);
-    chains.push(`[cv]setpts=PTS/${speed},fps=30[v]`);
+  if (musicIndex !== undefined) {
+    const fadeStart = Math.max(0, opts.outputDuration - 2);
+    chains.push(
+      `[${musicIndex}:a]aresample=48000,aformat=channel_layouts=stereo,` +
+        `atrim=0:${opts.outputDuration.toFixed(3)},asetpts=PTS-STARTPTS,` +
+        `volume=${opts.musicVolume},afade=t=in:st=0:d=1.5,` +
+        `afade=t=out:st=${fadeStart.toFixed(3)}:d=2[bed]`
+    );
+    if (voiceLabel) {
+      // Duck the bed under the voice rather than relying on level alone:
+      // present between lines, out of the way underneath them.
+      chains.push(`${voiceLabel}asplit=2[vmix][vkey]`);
+      chains.push(
+        '[bed][vkey]sidechaincompress=threshold=0.02:ratio=12:attack=15:release=350[duckedbed]'
+      );
+      chains.push('[duckedbed][vmix]amix=inputs=2:duration=first:normalize=0[a]');
+    } else {
+      chains.push('[bed]anull[a]');
+    }
+  } else if (voiceLabel) {
+    chains.push(`${voiceLabel}atrim=0:${opts.outputDuration.toFixed(3)}[a]`);
   }
 
-  await executeFFmpegRaw([
-    '-y',
-    ...inputs,
-    '-filter_complex',
-    chains.join(';'),
-    '-map',
-    '[v]',
-    ...(voiced ? ['-map', '[a]', '-c:a', 'aac', '-b:a', '192k'] : ['-an']),
-    '-c:v',
-    'libx264',
-    '-preset',
-    'medium',
-    '-crf',
-    '21',
-    '-movflags',
-    '+faststart',
-    out,
-  ]);
-  return out;
-}
-
-/** Mux TTS narration over a (silent) video, padding/trimming to its length. */
-async function muxNarration(video: string, tts: string, workDir: string): Promise<string> {
-  const out = join(workDir, 'narrated.mp4');
-  await executeFFmpegRaw([
-    '-y',
-    '-i',
-    video,
-    '-i',
-    tts,
-    '-filter_complex',
-    '[1:a]apad[a]',
-    '-map',
-    '0:v',
-    '-map',
-    '[a]',
-    '-c:v',
-    'copy',
-    '-c:a',
-    'aac',
-    '-b:a',
-    '192k',
-    '-shortest',
-    out,
-  ]);
-  return out;
-}
-
-/** Mix a music bed (looped, faded) under whatever audio the video has. */
-async function mixMusic(
-  video: string,
-  bed: string,
-  durationSeconds: number,
-  hasAudio: boolean,
-  out: string
-): Promise<void> {
-  const fadeStart = Math.max(0, durationSeconds - 2);
-  const bedChain =
-    `[1:a]atrim=0:${durationSeconds.toFixed(3)},asetpts=PTS-STARTPTS,volume=0.25,` +
-    `afade=t=in:st=0:d=1,afade=t=out:st=${fadeStart.toFixed(3)}:d=2[m]`;
-  const graph = hasAudio
-    ? `${bedChain};[0:a][m]amix=inputs=2:duration=first:normalize=0[a]`
-    : `${bedChain};[m]anull[a]`;
-  await executeFFmpegRaw([
-    '-y',
-    '-i',
-    video,
-    '-stream_loop',
-    '-1',
-    '-i',
-    bed,
-    '-filter_complex',
-    graph,
-    '-map',
-    '0:v',
-    '-map',
-    '[a]',
-    '-c:v',
-    'copy',
-    '-c:a',
-    'aac',
-    '-b:a',
-    '192k',
-    '-shortest',
-    out,
-  ]);
+  return chains.join(';');
 }
 
 export async function autoShort(options: AutoShortOptions): Promise<AutoShortResult> {
@@ -437,6 +467,9 @@ export async function autoShort(options: AutoShortOptions): Promise<AutoShortRes
   const maxDuration = Math.min(59, options.maxDuration ?? 57);
   const wantCaptions = options.captions !== false;
   const contrast = options.contrast ?? 1.25;
+  const musicVolume = options.musicVolume ?? 0.08;
+  const leadIn = options.leadIn ?? DEFAULT_LEAD_IN;
+  const mode = options.voiceover ?? 'auto';
   const progress = options.onProgress ?? ((s: string) => console.log(fmt.dim(`  ${s}...`)));
 
   const files = classifyInputs(inputs);
@@ -445,6 +478,15 @@ export async function autoShort(options: AutoShortOptions): Promise<AutoShortRes
 
   const track = resolveMusicChoice(files.musicPath ?? options.music);
   const workDir = mkdtempSync(join(tmpdir(), 'vidlet-autoshort-'));
+  const stageSeconds: Record<string, number> = {};
+  const time = async <T>(name: string, fn: () => Promise<T>): Promise<T> => {
+    const t0 = Date.now();
+    try {
+      return await fn();
+    } finally {
+      stageSeconds[name] = Number(((Date.now() - t0) / 1000).toFixed(1));
+    }
+  };
 
   header('AutoShort');
   console.log(`Videos:   ${fmt.white(String(files.videos.length))}`);
@@ -452,90 +494,150 @@ export async function autoShort(options: AutoShortOptions): Promise<AutoShortRes
   separator();
 
   try {
-    // Narration source: inline > .txt/.md > .srt/.vtt text.
-    const { readFileSync } = await import('node:fs');
-    let rawScript = options.narration?.trim() || '';
-    if (!rawScript && files.narrationPath)
-      rawScript = readFileSync(files.narrationPath, 'utf8').trim();
-    if (!rawScript && files.subtitlePath)
-      rawScript = subtitleToText(readFileSync(files.subtitlePath, 'utf8'));
+    const rawScript = resolveScriptSource(files, options.narration);
+    // Settled up front: it decides whether denoising is worth doing at all.
+    const keepVoice = mode !== 'tts';
 
-    const cuts: PreparedVideo[] = [];
-    for (let i = 0; i < files.videos.length; i++) {
-      cuts.push(await prepareVideo(files.videos[i], i, workDir, progress));
-    }
-    const voiced = cuts.some((c) => c.voiced);
-    const keptDuration = cuts.reduce((n, c) => n + c.kept, 0);
+    const clips = await time('analyse', async () => {
+      const prepared: PreparedClip[] = [];
+      for (let i = 0; i < files.videos.length; i++) {
+        prepared.push(await prepareClip(files.videos[i], i, keepVoice, workDir, progress));
+      }
+      return prepared;
+    });
+
+    const voiced = clips.some((c) => c.voiced);
+    const keptDuration = clips.reduce((n, c) => n + c.kept, 0);
     const sourceDuration = (
       await Promise.all(files.videos.map(async (v) => (await getVideoInfo(v)).duration))
     ).reduce((a, b) => a + b, 0);
     const speed = speedFor(keptDuration, maxDuration);
     const outputDuration = keptDuration / speed;
+    console.log(
+      `Kept:     ${fmt.white(keptDuration.toFixed(1))}s of ${sourceDuration.toFixed(1)}s → ${fmt.green(outputDuration.toFixed(1))}s at ${fmt.yellow(`${speed.toFixed(1)}x`)}`
+    );
 
-    progress(`stitching at ${speed.toFixed(1)}x`);
-    let current = await renderBase(cuts, speed, contrast, voiced, workDir);
-
+    // ---- narration resolved BEFORE a frame is touched ----
     let script = rawScript;
-    let rephrased = false;
-    if (rawScript) {
-      progress('rephrasing narration');
-      const better = await rephraseScript(rawScript, outputDuration);
-      if (better) {
-        script = better;
-        rephrased = true;
-      }
+    if (rawScript && !options.scriptIsFinal) {
+      progress('rewriting narration');
+      const better = await time('rewrite', () => rephraseScript(rawScript, outputDuration));
+      if (better) script = better;
     }
 
-    const mode = options.voiceover ?? 'auto';
-    // 'tts' overrides the auto rule: the caller has judged the source audio
-    // not worth keeping (prior TTS, room tone, music), so narrate over it.
     const wantTts = script !== '' && mode !== 'keep' && (mode === 'tts' || !voiced);
-    let narration: AutoShortResult['narration'] = voiced ? 'original-voice' : 'none';
+    const keepSourceAudio = voiced && !wantTts && mode !== 'tts';
+
+    let ttsPath: string | undefined;
+    let narrationSeconds = 0;
     if (wantTts) {
-      progress('generating TTS narration');
-      const tts = await generateNarrationAudio({
-        input: script,
-        output: join(workDir, 'narration.mp3'),
-        language: options.language,
-        gender: options.gender,
+      progress('generating narration');
+      ttsPath = await time('tts', async () => {
+        const raw = await generateNarrationAudio({
+          input: script,
+          output: join(workDir, 'narration-raw.mp3'),
+          language: options.language,
+          gender: options.gender,
+        });
+        // Lead-in silence so the Short does not open mid-syllable, and the
+        // first caption has a beat to land in.
+        const padded = join(workDir, 'narration.m4a');
+        const ms = Math.round(leadIn * 1000);
+        await executeFFmpegRaw([
+          '-y',
+          '-i',
+          raw,
+          '-af',
+          `adelay=${ms}|${ms}`,
+          '-c:a',
+          'aac',
+          '-b:a',
+          '192k',
+          padded,
+        ]);
+        return padded;
       });
-      current = await muxNarration(current, tts, workDir);
-      narration = 'tts';
+      narrationSeconds = await getMediaDuration(ttsPath);
     }
 
-    let captionsBurned = false;
-    if (wantCaptions && script) {
-      progress('burning captions');
-      const captioned = join(workDir, 'captioned.mp4');
-      // 'shorts': one short line, big white, current word in yellow.
-      if (narration === 'tts') {
-        // Whisper re-times the actual TTS audio - captions land on the voice.
-        await caption({
-          input: current,
-          output: captioned,
-          autoTranscribe: true,
-          style: 'shorts',
+    // ---- caption timings come from the narration audio itself ----
+    let assPath: string | undefined;
+    if (wantCaptions && script && ttsPath) {
+      progress('timing captions');
+      assPath = await time('captions', async () => {
+        // Whisper the small audio file, not the finished video: identical
+        // timings for a fraction of the decode.
+        const t = await transcribe(ttsPath as string, { model: 'base.en' });
+        const entries: SrtEntry[] = segmentsToEntries(t.segments);
+        const ass = generateShortsAss({
+          entries,
+          videoWidth: SHORT_W,
+          videoHeight: SHORT_H,
+          fontSize: 48,
+          fontName: 'Arial Black',
+          position: 'bottom',
+          highlightColor: '&H00FFFF&',
+          maxChars: 28,
         });
-      } else {
-        await caption({
-          input: current,
-          output: captioned,
-          srtContent: scriptToSrt(script, outputDuration),
-          style: 'shorts',
-        });
+        const p = join(workDir, 'captions.ass');
+        writeFileSync(p, ass, 'utf8');
+        return p;
+      });
+    }
+
+    // ---- one render ----
+    progress('rendering');
+    await time('render', async () => {
+      const extraInputs: string[] = [];
+      for (const clip of clips.slice(1)) extraInputs.push('-i', clip.source);
+      let ttsIndex: number | undefined;
+      let musicIndex: number | undefined;
+      if (ttsPath) {
+        ttsIndex = clips.length;
+        extraInputs.push('-i', ttsPath);
       }
-      current = captioned;
-      captionsBurned = true;
-    }
+      if (track) {
+        musicIndex = ttsPath ? clips.length + 1 : clips.length;
+        extraInputs.push('-stream_loop', '-1', '-i', track.path);
+      }
 
-    if (track) {
-      progress('mixing music');
-      const scored = join(workDir, 'scored.mp4');
-      await mixMusic(current, track.path, outputDuration, voiced || narration === 'tts', scored);
-      current = scored;
-    }
+      const graph = buildRenderGraph({
+        clips,
+        speed,
+        contrast,
+        keepSourceAudio,
+        assPath,
+        ttsIndex,
+        musicIndex,
+        musicVolume,
+        outputDuration,
+      });
+      const graphPath = join(workDir, 'graph.txt');
+      writeFileSync(graphPath, graph, 'utf8');
 
-    copyFileSync(current, output);
+      const hasAudio = ttsPath !== undefined || track !== null || keepSourceAudio;
+      await executeFFmpegWithProgress({
+        input: clips[0].source,
+        output,
+        expectedDuration: outputDuration,
+        args: [
+          ...extraInputs,
+          '-filter_complex_script',
+          graphPath,
+          '-map',
+          '[v]',
+          ...(hasAudio ? ['-map', '[a]', '-c:a', 'aac', '-b:a', '192k'] : ['-an']),
+          '-t',
+          outputDuration.toFixed(3),
+          // NVENC when the box has it; the blur-and-scale to 1080x1920 is
+          // the only heavy step left, so this is where the time is.
+          ...(await videoEncoderArgs()),
+          '-movflags',
+          '+faststart',
+        ],
+      });
+    });
+
     success(`Output: ${output}`);
     return {
       output,
@@ -544,13 +646,14 @@ export async function autoShort(options: AutoShortOptions): Promise<AutoShortRes
       outputDuration,
       speed,
       videos: files.videos.length,
-      spansKept: cuts.reduce((n, c) => n + c.spans, 0),
-      retakesDropped: cuts.reduce((n, c) => n + c.retakesDropped, 0),
+      spansKept: clips.reduce((n, c) => n + c.spans.length, 0),
+      retakesDropped: clips.reduce((n, c) => n + c.retakesDropped, 0),
       voiced,
-      narration,
-      scriptRephrased: rephrased,
-      captionsBurned,
+      narration: wantTts ? 'tts' : keepSourceAudio ? 'original-voice' : 'none',
+      narrationSeconds: Number(narrationSeconds.toFixed(1)),
+      captionsBurned: assPath !== undefined,
       music: track,
+      stageSeconds,
     };
   } finally {
     rmSync(workDir, { recursive: true, force: true });

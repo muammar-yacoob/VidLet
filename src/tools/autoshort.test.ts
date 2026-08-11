@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { realSpeechWords } from '../lib/autoshort-plan.js';
+import { realSpeechWords, slugifyTitle, titleFromScript } from '../lib/autoshort-plan.js';
+import { ydifToIdleSpans } from './autoshort.js';
 import {
   classifyInputs,
   dedupeRetakes,
@@ -143,5 +144,63 @@ describe('realSpeechWords', () => {
   it('counts actual words', () => {
     expect(realSpeechWords('so first we open the panel')).toBe(6);
     expect(realSpeechWords('[Music] okay click export now')).toBe(4);
+  });
+});
+
+describe('slugifyTitle', () => {
+  it('turns a spoken title into a dashed filename stem', () => {
+    expect(slugifyTitle('Rigging a low-poly duck in Blender!')).toBe(
+      'rigging-a-low-poly-duck-in-blender'
+    );
+  });
+
+  it('stays within the character budget on whole words', () => {
+    const slug = slugifyTitle('one two three four five six seven eight nine ten eleven', 20);
+    expect(slug.length).toBeLessThanOrEqual(20);
+    expect(slug.endsWith('-')).toBe(false);
+  });
+
+  it('strips punctuation and accents rather than emitting them', () => {
+    expect(slugifyTitle('Café: naïve — résumé?')).toBe('cafe-naive-resume');
+  });
+
+  it('still yields something for a single over-long word', () => {
+    expect(slugifyTitle('supercalifragilisticexpialidocious', 10)).toBe('supercalif');
+  });
+
+  it('falls back rather than returning an empty name', () => {
+    expect(slugifyTitle('!!! ???')).toBe('short');
+  });
+});
+
+describe('titleFromScript', () => {
+  it('takes the first sentence', () => {
+    expect(titleFromScript('Your duck is coming to life. Then we rig it.')).toBe(
+      'Your duck is coming to life'
+    );
+  });
+
+  it('handles a script with no terminator', () => {
+    expect(titleFromScript('just one line')).toBe('just one line');
+  });
+});
+
+describe('ydifToIdleSpans', () => {
+  it('marks runs of low frame difference as idle', () => {
+    // 0.5s steps: frames 2-7 are static -> one 3s idle span.
+    const ydif = [5, 5, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 5, 5];
+    expect(ydifToIdleSpans(ydif, 0.5, 2)).toEqual([{ start: 1, end: 4 }]);
+  });
+
+  it('ignores a static run shorter than the minimum', () => {
+    expect(ydifToIdleSpans([5, 0.1, 0.1, 5], 0.5, 2)).toEqual([]);
+  });
+
+  it('closes a run that reaches the end of the clip', () => {
+    expect(ydifToIdleSpans([5, 0.1, 0.1, 0.1, 0.1], 0.5, 2)).toEqual([{ start: 0.5, end: 2.5 }]);
+  });
+
+  it('treats a busy clip as having no idle time', () => {
+    expect(ydifToIdleSpans([9, 8, 7, 6], 0.5, 2)).toEqual([]);
   });
 });

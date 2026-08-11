@@ -1,17 +1,30 @@
 /**
  * The one-prompt MCP tool: "generate a video short from these files".
- * Split from tools-studio.ts to respect the repo's 500-line cap.
  *
- * Interaction contract (same as create_project): when a decision needs the
- * human - music bed, or a narration transcript for a silent recording - the
- * first call returns a `questions` array instead of rendering. The client
- * relays each question verbatim, then calls again with the answers as
- * ordinary arguments. A fully-specified call renders straight through.
+ * Interaction contract (same shape as create_project): when a decision is
+ * the human's to make, the call returns a `questions` array INSTEAD of
+ * rendering. The client relays each question verbatim and calls again with
+ * the answers as ordinary arguments. Nothing is encoded until every
+ * question is answered, so approving a script costs seconds, not a render.
+ *
+ * Question rounds, in order:
+ *   1. music     - with audible previews, chosen by ear not by label
+ *   2. narration - a description, when the footage has no voice
+ *   3. script    - the written narration, approved before it is spoken
  */
-import { resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { slugifyTitle, titleFromScript } from '../lib/autoshort-plan.js';
 import { MUSIC_MOODS, listBundledMusic } from '../lib/music.js';
 import { getOutputPath } from '../lib/paths.js';
-import { autoShort, classifyInputs, detectVoicedAudio, sniffSpeech } from '../tools/autoshort.js';
+import { addMusic } from '../tools/add-music.js';
+import {
+  autoShort,
+  classifyInputs,
+  planShort,
+  rephraseScript,
+  resolveScriptSource,
+} from '../tools/autoshort.js';
+import { previewMusic } from '../tools/music-preview.js';
 import {
   type ToolDefinition,
   type ToolHandler,
@@ -25,20 +38,70 @@ import {
 
 export const AUTOSHORT_TOOLS: ToolDefinition[] = [
   {
+    name: 'preview_music',
+    description:
+      'Render short audible samples of the bundled CC0 beds, at the level a Short actually ' +
+      'mixes them, so a bed can be picked by ear instead of by label. Returns a file:// url ' +
+      "per mood - offer them to the user, then pass their choice as generate_short's " +
+      '`music`. Writes small mp3s; touches no video.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        output_dir: {
+          type: 'string',
+          description: 'Where to write the samples. Defaults beside the first input video.',
+        },
+        seconds: { type: 'number', description: 'Sample length, default 10.' },
+        paths: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Optional input videos, used only to pick a sensible output_dir.',
+        },
+      },
+    },
+  },
+  {
+    name: 'add_music',
+    description:
+      'Lay a music bed onto a video that is ALREADY rendered, ducked under any speech it ' +
+      'has. The video stream is copied rather than re-encoded, so this takes seconds - use ' +
+      'it whenever only the music needs to change, instead of re-running generate_short and ' +
+      'redoing the cut, grade, narration and captions. Never overwrites the input; writes ' +
+      '"<name>_scored.mp4" beside it unless output_path says otherwise.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'The finished video to score.' },
+        music: {
+          type: 'string',
+          description:
+            'A bundled CC0 mood ("upbeat", "calm", "tense", "playful") or a path to your own ' +
+            'audio file. Use preview_music to choose by ear.',
+        },
+        volume: { type: 'number', description: 'Bed level 0-1. Default 0.08.' },
+        duck: {
+          type: 'boolean',
+          description: 'Duck the bed under existing speech. Default true.',
+        },
+        output_path: { type: 'string', description: 'Optional explicit output path.' },
+      },
+      required: ['path', 'music'],
+    },
+  },
+  {
     name: 'generate_short',
     description:
       'One call from raw files to a finished YouTube Short. Give it the attached files ' +
       '(videos in story order; optionally .srt/.vtt captions, a .txt/.md narration script, ' +
       'and/or a music audio file) and it: denoises voiced clips, cuts long pauses, drops ' +
-      'duplicate retakes (keeps the longest take of each step), stitches, speeds the result ' +
-      'to fit under 59s, grades contrast, frames 9:16, AI-rephrases the narration (Groq), ' +
-      'adds a TTS voice when the recording is silent, burns captions timed to that voice, ' +
-      'and mixes a music bed. When it needs a decision (music, or a transcript for a silent ' +
-      'recording) it returns a `questions` array INSTEAD of rendering - relay each question ' +
-      'to the user verbatim with its options, then call again with their answers as ' +
-      'arguments. Never overwrites inputs; default output is "<first-video>_short.mp4" in a ' +
-      'VidLet/ subfolder, numbered if that already exists. The result carries a `url` ' +
-      '(file://) for the finished video - surface it to the user so they can open it.',
+      'duplicate retakes, stitches, speeds the result to fit under 59s, matches contrast ' +
+      'across clips, frames 9:16, writes and speaks the narration, burns karaoke captions ' +
+      'timed to that voice, and mixes a ducked music bed. The output is named after its ' +
+      'content, not the source timestamp, and the result carries a `url` (file://) - always ' +
+      "surface that url to the user. When a decision is the user's (music, a description " +
+      'for silent footage, approving the narration script) it returns a `questions` array ' +
+      'INSTEAD of rendering: relay each question verbatim with its options, then call again ' +
+      'with the answers as arguments. Never overwrites inputs.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -51,43 +114,53 @@ export const AUTOSHORT_TOOLS: ToolDefinition[] = [
         },
         narration: {
           type: 'string',
-          description: 'Inline narration/transcript text (alternative to attaching a .txt/.srt).',
+          description:
+            'What the recording shows, or the transcript. A sentence or two is enough - it ' +
+            'gets rewritten into a script you will be asked to approve.',
+        },
+        final_script: {
+          type: 'string',
+          description:
+            'The approved narration, spoken verbatim with no further rewriting. Pass this ' +
+            'after the user approves (or edits) the draft returned by the script question.',
         },
         music: {
           type: 'string',
           description:
-            'Bundled CC0 mood ("upbeat", "calm", "tense", "playful"), a path to your own ' +
-            'audio file, "auto" (default bundled bed), or "none". Omit to be asked.',
+            'A bundled CC0 mood ("upbeat", "calm", "tense", "playful"), a path to your own ' +
+            'audio file, or "none". Omit to be asked, with previews.',
         },
-        max_duration: {
+        music_volume: {
           type: 'number',
-          description: 'Length ceiling in seconds, max 59. Default 57.',
+          description: 'Bed level 0-1. Default 0.08, and it ducks under the voice.',
         },
-        captions: {
-          type: 'boolean',
-          description: 'Burn captions when a script exists. Default true.',
-        },
+        max_duration: { type: 'number', description: 'Length ceiling in seconds, max 59.' },
+        captions: { type: 'boolean', description: 'Burn karaoke captions. Default true.' },
         contrast: {
           type: 'number',
           description:
             'Contrast boost on top of per-clip matching. Every clip is measured and graded ' +
-            'onto a shared look first, so a stitch of differently-exposed recordings reads ' +
-            'as one piece. Default 1.25.',
+            'onto a shared look first. Default 1.25.',
         },
         voiceover: {
           type: 'string',
           enum: ['auto', 'tts', 'keep'],
           description:
-            'Whose voice carries it. "auto" (default) keeps real speech and only narrates ' +
-            'silent footage; "tts" always narrates, for when the source audio is not worth ' +
-            'keeping (room tone, music, a previous render); "keep" never generates a voice.',
+            '"auto" (default) keeps real speech and only narrates silent footage; "tts" ' +
+            'always narrates; "keep" never generates a voice.',
+        },
+        lead_in: {
+          type: 'number',
+          description: 'Silence before the first word, in seconds. Default 1.',
+        },
+        title: {
+          type: 'string',
+          description:
+            'Short human title for the output filename (slugified to dashes). Defaults to ' +
+            'one derived from the narration.',
         },
         language: { type: 'string', description: 'TTS language code, default en.' },
-        gender: {
-          type: 'string',
-          enum: ['female', 'male'],
-          description: 'TTS voice gender, default female.',
-        },
+        gender: { type: 'string', enum: ['female', 'male'], description: 'TTS voice gender.' },
         output_path: { type: 'string', description: 'Optional explicit output path.' },
       },
       required: ['paths'],
@@ -95,29 +168,53 @@ export const AUTOSHORT_TOOLS: ToolDefinition[] = [
   },
 ];
 
-async function handleGenerateShort({
+async function handlePreviewMusic({
+  output_dir,
+  seconds,
   paths,
-  narration,
-  music,
-  max_duration,
-  captions,
-  contrast,
-  voiceover,
-  language,
-  gender,
-  output_path,
 }: {
+  output_dir?: string;
+  seconds?: number;
+  paths?: string[];
+}) {
+  return withSilencedStdout(async () => {
+    let dir = output_dir ? resolve(output_dir) : undefined;
+    if (!dir && Array.isArray(paths) && paths.length > 0) {
+      dir = dirname(resolveInputPath(paths[0]));
+    }
+    if (!dir) throw new Error('Provide `output_dir` or `paths` so the samples have a home.');
+
+    const previews = await previewMusic({ outputDir: dir, seconds });
+    if (previews.length === 0) {
+      throw new Error('No bundled music is installed - pass your own file as `music` instead.');
+    }
+    return jsonContent({
+      previews: previews.map((p) => ({ ...p, url: fileUrl(p.path) })),
+      next_steps: [
+        'Play each url for the user and ask which bed they want (or none), then call ' +
+          'generate_short with music set to that mood name, a file path, or "none".',
+      ],
+    });
+  });
+}
+
+async function handleGenerateShort(args: {
   paths?: string[];
   narration?: string;
+  final_script?: string;
   music?: string;
+  music_volume?: number;
   max_duration?: number;
   captions?: boolean;
   contrast?: number;
   voiceover?: 'auto' | 'tts' | 'keep';
+  lead_in?: number;
+  title?: string;
   language?: string;
   gender?: 'female' | 'male';
   output_path?: string;
 }) {
+  const { paths, narration, final_script, music, voiceover, output_path } = args;
   if (!Array.isArray(paths) || paths.length === 0) {
     throw new Error('`paths` is required - the attached files, videos first.');
   }
@@ -128,77 +225,106 @@ async function handleGenerateShort({
   }
 
   return withSilencedStdout(async () => {
-    // ---- Question round: collect what only the human can decide. ----
     const questions: Array<Record<string, unknown>> = [];
 
+    // --- 1. music ---
     if (music === undefined && !files.musicPath) {
-      const moods = new Set(listBundledMusic().map((t) => t.mood));
+      const moods = listBundledMusic().map((t) => t.mood);
       questions.push({
         id: 'music',
-        ask: 'Score the Short with background music?',
+        ask: 'Which background bed do you want under this Short?',
         options: [
-          ...MUSIC_MOODS.filter((m) => moods.has(m)).map(
-            (m) => `${m} (bundled CC0 bed) - re-call with music: "${m}"`
+          ...MUSIC_MOODS.filter((m) => moods.includes(m)).map(
+            (m) => `${m} - re-call with music: "${m}"`
           ),
           'My own file - re-call with music: "<path to audio>"',
           'No music - re-call with music: "none"',
         ],
         maps_to: 'music',
+        hint: 'Call preview_music first so the user can hear each bed before choosing.',
       });
     }
 
-    const hasScript = Boolean(narration !== undefined || files.narrationPath || files.subtitlePath);
-    // Only sniff when the answer would change anything - whisper on a 60s
-    // slice is cheap but not free. Hum that volumes like audio still
-    // transcribes to nothing, so volume alone cannot answer "voiced?".
-    let voiced = false;
-    if (!hasScript && (await detectVoicedAudio(files.videos[0]))) {
-      try {
-        voiced = await sniffSpeech(files.videos[0]);
-      } catch {
-        voiced = true;
-      }
-    }
-    if (!voiced && !hasScript) {
+    // The remaining questions need the runtime and whether the footage
+    // already carries a voice. That is analysis only - nothing is encoded.
+    const hasScriptSource = Boolean(final_script ?? resolveScriptSource(files, narration));
+    const plan = await planShort(resolved, args.max_duration);
+
+    // --- 2. a description, when there is no voice and no script ---
+    if (!plan.voiced && !hasScriptSource) {
       questions.push({
         id: 'narration',
         ask:
-          'No voice detected in the recording and no transcript/script was attached. ' +
-          'Describe what the recording shows (a sentence or two is enough - AI expands it ' +
-          'into the narration), or skip narration entirely.',
+          'No voice was detected in this footage and no transcript was attached. Describe ' +
+          'what it shows in a sentence or two - that gets rewritten into the narration - ' +
+          'or skip narration entirely.',
         options: [
-          'Provide a description - re-call with narration: "<text>"',
-          'No narration - re-call with narration: "" and captions: false',
+          'Describe it - re-call with narration: "<text>"',
+          'No narration - re-call with captions: false and voiceover: "keep"',
         ],
         maps_to: 'narration',
       });
     }
 
+    // --- 3. approve the script BEFORE it is spoken and burned in ---
+    if (questions.length === 0 && hasScriptSource && !final_script) {
+      const raw = resolveScriptSource(files, narration);
+      const wantsVoice = voiceover !== 'keep' && (voiceover === 'tts' || !plan.voiced);
+      if (wantsVoice) {
+        const draft = (await rephraseScript(raw, plan.outputDuration)) ?? raw;
+        questions.push({
+          id: 'script',
+          ask: `This narration will be spoken over the ${Math.round(plan.outputDuration)}s Short and burned in as captions. Approve it, or send back an edited version.`,
+          draft,
+          word_count: draft.split(/\s+/).filter(Boolean).length,
+          options: [
+            'Approve - re-call with final_script set to the draft, unchanged',
+            'Edit - re-call with final_script set to your edited text',
+          ],
+          maps_to: 'final_script',
+        });
+      }
+    }
+
     if (questions.length > 0) {
       return jsonContent({
         questions,
-        detected: { videos: files.videos.length, real_speech: voiced, has_script: hasScript },
+        detected: {
+          videos: files.videos.length,
+          real_speech: plan.voiced,
+          estimated_seconds: Number(plan.outputDuration.toFixed(1)),
+        },
         next_steps: [
-          'Relay the questions to the user verbatim, then call generate_short again with ' +
-            'the same paths plus their answers.',
+          'Relay the questions to the user VERBATIM, then call generate_short again with the ' +
+            'same paths plus their answers. Nothing has been rendered yet.',
         ],
       });
     }
 
-    // ---- Render round. ----
-    const desired = output_path ? resolve(output_path) : getOutputPath(files.videos[0], '_short');
+    // --- render ---
+    const script = final_script ?? resolveScriptSource(files, narration);
+    // Name the file after what is in it: a source timestamp says nothing
+    // once a folder holds a dozen renders.
+    const slug = slugifyTitle(args.title ?? titleFromScript(script));
+    const desired = output_path
+      ? resolve(output_path)
+      : join(dirname(files.videos[0]), 'VidLet', `${slug}.mp4`);
     const output = safeOutputPath(files.videos[0], desired);
+
     return runWriteTool(output, async () => {
       const result = await autoShort({
         inputs: resolved,
-        narration,
+        narration: script,
+        scriptIsFinal: final_script !== undefined,
         music,
-        maxDuration: max_duration,
-        captions,
-        contrast,
+        musicVolume: args.music_volume,
+        maxDuration: args.max_duration,
+        captions: args.captions,
+        contrast: args.contrast,
         voiceover,
-        language,
-        gender,
+        leadIn: args.lead_in,
+        language: args.language,
+        gender: args.gender,
         output,
       });
       return jsonContent({
@@ -212,11 +338,51 @@ async function handleGenerateShort({
               source: result.music.source,
             }
           : null,
+        next_steps: ['Show the user the `url` so they can open the finished Short.'],
       });
     });
   });
 }
 
+async function handleAddMusic({
+  path,
+  music,
+  volume,
+  duck,
+  output_path,
+}: {
+  path?: string;
+  music?: string;
+  volume?: number;
+  duck?: boolean;
+  output_path?: string;
+}) {
+  const input = resolveInputPath(path);
+  if (!music) throw new Error('`music` is required - a bundled mood or a path to audio.');
+  const desired = output_path ? resolve(output_path) : getOutputPath(input, '_scored');
+  const output = safeOutputPath(input, desired);
+  return runWriteTool(output, () =>
+    withSilencedStdout(async () => {
+      const result = await addMusic({ input, output, music, volume, duck });
+      return jsonContent({
+        output: result.output,
+        url: fileUrl(result.output),
+        duration: result.duration,
+        ducked: result.ducked,
+        music: {
+          title: result.track.title,
+          artist: result.track.artist,
+          license: result.track.license,
+          source: result.track.source,
+        },
+        next_steps: ['Show the user the `url`.'],
+      });
+    })
+  );
+}
+
 export const AUTOSHORT_HANDLERS: Record<string, ToolHandler> = {
+  preview_music: handlePreviewMusic,
+  add_music: handleAddMusic,
   generate_short: handleGenerateShort,
 };

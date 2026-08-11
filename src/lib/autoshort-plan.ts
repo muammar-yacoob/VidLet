@@ -144,3 +144,37 @@ export function realSpeechWords(text: string): number {
     .split(/\s+/)
     .filter((w) => /[a-z0-9]/i.test(w)).length;
 }
+
+/**
+ * A filesystem-safe, human-readable slug for the finished video.
+ * "Rigging a low-poly duck in Blender!" -> "rigging-a-low-poly-duck-in-blender"
+ * Timestamped source names tell you nothing about the content; this does.
+ */
+export function slugifyTitle(title: string, maxChars = 48): string {
+  const words = title
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s-]/g, ' ')
+    .split(/[\s-]+/)
+    .filter(Boolean);
+
+  const parts: string[] = [];
+  let width = 0;
+  for (const word of words) {
+    const added = parts.length === 0 ? word.length : width + 1 + word.length;
+    if (parts.length > 0 && added > maxChars) break;
+    parts.push(word);
+    width = added;
+  }
+  // A filename must stay bounded even when the first word alone blows the
+  // budget, so the join is truncated rather than trusted.
+  if (parts.length === 0) return words[0]?.slice(0, maxChars) ?? 'short';
+  return parts.join('-').slice(0, maxChars).replace(/-+$/, '');
+}
+
+/** First sentence of a script, as a fallback title when no AI title exists. */
+export function titleFromScript(script: string): string {
+  const first = script.match(/[^.!?]+/)?.[0]?.trim() ?? script.trim();
+  return first || 'short';
+}

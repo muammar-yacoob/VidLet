@@ -3,7 +3,7 @@
  * mcp.js (which is now a thin stdio bootstrap importing dist/mcp-tools.js).
  */
 import { spawn } from 'node:child_process';
-import { existsSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -69,6 +69,10 @@ export function resolveInputPath(path: unknown): string {
  */
 export function reserveUniqueOutputPath(desiredPath: string): string {
   const dir = dirname(desiredPath);
+  // A caller-supplied output_path may name a directory that does not exist
+  // yet, and so may a tool that builds its own path rather than going
+  // through getOutputPath.
+  mkdirSync(dir, { recursive: true });
   const ext = extname(desiredPath);
   const base = basename(desiredPath, ext);
   let candidate = desiredPath;

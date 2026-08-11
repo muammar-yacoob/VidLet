@@ -33,7 +33,7 @@ export interface CaptionOptions {
   onProgress?: (stage: string) => void;
 }
 
-interface SrtEntry {
+export interface SrtEntry {
   index: number;
   startTime: number;
   endTime: number;
@@ -113,7 +113,7 @@ function parseSrt(content: string): SrtEntry[] {
 /**
  * Convert whisper transcript segments to SrtEntry format
  */
-function segmentsToEntries(segments: TranscriptSegment[]): SrtEntry[] {
+export function segmentsToEntries(segments: TranscriptSegment[]): SrtEntry[] {
   return segments.map((seg, i) => ({
     index: i + 1,
     startTime: seg.start,
@@ -391,8 +391,10 @@ function distributeWords(
 export function generateShortsAss(ctx: AssContext): string {
   const { videoHeight, fontName, highlightColor } = ctx;
   // Big: roughly a sixteenth of frame height is the IG/CapCut proportion.
-  const fontSize = Math.max(ctx.fontSize, Math.round(videoHeight / 18));
-  const marginV = Math.round(videoHeight * 0.16);
+  const fontSize = Math.max(ctx.fontSize, Math.round(videoHeight / 14));
+  // Lower third, not the very bottom: at 0.16 the line sat down in the
+  // letterbox bar where it reads as an afterthought.
+  const marginV = Math.round(videoHeight * 0.24);
   const sideMargin = 60;
   const outline = Math.max(4, Math.round(fontSize / 12));
   const maxChars = fittingMaxChars(ctx.videoWidth, fontSize, sideMargin, ctx.maxChars);
