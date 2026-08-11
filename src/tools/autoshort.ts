@@ -44,7 +44,7 @@ import { type LumaStats, averageStats, matchGrade, parseLumaStats } from '../lib
 import { fmt, header, separator, success } from '../lib/logger.js';
 import { type ResolvedTrack, resolveMusicChoice } from '../lib/music.js';
 import { type TimeSegment, detectSilence, invertSegments } from '../lib/segments.js';
-import { transcribe } from '../lib/whisper.js';
+import { type TranscriptSegment, transcribe } from '../lib/whisper.js';
 import { type SrtEntry, generateShortsAss } from './caption.js';
 import { cleanVoice } from './cleanvoice.js';
 import { maskSensitive as runMask } from './mask.js';
@@ -69,6 +69,7 @@ export {
 import {
   type SectionWindow,
   allocateLinesToSections,
+  sourceTimeToOutput,
   startsFromAssignment,
 } from '../lib/autoshort-plan.js';
 import { assignLinesToFrames, describeTimeline } from './narration-align.js';
@@ -528,6 +529,12 @@ export function cutBoundaries(
 
 interface PreparedClip {
   source: string;
+  /**
+   * Transcript of the ORIGINAL voice, when there was one. Already paid for
+   * by retake de-duplication, so captioning a recorded voice costs nothing
+   * extra rather than a second pass.
+   */
+  transcript: TranscriptSegment[] | null;
   spans: TimeSegment[];
   luma: LumaStats | null;
   kept: number;
@@ -592,11 +599,13 @@ async function prepareClip(
   if (spans.length === 0) spans = [{ start: 0, end: info.duration }];
 
   let retakesDropped = 0;
+  let transcript: TranscriptSegment[] | null = null;
   if (voiced && keepVoice) {
     try {
       progress(`transcribing clip ${index + 1} for retakes`);
-      const transcript = await transcribe(source, { model: 'base.en' });
-      const unique = dedupeRetakes(spansWithText(spans, transcript.segments));
+      const result = await transcribe(source, { model: 'base.en' });
+      transcript = result.segments;
+      const unique = dedupeRetakes(spansWithText(spans, result.segments));
       retakesDropped = spans.length - unique.length;
       spans = unique;
     } catch {
@@ -606,6 +615,7 @@ async function prepareClip(
 
   return {
     source,
+    transcript,
     spans,
     luma: analysis.luma,
     kept: spans.reduce((n, s) => n + (s.end - s.start), 0),
@@ -883,7 +893,52 @@ export async function autoShort(options: AutoShortOptions): Promise<AutoShortRes
 
     // ---- caption timings come from the narration audio itself ----
     let assPath: string | undefined;
-    if (wantCaptions && script && ttsPath) {
+    if (wantCaptions && !ttsPath && keepSourceAudio) {
+      // A recorded voice was kept, so caption THAT. The transcript already
+      // exists from retake de-duplication; without this the Short simply
+      // had no captions whenever the maker used their own voice.
+      progress('timing captions');
+      assPath = await time('captions', async () => {
+        const entries: SrtEntry[] = [];
+        clips.forEach((clip, ci) => {
+          for (const seg of clip.transcript ?? []) {
+            const start = sourceTimeToOutput(clips, speed, introSeconds, ci, seg.start);
+            const end = sourceTimeToOutput(clips, speed, introSeconds, ci, seg.end);
+            // A segment straddling a cut has no single place to live.
+            if (start === null || end === null || end <= start) continue;
+            entries.push({
+              index: entries.length + 1,
+              startTime: start,
+              endTime: end,
+              text: seg.text.trim(),
+              words: (seg.words ?? [])
+                .map((w) => {
+                  const ws = sourceTimeToOutput(clips, speed, introSeconds, ci, w.start);
+                  const we = sourceTimeToOutput(clips, speed, introSeconds, ci, w.end);
+                  return ws !== null && we !== null && we > ws
+                    ? { word: w.word, start: ws, end: we }
+                    : null;
+                })
+                .filter((w): w is NonNullable<typeof w> => w !== null),
+            });
+          }
+        });
+        if (entries.length === 0) return undefined;
+        const ass = generateShortsAss({
+          entries: entries.sort((a, b) => a.startTime - b.startTime),
+          videoWidth: canvas.width,
+          videoHeight: canvas.height,
+          fontSize: 48,
+          fontName: 'Arial Black',
+          position: 'bottom',
+          highlightColor: '&H00FFFF&',
+          maxChars: 28,
+        });
+        const p = join(workDir, 'captions.ass');
+        writeFileSync(p, ass, 'utf8');
+        return p;
+      });
+    } else if (wantCaptions && script && ttsPath) {
       progress('timing captions');
       assPath = await time('captions', async () => {
         // NO transcription here. The narration is our own TTS, so the exact

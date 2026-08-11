@@ -448,3 +448,31 @@ export function splitScriptSections(script: string): string[] {
     .filter((p) => p.length > 0);
   return parts.length > 0 ? parts : [script.trim()];
 }
+
+/**
+ * Map a source timestamp onto the finished timeline, or null when that
+ * moment was cut.
+ *
+ * The inverse of outputTimeToSource. Needed to reuse a transcript of the
+ * ORIGINAL audio as captions: the words were timed against the source, but
+ * they have to be drawn against the edit.
+ */
+export function sourceTimeToOutput(
+  clips: Array<{ spans: TimeSegment[] }>,
+  speed: number,
+  introSeconds: number,
+  clipIndex: number,
+  sourceTime: number
+): number | null {
+  let elapsed = 0;
+  for (let c = 0; c < clips.length; c++) {
+    for (const span of clips[c].spans) {
+      const len = span.end - span.start;
+      if (c === clipIndex && sourceTime >= span.start && sourceTime < span.end) {
+        return introSeconds + (elapsed + (sourceTime - span.start)) / speed;
+      }
+      elapsed += len;
+    }
+  }
+  return null; // this moment did not survive the cut
+}

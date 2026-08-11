@@ -5,6 +5,7 @@ import {
   planNarrationBeats,
   realSpeechWords,
   slugifyTitle,
+  sourceTimeToOutput,
   splitScriptSections,
   splitSentences,
   startsFromAssignment,
@@ -488,5 +489,29 @@ describe('splitScriptSections', () => {
 
   it('drops empty sections from stray markers', () => {
     expect(splitScriptSections('one\n---\n---\ntwo')).toEqual(['one', 'two']);
+  });
+});
+
+describe('sourceTimeToOutput', () => {
+  const clips = [{ spans: [{ start: 100, end: 110 }] }, { spans: [{ start: 500, end: 520 }] }];
+
+  it('maps a kept source moment onto the finished timeline', () => {
+    expect(sourceTimeToOutput(clips, 2, 5, 0, 102)).toBeCloseTo(6, 6);
+  });
+
+  it('accounts for earlier clips when mapping a later one', () => {
+    // 10s of clip one is 5s of output, so 502 lands at 5 + 5 + 1 = 11.
+    expect(sourceTimeToOutput(clips, 2, 5, 1, 502)).toBeCloseTo(11, 6);
+  });
+
+  it('returns null for a moment that was cut out', () => {
+    expect(sourceTimeToOutput(clips, 2, 5, 0, 300)).toBeNull();
+  });
+
+  it('round-trips with outputTimeToSource', () => {
+    const point = outputTimeToSource(clips, 2, 5, 11);
+    if (!point) throw new Error('expected a mapped point');
+    const back = sourceTimeToOutput(clips, 2, 5, point.clipIndex, point.sourceTime);
+    expect(back).toBeCloseTo(11, 6);
   });
 });

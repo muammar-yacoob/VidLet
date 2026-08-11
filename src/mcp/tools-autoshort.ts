@@ -14,7 +14,7 @@
  */
 import { dirname, join, resolve } from 'node:path';
 import { slugifyTitle, titleFromScript } from '../lib/autoshort-plan.js';
-import { MUSIC_MOODS, listBundledMusic } from '../lib/music.js';
+import { MUSIC_MOODS } from '../lib/music.js';
 import { getOutputPath } from '../lib/paths.js';
 import { addMusic } from '../tools/add-music.js';
 import {
@@ -302,19 +302,40 @@ async function handleGenerateShort(args: {
 
     // --- 1. music ---
     if (music === undefined && !files.musicPath) {
-      const moods = listBundledMusic().map((t) => t.mood);
+      // Render the samples HERE rather than telling the client to go and
+      // call preview_music: a question about which bed to use is not
+      // answerable without hearing them, and relying on the caller to know
+      // that meant the user was asked to pick music blind.
+      const previewDir = join(dirname(files.videos[0]), 'VidLet', 'previews');
+      let samples: Awaited<ReturnType<typeof previewMusic>> = [];
+      try {
+        samples = await previewMusic({ outputDir: previewDir, seconds: 10 });
+      } catch {
+        samples = []; // previews are a convenience, not a blocker
+      }
+      const byMood = new Map(samples.map((p) => [p.mood, p]));
       questions.push({
         id: 'music',
-        ask: 'Which background bed do you want under this Short?',
+        ask:
+          'Which background bed do you want under this Short? Play each preview and pick ' +
+          'one, or ask for silence.',
         options: [
-          ...MUSIC_MOODS.filter((m) => moods.includes(m)).map(
-            (m) => `${m} - re-call with music: "${m}"`
-          ),
+          ...MUSIC_MOODS.filter((m) => byMood.has(m)).map((m) => {
+            const p = byMood.get(m);
+            return `${m} (${p?.title}) - listen: ${p ? fileUrl(p.path) : ''} - then re-call with music: "${m}"`;
+          }),
           'My own file - re-call with music: "<path to audio>"',
           'No music - re-call with music: "none"',
         ],
+        previews: samples.map((p) => ({
+          mood: p.mood,
+          title: p.title,
+          artist: p.artist,
+          license: p.license,
+          url: fileUrl(p.path),
+        })),
         maps_to: 'music',
-        hint: 'Call preview_music first so the user can hear each bed before choosing.',
+        hint: 'Play every preview url for the user before they choose. Do not pick for them.',
       });
     }
 
