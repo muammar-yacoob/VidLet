@@ -12,7 +12,15 @@ import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 
-export const MUSIC_MOODS = ['lofi', 'upbeat', 'calm', 'gentle', 'tense', 'playful'] as const;
+export const MUSIC_MOODS = [
+  'lofi',
+  'upbeat',
+  'chiptune',
+  'calm',
+  'gentle',
+  'tense',
+  'playful',
+] as const;
 export type MusicMood = (typeof MUSIC_MOODS)[number];
 
 /** Mood used when the caller does not name one. */

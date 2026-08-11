@@ -2,6 +2,15 @@
   "_comment": "Every track here must be CC0 / public domain: VidLet redistributes these inside the published package, so any attribution or share-alike condition would propagate to every user of the tool. Record provenance for anything added.",
   "tracks": [
     {
+      "file": "upbeat-phonk-remix.mp3",
+      "title": "Phonk Remix",
+      "artist": "HoliznaCC0",
+      "license": "CC0 1.0 Universal",
+      "source": "https://freemusicarchive.org/music/holiznacc0/phonk-aura-farming",
+      "mood": "upbeat",
+      "duration": 169.465
+    },
+    {
       "file": "lofi-roof-tops.mp3",
       "title": "Roof Tops",
       "artist": "HoliznaCC0",
@@ -16,7 +25,7 @@
       "artist": "HoliznaCC0",
       "license": "CC0 1.0 Universal",
       "source": "https://freemusicarchive.org/music/holiznacc0/ruby-chiptunes",
-      "mood": "upbeat",
+      "mood": "chiptune",
       "duration": 165.529
     },
     {
