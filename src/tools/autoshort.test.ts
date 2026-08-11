@@ -4,9 +4,10 @@ import {
   realSpeechWords,
   slugifyTitle,
   splitSentences,
+  timeWordsInLine,
   titleFromScript,
 } from '../lib/autoshort-plan.js';
-import { ydifToIdleSpans } from './autoshort.js';
+import { buildRenderGraph, ydifToIdleSpans } from './autoshort.js';
 import {
   classifyInputs,
   dedupeRetakes,
@@ -271,5 +272,76 @@ describe('planNarrationBeats', () => {
 
   it('handles a single line', () => {
     expect(planNarrationBeats([{ text: 'only', duration: 4 }], [], 30, 1)).toHaveLength(1);
+  });
+});
+
+describe('buildRenderGraph audio', () => {
+  const base = {
+    clips: [{ spans: [{ start: 0, end: 10 }], luma: null }],
+    speed: 2,
+    contrast: 1.25,
+    keepSourceAudio: false,
+    musicVolume: 0.08,
+    outputDuration: 5,
+  };
+
+  it('normalises to -14 LUFS so platforms leave the level alone', () => {
+    const g = buildRenderGraph({ ...base, ttsIndex: 1 });
+    expect(g).toContain('loudnorm=I=-14');
+    expect(g.trim().endsWith('[a]')).toBe(true);
+  });
+
+  it('emits no audio chain at all for a silent Short', () => {
+    const g = buildRenderGraph(base);
+    expect(g).not.toContain('loudnorm');
+    expect(g).not.toContain('[a]');
+  });
+
+  it('normalises the music-only case too', () => {
+    expect(buildRenderGraph({ ...base, musicIndex: 1 })).toContain('loudnorm=I=-14');
+  });
+});
+
+describe('timeWordsInLine', () => {
+  it('spans exactly the measured line duration', () => {
+    const words = timeWordsInLine('The beak takes shape.', 10, 2);
+    expect(words[0].start).toBe(10);
+    expect(words[words.length - 1].end).toBeCloseTo(12, 6);
+  });
+
+  it('uses the script text verbatim, never a transcription of it', () => {
+    // whisper turned "Been working" into "I've been"; this cannot.
+    const words = timeWordsInLine('Been working on my tax ducks project.', 0, 4);
+    expect(words.map((w) => w.word)).toEqual([
+      'Been',
+      'working',
+      'on',
+      'my',
+      'tax',
+      'ducks',
+      'project.',
+    ]);
+  });
+
+  it('gives longer words more time than short ones', () => {
+    const [a, b] = timeWordsInLine('a considerably', 0, 3);
+    expect(b.end - b.start).toBeGreaterThan(a.end - a.start);
+  });
+
+  it('buys a beat of silence at a sentence end', () => {
+    const noStop = timeWordsInLine('go now', 0, 2)[1];
+    const withStop = timeWordsInLine('go now.', 0, 2)[1];
+    expect(withStop.end - withStop.start).toBeGreaterThan(noStop.end - noStop.start);
+  });
+
+  it('never overlaps or leaves a gap between words', () => {
+    const words = timeWordsInLine('one two three four five', 5, 3);
+    for (let i = 1; i < words.length; i++) {
+      expect(words[i].start).toBeCloseTo(words[i - 1].end, 6);
+    }
+  });
+
+  it('returns nothing for empty text', () => {
+    expect(timeWordsInLine('   ', 0, 2)).toEqual([]);
   });
 });

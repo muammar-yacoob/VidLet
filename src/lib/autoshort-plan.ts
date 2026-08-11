@@ -248,3 +248,49 @@ export function planNarrationBeats(
   }
   return beats;
 }
+
+/** A word with its position on the output timeline. */
+export interface TimedWord {
+  word: string;
+  start: number;
+  end: number;
+}
+
+/**
+ * Time the words of a spoken line without transcribing it.
+ *
+ * For TTS we already know the exact text and have measured the audio, so
+ * running speech recognition over our own synthesised speech is pure waste:
+ * it costs a whisper pass per render AND it gets words wrong, turning a
+ * script that opened "Been working on..." into a caption reading "I've
+ * been...". Each line is short and independently anchored to its own
+ * measured duration, so proportional distribution cannot drift.
+ *
+ * Longer words take longer to say, and punctuation buys a beat of silence,
+ * which is what the extra weight encodes.
+ */
+export function timeWordsInLine(text: string, start: number, duration: number): TimedWord[] {
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return [];
+
+  // Trailing punctuation is a pause, not a syllable.
+  const weightOf = (w: string): number => {
+    const bare = w.replace(/[^\p{L}\p{N}']/gu, '');
+    const pause = /[,;:]$/.test(w) ? 1.5 : /[.!?]$/.test(w) ? 2.5 : 0;
+    return Math.max(1, bare.length) + pause;
+  };
+
+  const weights = words.map(weightOf);
+  const total = weights.reduce((a, b) => a + b, 0);
+
+  const timed: TimedWord[] = [];
+  let cursor = start;
+  for (let i = 0; i < words.length; i++) {
+    const span = (weights[i] / total) * duration;
+    timed.push({ word: words[i], start: cursor, end: cursor + span });
+    cursor += span;
+  }
+  // Absorb rounding into the last word so the line ends exactly on time.
+  if (timed.length > 0) timed[timed.length - 1].end = start + duration;
+  return timed;
+}

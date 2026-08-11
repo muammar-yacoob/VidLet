@@ -29,6 +29,7 @@ import {
   speedFor,
   splitSentences,
   subtitleToText,
+  timeWordsInLine,
 } from '../lib/autoshort-plan.js';
 import {
   executeFFmpegAnalysis,
@@ -43,7 +44,7 @@ import { fmt, header, separator, success } from '../lib/logger.js';
 import { type ResolvedTrack, resolveMusicChoice } from '../lib/music.js';
 import { type TimeSegment, detectSilence, invertSegments } from '../lib/segments.js';
 import { transcribe } from '../lib/whisper.js';
-import { type SrtEntry, generateShortsAss, segmentsToEntries } from './caption.js';
+import { type SrtEntry, generateShortsAss } from './caption.js';
 import { cleanVoice } from './cleanvoice.js';
 import { maskSensitive as runMask } from './mask.js';
 import { buildSpeedupAudioFilters } from './speedup.js';
@@ -61,6 +62,7 @@ export {
   speedFor,
   splitSentences,
   subtitleToText,
+  timeWordsInLine,
 } from '../lib/autoshort-plan.js';
 
 export interface AutoShortOptions {
@@ -332,6 +334,13 @@ export async function planShort(
  * because nothing was ever asked to. Each sentence is now its own take,
  * placed by planNarrationBeats, with real silence between lines.
  */
+export interface PlacedTake {
+  path: string;
+  text: string;
+  start: number;
+  duration: number;
+}
+
 async function synthesizeNarration(
   script: string,
   workDir: string,
@@ -339,7 +348,7 @@ async function synthesizeNarration(
   outputDuration: number,
   boundaries: number[],
   options: Pick<AutoShortOptions, 'language' | 'gender'>
-): Promise<string> {
+): Promise<{ path: string; takes: PlacedTake[] }> {
   const sentences = splitSentences(script);
 
   // Lines are independent takes, so they synthesise concurrently.
@@ -382,7 +391,15 @@ async function synthesizeNarration(
     '192k',
     output,
   ]);
-  return output;
+  return {
+    path: output,
+    takes: beats.map((b, i) => ({
+      path: takes[i].path,
+      text: b.text,
+      start: b.start,
+      duration: b.duration,
+    })),
+  };
 }
 
 /**
@@ -427,7 +444,11 @@ async function prepareClip(
   progress: (stage: string) => void
 ): Promise<PreparedClip> {
   let voiced = false;
-  if (await detectVoicedAudio(input)) {
+  // With voiceover: 'tts' the source audio is discarded whatever it holds,
+  // so asking whether it contains speech buys nothing and costs a whisper
+  // pass per clip. Speech recognition only earns its keep on audio we are
+  // actually going to use.
+  if (keepVoice && (await detectVoicedAudio(input))) {
     progress(`listening for speech in clip ${index + 1}`);
     try {
       voiced = await sniffSpeech(input);
@@ -587,7 +608,20 @@ export function buildRenderGraph(opts: {
       chains.push('[bed]anull[a]');
     }
   } else if (voiceLabel) {
-    chains.push(`${voiceLabel}atrim=0:${opts.outputDuration.toFixed(3)}[a]`);
+    chains.push(`${voiceLabel}atrim=0:${opts.outputDuration.toFixed(3)}[premix]`);
+    chains.push('[premix]anull[mixed]');
+  }
+  // YouTube, Instagram and TikTok all normalise playback to roughly
+  // -14 LUFS. Arriving at that level means the platform leaves the audio
+  // alone instead of pulling it up or down. Skipped entirely when the
+  // Short is silent, since there would be no [a] to normalise.
+  const hasAudioChain = musicIndex !== undefined || voiceLabel !== null;
+  if (hasAudioChain) {
+    const last = chains[chains.length - 1];
+    if (last.endsWith('[a]')) {
+      chains[chains.length - 1] = `${last.slice(0, -3)}[mixed]`;
+    }
+    chains.push('[mixed]loudnorm=I=-14:TP=-1.5:LRA=11[a]');
   }
 
   return chains.join(';');
@@ -680,10 +714,11 @@ export async function autoShort(options: AutoShortOptions): Promise<AutoShortRes
     const keepSourceAudio = voiced && !wantTts && mode !== 'tts';
 
     let ttsPath: string | undefined;
+    let narrationTakes: PlacedTake[] = [];
     let narrationSeconds = 0;
     if (wantTts) {
       progress('generating narration');
-      ttsPath = await time('tts', () =>
+      const spoken = await time('tts', () =>
         synthesizeNarration(
           script,
           workDir,
@@ -693,6 +728,8 @@ export async function autoShort(options: AutoShortOptions): Promise<AutoShortRes
           options
         )
       );
+      ttsPath = spoken.path;
+      narrationTakes = spoken.takes;
       narrationSeconds = await getMediaDuration(ttsPath);
     }
 
@@ -701,10 +738,21 @@ export async function autoShort(options: AutoShortOptions): Promise<AutoShortRes
     if (wantCaptions && script && ttsPath) {
       progress('timing captions');
       assPath = await time('captions', async () => {
-        // Whisper the small audio file, not the finished video: identical
-        // timings for a fraction of the decode.
-        const t = await transcribe(ttsPath as string, { model: 'base.en' });
-        const entries: SrtEntry[] = segmentsToEntries(t.segments);
+        // NO transcription here. The narration is our own TTS, so the exact
+        // words and each line's measured duration are already known;
+        // running whisper over synthesised speech cost a pass per render
+        // and mis-heard the script ("Been working" came back as "I've
+        // been"). Real recorded voice is the only case that needs it.
+        const entries: SrtEntry[] = narrationTakes.map((take, i) => {
+          const words = timeWordsInLine(take.text, take.start, take.duration);
+          return {
+            index: i + 1,
+            startTime: take.start,
+            endTime: take.start + take.duration,
+            text: take.text,
+            words,
+          };
+        });
         const ass = generateShortsAss({
           entries,
           videoWidth: canvas.width,
