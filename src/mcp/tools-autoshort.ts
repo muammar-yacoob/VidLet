@@ -169,7 +169,10 @@ export const AUTOSHORT_TOOLS: ToolDefinition[] = [
           type: 'string',
           description:
             'The approved narration, spoken verbatim with no further rewriting. Pass this ' +
-            'after the user approves (or edits) the draft returned by the script question.',
+            'after the user approves (or edits) the draft returned by the script question. ' +
+            'Separate sections with a line containing only --- to pin lines to a specific ' +
+            'clip: with two videos, the lines before --- are spoken over the first and the ' +
+            'lines after it over the second. This is exact, and beats inferring alignment.',
         },
         music: {
           type: 'string',
@@ -205,6 +208,13 @@ export const AUTOSHORT_TOOLS: ToolDefinition[] = [
           description:
             'A clip or animated GIF to open with, played at NATURAL speed rather than being ' +
             'swept into the timelapse. Its length is taken out of the duration budget.',
+        },
+        align_to_content: {
+          type: 'boolean',
+          description:
+            'Place each narration line by LOOKING at the footage (Groq vision) so the words ' +
+            'describe what is on screen, instead of spacing them arithmetically. Default ' +
+            'true; falls back silently without a Groq key.',
         },
         mask_sensitive: {
           type: 'boolean',
@@ -270,6 +280,7 @@ async function handleGenerateShort(args: {
   voiceover?: 'auto' | 'tts' | 'keep';
   lead_in?: number;
   intro?: string;
+  align_to_content?: boolean;
   mask_sensitive?: boolean;
   title?: string;
   language?: string;
@@ -387,6 +398,7 @@ async function handleGenerateShort(args: {
         voiceover,
         leadIn: args.lead_in,
         intro: args.intro ? resolveInputPath(args.intro) : undefined,
+        alignToContent: args.align_to_content,
         maskSensitive: args.mask_sensitive,
         language: args.language,
         gender: args.gender,

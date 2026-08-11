@@ -201,7 +201,87 @@ VidLet ships an MCP server (`vidlet-mcp`) so an AI agent can call the tools dire
 }
 ```
 
-17 tools: `list_capabilities`, `probe_video` (read-only), `generate_captions`, `auto_jump_cut`, `trim_video`, `compress_video`, `extract_audio`, `convert_to_gif`, `setup_recording`, `generate_voiceover`, `create_short`, `create_demo`, plus the `.vidlet` project suite — `create_project` (builds a project from an .srt/.vtt, script, or QuickPeek-style JSON plan, asking the user about voice/recording when unspecified), `validate_project`, `render_project`, `open_in_editor` (hands the project to the vidlet.app editor via the URL hash), and `add_voiceover_to_project`. Every write tool defaults to a `VidLet/` subfolder beside the source and never overwrites an existing file (numbered `-1`, `-2`, ... on collision). No delete or move tools, by design.
+**23 tools.** Every write tool defaults to a `VidLet/` subfolder beside the source, never overwrites an existing file (numbered `-1`, `-2`, ... on collision), and returns the output `name`, a clickable `url`, `elapsedSeconds` and a `thumbnail`. No delete or move tools, by design.
+
+### Make a Short from whatever you have
+
+`generate_short` is the one that does everything. Attach recordings (plus optionally an `.srt`/`.vtt`, a `.txt` script, or a music file) and ask:
+
+> Generate a YouTube Short from these two screen recordings.
+
+It denoises voiced clips, cuts dead air, drops duplicate retakes, stitches, computes the speed needed to land under 59s, matches contrast across clips, frames 9:16, writes and speaks the narration, burns karaoke captions and mixes a ducked music bed.
+
+It asks before it renders, rather than guessing. When something is yours to decide it returns a `questions` array instead of encoding anything, so a decision costs seconds and not a render:
+
+1. **Music** — which bed, with audible previews
+2. **Narration** — what the footage shows, when there is no voice on it
+3. **Script** — the written narration, for approval before it is spoken
+
+```jsonc
+// First call: returns questions, renders nothing (~10s)
+{ "paths": ["modelling.mp4", "rigging.mp4"] }
+
+// Final call: renders (~25s)
+{
+  "paths": ["modelling.mp4", "rigging.mp4"],
+  "intro": "logo.gif",          // plays at natural speed, not swept into the timelapse
+  "music": "lofi",
+  "voiceover": "tts",
+  "title": "duck-rig",          // becomes duck-rig.mp4
+  "final_script": "First we block out the shape.\n---\nThen the armature goes in."
+}
+```
+
+**Pin narration to a clip with `---`.** Lines before the marker are spoken over the first video, lines after it over the second. Without it, lines are spread in proportion to how long each clip runs, which is a guess: a script saying "then I rig it" can start while modelling footage is still on screen. The marker is exact and costs nothing.
+
+### Pick the music by ear
+
+> Let me hear the background music options first.
+
+`preview_music` renders short loudness-matched samples of each bundled CC0 bed and returns a `url` per mood, so a bed is chosen by ear rather than by label.
+
+### Change your mind cheaply
+
+> Swap the music for something calmer.
+
+`add_music` scores an **already rendered** video with `-c:v copy`. Around 1.4 seconds, and the video packets come out bit-identical, so changing the bed does not mean redoing the cut, grade, narration and captions.
+
+```jsonc
+{ "path": "duck-rig.mp4", "music": "calm", "volume": 0.12 }
+```
+
+### Hide anything sensitive
+
+> Check that recording for anything I should not be publishing.
+
+`mask_sensitive` finds card numbers (Luhn-validated, so a sequential `1234 5678 9012 3456` is ignored), emails, phone numbers, IBANs, SSNs, API keys, street addresses and postcodes, then covers them with a pixel mosaic. It runs automatically inside `generate_short`.
+
+```jsonc
+{ "path": "recording.mp4", "dry_run": true }   // list what WOULD be covered
+{ "path": "recording.mp4", "regions": [{ "x": 60, "y": 900, "width": 420, "height": 90 }] }
+```
+
+Detection needs `tesseract` (`sudo apt install tesseract-ocr`). Without it the tool says so explicitly rather than quietly masking nothing; `regions` works either way.
+
+### Timelapse a long recording
+
+> Turn this 40-minute recording into a 15x timelapse.
+
+`create_timelapse_short` is the no-questions version: cut idle, speed up, 9:16, progress bar and a clock showing the real elapsed time of the original.
+
+```jsonc
+{ "path": "session.mp4", "speed": 15, "music": "none" }
+```
+
+### The rest
+
+`list_capabilities`, `probe_video` (read-only), `generate_captions`, `auto_jump_cut`, `speed_up_video`, `trim_video`, `compress_video`, `extract_audio`, `convert_to_gif`, `setup_recording`, `generate_voiceover`, `create_short`, `create_demo`, plus the `.vidlet` project suite: `create_project` (builds a project from an `.srt`/`.vtt`, script, or QuickPeek-style JSON plan), `validate_project`, `render_project`, `open_in_editor` and `add_voiceover_to_project`.
+
+### What runs where
+
+Everything heavy is local: ffmpeg, whisper.cpp, RNNoise, tesseract, and the bundled music. Edge TTS is a free keyless endpoint. The only paid-capable call is one small Groq chat per render, to rewrite the narration, and it degrades to the raw script without a key.
+
+Speech recognition is used only on audio that was actually **recorded** — deciding whether footage has a voice, and de-duplicating retakes. Captions for synthesised narration are timed from the script itself, since the words and each line's measured duration are already known.
 
 ## Support
 

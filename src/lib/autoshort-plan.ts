@@ -339,3 +339,112 @@ export function allocateLinesToSections<T extends { duration: number }>(
   }
   return groups;
 }
+
+/** Where a moment in the finished Short came from in the source footage. */
+export interface SourcePoint {
+  clipIndex: number;
+  sourceTime: number;
+}
+
+/**
+ * Map a time in the finished Short back to the clip and source timestamp it
+ * came from, so a frame can be pulled for that exact moment.
+ *
+ * Kept spans are laid end to end and sped up, so output time walks the
+ * spans in order at `speed`. Anything before the intro ends, or past the
+ * last span, clamps to the nearest real frame.
+ */
+export function outputTimeToSource(
+  clips: Array<{ spans: TimeSegment[] }>,
+  speed: number,
+  introSeconds: number,
+  outputTime: number
+): SourcePoint | null {
+  const target = (outputTime - introSeconds) * speed;
+  if (target < 0) return null; // still in the intro
+  let elapsed = 0;
+  let last: SourcePoint | null = null;
+  for (let c = 0; c < clips.length; c++) {
+    for (const span of clips[c].spans) {
+      const len = span.end - span.start;
+      if (target < elapsed + len) {
+        return { clipIndex: c, sourceTime: span.start + (target - elapsed) };
+      }
+      elapsed += len;
+      last = { clipIndex: c, sourceTime: span.end };
+    }
+  }
+  return last;
+}
+
+/**
+ * Turn a per-line keyframe assignment into start times.
+ *
+ * The vision model says which moment each line belongs to; this makes that
+ * playable. Assignments are forced non-decreasing (a script does not run
+ * backwards), and a line never starts before the previous one has finished
+ * or runs past the end.
+ */
+export function startsFromAssignment(
+  lines: Array<{ duration: number }>,
+  assignment: number[],
+  keyframeTimes: number[],
+  earliest: number,
+  latest: number,
+  gap = 0.18
+): number[] {
+  const starts: number[] = [];
+  let cursor = earliest;
+  let lastIndex = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const raw = assignment[i];
+    const idx = Math.min(
+      keyframeTimes.length - 1,
+      Math.max(lastIndex, Number.isFinite(raw) ? Math.trunc(raw) : lastIndex)
+    );
+    lastIndex = idx;
+    const start = Math.max(cursor, keyframeTimes[idx] ?? cursor);
+    starts.push(start);
+    cursor = start + lines[i].duration + gap;
+  }
+
+  // The assignment can point past the end - a model may put the closing
+  // line on the final frame, leaving no room to say it. Rather than
+  // clamping line by line, which just stacks them up against the wall and
+  // reintroduces overlap, slide the whole run earlier by the overflow so
+  // the spacing the vision model chose is preserved.
+  const lastEnd = starts[starts.length - 1] + lines[lines.length - 1].duration;
+  const overflow = lastEnd - latest;
+  if (overflow > 0) {
+    const shift = Math.min(overflow, starts[0] - earliest);
+    for (let i = 0; i < starts.length; i++) starts[i] -= shift;
+  }
+
+  // If it still does not fit, the script is simply longer than the video:
+  // pack from the earliest point and let the gaps collapse.
+  if (starts[starts.length - 1] + lines[lines.length - 1].duration > latest) {
+    let packed = earliest;
+    for (let i = 0; i < lines.length; i++) {
+      starts[i] = packed;
+      packed += lines[i].duration;
+    }
+  }
+  return starts;
+}
+
+/**
+ * Split a script into per-clip sections on `---` marker lines.
+ *
+ * Content alignment can be guessed (vision, or reading the interface text)
+ * but on low-resolution footage, or an account with no vision model, there
+ * is nothing to guess from. A marker lets the person who recorded it say
+ * outright which lines belong to which clip, which is exact, free, and
+ * always available. Returns a single section when no marker is present.
+ */
+export function splitScriptSections(script: string): string[] {
+  const parts = script
+    .split(/^\s*-{3,}\s*$/m)
+    .map((p) => p.trim())
+    .filter((p) => p.length > 0);
+  return parts.length > 0 ? parts : [script.trim()];
+}

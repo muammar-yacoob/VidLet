@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   allocateLinesToSections,
+  outputTimeToSource,
   planNarrationBeats,
   realSpeechWords,
   slugifyTitle,
+  splitScriptSections,
   splitSentences,
+  startsFromAssignment,
   timeWordsInLine,
   titleFromScript,
 } from '../lib/autoshort-plan.js';
@@ -292,6 +295,13 @@ describe('buildRenderGraph audio', () => {
     expect(g.trim().endsWith('[a]')).toBe(true);
   });
 
+  it('hard-limits true peak after loudnorm, since single-pass loudnorm can overshoot it', () => {
+    // Regression: measured +0.9 dBTP on a real render despite TP=-1.5 being
+    // requested - loudnorm alone is not a peak guarantee.
+    const g = buildRenderGraph({ ...base, ttsIndex: 1 });
+    expect(g).toMatch(/loudnorm=I=-14[^,]*,alimiter=/);
+  });
+
   it('emits no audio chain at all for a silent Short', () => {
     const g = buildRenderGraph(base);
     expect(g).not.toContain('loudnorm');
@@ -402,5 +412,81 @@ describe('clipWindows', () => {
       { start: 5, end: 15 },
       { start: 15, end: 20 },
     ]);
+  });
+});
+
+describe('outputTimeToSource', () => {
+  const clips = [{ spans: [{ start: 100, end: 110 }] }, { spans: [{ start: 500, end: 520 }] }];
+
+  it('returns null while the intro is still playing', () => {
+    expect(outputTimeToSource(clips, 2, 5, 3)).toBeNull();
+  });
+
+  it('maps into the first clip', () => {
+    // 1s of output past the intro, at 2x, is 2s into the first span.
+    expect(outputTimeToSource(clips, 2, 5, 6)).toEqual({ clipIndex: 0, sourceTime: 102 });
+  });
+
+  it('crosses into the second clip once the first is exhausted', () => {
+    // First span is 10s of source = 5s of output, so t=11 lands in clip 2.
+    expect(outputTimeToSource(clips, 2, 5, 11)).toEqual({ clipIndex: 1, sourceTime: 502 });
+  });
+
+  it('clamps past the end to the last real frame', () => {
+    expect(outputTimeToSource(clips, 2, 5, 9999)).toEqual({ clipIndex: 1, sourceTime: 520 });
+  });
+});
+
+describe('startsFromAssignment', () => {
+  const lines = [{ duration: 2 }, { duration: 2 }, { duration: 2 }];
+  const times = [0, 10, 20, 30];
+
+  it('starts each line at the moment it was assigned to', () => {
+    expect(startsFromAssignment(lines, [0, 1, 2], times, 0, 40)).toEqual([0, 10, 20]);
+  });
+
+  it('refuses to run the script backwards', () => {
+    // A model that assigns 2 then 0 must not rewind the narration.
+    const starts = startsFromAssignment(lines, [2, 0, 3], times, 0, 40);
+    for (let i = 1; i < starts.length; i++) expect(starts[i]).toBeGreaterThanOrEqual(starts[i - 1]);
+  });
+
+  it('never overlaps two lines', () => {
+    const starts = startsFromAssignment(lines, [1, 1, 1], times, 0, 40);
+    for (let i = 1; i < starts.length; i++) {
+      expect(starts[i]).toBeGreaterThanOrEqual(starts[i - 1] + 2);
+    }
+  });
+
+  it('keeps every line inside the runtime', () => {
+    const starts = startsFromAssignment(lines, [3, 3, 3], times, 0, 25);
+    for (let i = 0; i < starts.length; i++) {
+      expect(starts[i] + lines[i].duration).toBeLessThanOrEqual(25.01);
+    }
+  });
+
+  it('survives an out-of-range or missing assignment', () => {
+    expect(() => startsFromAssignment(lines, [99, Number.NaN], times, 0, 40)).not.toThrow();
+  });
+});
+
+describe('splitScriptSections', () => {
+  it('splits on a --- marker line', () => {
+    expect(splitScriptSections('We model it.\n---\nThen we rig it.')).toEqual([
+      'We model it.',
+      'Then we rig it.',
+    ]);
+  });
+
+  it('returns one section when there is no marker', () => {
+    expect(splitScriptSections('All one piece.')).toEqual(['All one piece.']);
+  });
+
+  it('ignores a dash inside a sentence', () => {
+    expect(splitScriptSections('A well-made duck.')).toHaveLength(1);
+  });
+
+  it('drops empty sections from stray markers', () => {
+    expect(splitScriptSections('one\n---\n---\ntwo')).toEqual(['one', 'two']);
   });
 });

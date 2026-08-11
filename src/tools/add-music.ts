@@ -72,12 +72,14 @@ export function buildMusicGraph(opts: {
     chains.push(
       '[bed][vkey]sidechaincompress=threshold=0.02:ratio=12:attack=15:release=350[duckedbed]'
     );
+    // A hard true-peak ceiling: amix with normalize=0 just sums the two
+    // streams, and a voice peak lining up with a music peak can clip.
     chains.push(
-      `[duckedbed][vmix]amix=inputs=2:duration=longest:normalize=0,atrim=0:${duration.toFixed(3)}[a]`
+      `[duckedbed][vmix]amix=inputs=2:duration=longest:normalize=0,atrim=0:${duration.toFixed(3)},alimiter=limit=0.891:level=disabled[a]`
     );
   } else {
     chains.push(
-      `[bed][voice]amix=inputs=2:duration=longest:normalize=0,atrim=0:${duration.toFixed(3)}[a]`
+      `[bed][voice]amix=inputs=2:duration=longest:normalize=0,atrim=0:${duration.toFixed(3)},alimiter=limit=0.891:level=disabled[a]`
     );
   }
   return chains.join(';');

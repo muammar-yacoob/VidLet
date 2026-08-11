@@ -27,6 +27,7 @@ import {
   realSpeechWords,
   spansWithText,
   speedFor,
+  splitScriptSections,
   splitSentences,
   subtitleToText,
   timeWordsInLine,
@@ -60,11 +61,17 @@ export {
   planNarrationBeats,
   spansWithText,
   speedFor,
+  splitScriptSections,
   splitSentences,
   subtitleToText,
   timeWordsInLine,
 } from '../lib/autoshort-plan.js';
-import { type SectionWindow, allocateLinesToSections } from '../lib/autoshort-plan.js';
+import {
+  type SectionWindow,
+  allocateLinesToSections,
+  startsFromAssignment,
+} from '../lib/autoshort-plan.js';
+import { assignLinesToFrames, describeTimeline } from './narration-align.js';
 
 export interface AutoShortOptions {
   inputs: string[];
@@ -94,6 +101,13 @@ export interface AutoShortOptions {
    * a third of a second of nothing anyone can read.
    */
   intro?: string;
+  /**
+   * Place each narration line by LOOKING at the footage (Groq vision) so
+   * the words describe what is on screen, rather than spacing lines
+   * arithmetically. Default true; degrades silently to proportional
+   * placement without a key.
+   */
+  alignToContent?: boolean;
   /**
    * Scan the FINISHED Short for on-screen card numbers, emails, keys and
    * addresses and pixelate them. Default true. Deliberately run on the
@@ -125,6 +139,8 @@ export interface AutoShortResult {
   resolution: string;
   /** Seconds of un-sped intro at the head, 0 when there is none. */
   introSeconds: number;
+  /** Whether narration was placed by looking at the footage. */
+  contentAligned: boolean;
   /** What the sensitive-data scan did, and why, so it is never silent. */
   masking: { scanned: boolean; regionsMasked: number; note?: string };
   music: ResolvedTrack | null;
@@ -357,9 +373,15 @@ async function synthesizeNarration(
   outputDuration: number,
   boundaries: number[],
   sections: SectionWindow[],
+  /** Vision-derived start time per line, when alignment succeeded. */
+  alignedStarts: number[] | null,
   options: Pick<AutoShortOptions, 'language' | 'gender'>
 ): Promise<{ path: string; takes: PlacedTake[] }> {
-  const sentences = splitSentences(script);
+  // An explicit `---` marker per clip beats any inference: the person who
+  // recorded it knows which lines describe which footage.
+  const declared = splitScriptSections(script);
+  const useDeclared = declared.length > 1 && declared.length === sections.length;
+  const sentences = splitSentences(script.replace(/^\s*-{3,}\s*$/gm, ' '));
 
   // Lines are independent takes, so they synthesise concurrently.
   const takes = await Promise.all(
@@ -374,6 +396,17 @@ async function synthesizeNarration(
     })
   );
 
+  // When VidLet has looked at the footage, those placements win outright:
+  // they are the only ones that know what is on screen.
+  if (alignedStarts && alignedStarts.length === takes.length) {
+    const beats = takes.map((t, i) => ({
+      text: t.text,
+      start: alignedStarts[i],
+      duration: t.duration,
+    }));
+    return renderNarrationMix(beats, takes, workDir);
+  }
+
   // `outputDuration` here is already the runtime MINUS the end tail, so the
   // sections have to be clamped to it. Leaving them at the full runtime is
   // what let the closing line run to the final frame despite the padding.
@@ -384,7 +417,20 @@ async function synthesizeNarration(
   // Lines are allocated to the clip they describe, then placed inside that
   // clip's own window, so "then we rig it" cannot start while the modelling
   // footage is still on screen.
-  const groups = allocateLinesToSections(takes, usable);
+  // Declared sections map straight onto clips; otherwise fall back to
+  // splitting by how long each clip runs.
+  const groups = useDeclared
+    ? (() => {
+        const counts = declared.map((d) => splitSentences(d).length);
+        const out: (typeof takes)[] = [];
+        let at = 0;
+        for (const n of counts) {
+          out.push(takes.slice(at, at + n));
+          at += n;
+        }
+        return out;
+      })()
+    : allocateLinesToSections(takes, usable);
   const beats: ReturnType<typeof planNarrationBeats> = [];
   groups.forEach((group, i) => {
     if (group.length === 0) return;
@@ -397,6 +443,15 @@ async function synthesizeNarration(
     );
     beats.push(...placed);
   });
+  return renderNarrationMix(beats, takes, workDir);
+}
+
+/** Lay each spoken take at its start time and mix them into one track. */
+async function renderNarrationMix(
+  beats: Array<{ text: string; start: number; duration: number }>,
+  takes: Array<{ path: string }>,
+  workDir: string
+): Promise<{ path: string; takes: PlacedTake[] }> {
   const output = join(workDir, 'narration.m4a');
 
   // One line needs no mixing, just its offset.
@@ -669,7 +724,14 @@ export function buildRenderGraph(opts: {
     if (last.endsWith('[a]')) {
       chains[chains.length - 1] = `${last.slice(0, -3)}[mixed]`;
     }
-    chains.push('[mixed]loudnorm=I=-14:TP=-1.5:LRA=11[a]');
+    // loudnorm alone is not enough: in single-pass mode it cannot see the
+    // whole file's peaks in advance, so it estimates gain from a running
+    // measurement and overshoots on sharp transients - exactly what TTS
+    // consonants produce. Measured on a real render: TP=-1.5 was requested
+    // and the output peaked at +0.9 dBTP, past digital clipping. alimiter
+    // afterward is a hard, lookahead-based ceiling that catches whatever
+    // loudnorm's estimate missed, at -1 dBTP (YouTube's own ceiling).
+    chains.push('[mixed]loudnorm=I=-14:TP=-1.5:LRA=11,alimiter=limit=0.891:level=disabled[a]');
   }
 
   return chains.join(';');
@@ -765,19 +827,55 @@ export async function autoShort(options: AutoShortOptions): Promise<AutoShortRes
     let ttsPath: string | undefined;
     let narrationTakes: PlacedTake[] = [];
     let narrationSeconds = 0;
+    let alignedStartsUsed = false;
     if (wantTts) {
       progress('generating narration');
+      // Look at the footage and decide where each line belongs, BEFORE
+      // anything is spoken or rendered. Falls back to proportional
+      // placement when there is no Groq key or the models are unavailable.
+      const usableEnd = Math.max(introSeconds + 1, outputDuration - tailPad);
+      let alignedStarts: number[] | null = null;
+      if (options.alignToContent !== false) {
+        alignedStarts = await time('align', async () => {
+          const frames = await describeTimeline({
+            clips,
+            speed,
+            introSeconds,
+            outputDuration: usableEnd,
+          });
+          if (frames.length === 0) return null;
+          const lines = splitSentences(script);
+          const assignment = await assignLinesToFrames(lines, frames);
+          if (!assignment) return null;
+          // Durations are not known until the audio exists, so estimate
+          // from words here; the exact values only shift starts slightly
+          // and the no-overlap pass fixes the rest.
+          const estimated = lines.map((l) => ({
+            duration: l.split(/\s+/).filter(Boolean).length / TTS_WPS,
+          }));
+          return startsFromAssignment(
+            estimated,
+            assignment,
+            frames.map((f) => f.outputTime),
+            leadIn + introSeconds,
+            usableEnd
+          );
+        });
+      }
+
       const spoken = await time('tts', () =>
         synthesizeNarration(
           script,
           workDir,
           leadIn + introSeconds,
-          Math.max(introSeconds + 1, outputDuration - tailPad),
+          usableEnd,
           cutBoundaries(clips, speed, introSeconds),
           clipWindows(clips, speed, introSeconds),
+          alignedStarts,
           options
         )
       );
+      alignedStartsUsed = alignedStarts !== null;
       ttsPath = spoken.path;
       narrationTakes = spoken.takes;
       narrationSeconds = await getMediaDuration(ttsPath);
@@ -922,6 +1020,7 @@ export async function autoShort(options: AutoShortOptions): Promise<AutoShortRes
       retakesDropped: clips.reduce((n, c) => n + c.retakesDropped, 0),
       voiced,
       narration: wantTts ? 'tts' : keepSourceAudio ? 'original-voice' : 'none',
+      contentAligned: alignedStartsUsed,
       narrationSeconds: Number(narrationSeconds.toFixed(1)),
       captionsBurned: assPath !== undefined,
       music: track,

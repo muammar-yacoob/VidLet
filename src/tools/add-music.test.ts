@@ -49,3 +49,29 @@ describe('buildMusicGraph', () => {
     expect(buildMusicGraph({ ...base, volume: 0.2 })).toContain('volume=0.2');
   });
 });
+
+describe('buildMusicGraph peak safety', () => {
+  it('limits true peak on the mixed output, since amix only sums levels', () => {
+    const g = buildMusicGraph({
+      hasSourceAudio: true,
+      duration: 30,
+      volume: 0.08,
+      duck: true,
+      fadeIn: 1.5,
+      fadeOut: 2,
+    });
+    expect(g).toContain('alimiter=limit=0.891');
+  });
+
+  it('limits the un-ducked mix path too', () => {
+    const g = buildMusicGraph({
+      hasSourceAudio: true,
+      duration: 30,
+      volume: 0.08,
+      duck: false,
+      fadeIn: 1.5,
+      fadeOut: 2,
+    });
+    expect(g).toContain('alimiter=limit=0.891');
+  });
+});
