@@ -10,6 +10,7 @@ import { AUTOSHORT_HANDLERS, AUTOSHORT_TOOLS } from './tools-autoshort.js';
 import { CORE_HANDLERS, CORE_TOOLS } from './tools-core.js';
 import { PROJECT_HANDLERS, PROJECT_TOOLS } from './tools-project.js';
 import { STUDIO_HANDLERS, STUDIO_TOOLS } from './tools-studio.js';
+import { YOUTUBE_HANDLERS, YOUTUBE_TOOLS } from './tools-youtube.js';
 
 const LIST_CAPABILITIES: ToolDefinition = {
   name: 'list_capabilities',
@@ -24,6 +25,7 @@ export const TOOLS: ToolDefinition[] = [
   ...STUDIO_TOOLS,
   ...AUTOSHORT_TOOLS,
   ...PROJECT_TOOLS,
+  ...YOUTUBE_TOOLS,
 ];
 
 async function handleListCapabilities() {
@@ -39,6 +41,7 @@ export const TOOL_HANDLERS: Record<string, ToolHandler> = {
   ...STUDIO_HANDLERS,
   ...AUTOSHORT_HANDLERS,
   ...PROJECT_HANDLERS,
+  ...YOUTUBE_HANDLERS,
 };
 
 export { errorContent, jsonContent };
