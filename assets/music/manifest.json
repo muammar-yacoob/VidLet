@@ -2,13 +2,13 @@
   "_comment": "Every track here must be CC0 / public domain: VidLet redistributes these inside the published package, so any attribution or share-alike condition would propagate to every user of the tool. Record provenance for anything added.",
   "tracks": [
     {
-      "file": "upbeat-spring-on-the-horizon.mp3",
-      "title": "Spring On The Horizon",
+      "file": "upbeat-ruby-chiptune.mp3",
+      "title": "Ruby 2",
       "artist": "HoliznaCC0",
       "license": "CC0 1.0 Universal",
-      "source": "https://freemusicarchive.org/music/holiznacc0/background-music",
+      "source": "https://freemusicarchive.org/music/holiznacc0/ruby-chiptunes",
       "mood": "upbeat",
-      "duration": 91.788
+      "duration": 165.529
     },
     {
       "file": "calm-drifting-piano.mp3",
@@ -36,6 +36,15 @@
       "source": "https://freemusicarchive.org/music/holiznacc0/background-music",
       "mood": "playful",
       "duration": 77.964
+    },
+    {
+      "file": "upbeat-spring-on-the-horizon.mp3",
+      "title": "Spring On The Horizon",
+      "artist": "HoliznaCC0",
+      "license": "CC0 1.0 Universal",
+      "source": "https://freemusicarchive.org/music/holiznacc0/background-music",
+      "mood": "gentle",
+      "duration": 91.788
     }
   ]
 }

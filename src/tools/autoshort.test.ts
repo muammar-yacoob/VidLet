@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { realSpeechWords, slugifyTitle, titleFromScript } from '../lib/autoshort-plan.js';
+import {
+  planNarrationBeats,
+  realSpeechWords,
+  slugifyTitle,
+  splitSentences,
+  titleFromScript,
+} from '../lib/autoshort-plan.js';
 import { ydifToIdleSpans } from './autoshort.js';
 import {
   classifyInputs,
@@ -202,5 +208,68 @@ describe('ydifToIdleSpans', () => {
 
   it('treats a busy clip as having no idle time', () => {
     expect(ydifToIdleSpans([9, 8, 7, 6], 0.5, 2)).toEqual([]);
+  });
+});
+
+describe('splitSentences', () => {
+  it('keeps terminators with their sentence', () => {
+    expect(splitSentences('One thing. Then another! And a third?')).toEqual([
+      'One thing.',
+      'Then another!',
+      'And a third?',
+    ]);
+  });
+
+  it('handles a script with no terminator', () => {
+    expect(splitSentences('just one line')).toEqual(['just one line']);
+  });
+});
+
+describe('planNarrationBeats', () => {
+  const lines = [
+    { text: 'a', duration: 3 },
+    { text: 'b', duration: 3 },
+    { text: 'c', duration: 3 },
+  ];
+
+  it('leaves a lead-in before the first word', () => {
+    const beats = planNarrationBeats(lines, [], 30, 1);
+    expect(beats[0].start).toBeGreaterThanOrEqual(1);
+  });
+
+  it('spreads lines across the runtime rather than butting them together', () => {
+    const beats = planNarrationBeats(lines, [], 30, 1);
+    expect(beats[2].start).toBeGreaterThan(12);
+  });
+
+  it('snaps a line onto a nearby cut', () => {
+    // Cut at 1.4s is just after the ideal 1.0s start, so line one moves to it.
+    const beats = planNarrationBeats(lines, [1.4, 20, 25], 30, 1);
+    expect(beats[0].start).toBeCloseTo(1.4, 2);
+  });
+
+  it('ignores a cut too far away to snap to', () => {
+    const beats = planNarrationBeats(lines, [9.9], 30, 1);
+    expect(beats[0].start).toBeCloseTo(1, 2);
+  });
+
+  it('never overlaps two lines', () => {
+    const beats = planNarrationBeats(lines, [1.1, 1.2, 1.3, 1.4], 30, 1);
+    for (let i = 1; i < beats.length; i++) {
+      expect(beats[i].start).toBeGreaterThanOrEqual(beats[i - 1].start + beats[i - 1].duration);
+    }
+  });
+
+  it('keeps every line inside the video, even when speech nearly fills it', () => {
+    const tight = [
+      { text: 'a', duration: 5 },
+      { text: 'b', duration: 5 },
+    ];
+    const beats = planNarrationBeats(tight, [], 11, 1);
+    for (const b of beats) expect(b.start + b.duration).toBeLessThanOrEqual(11.01);
+  });
+
+  it('handles a single line', () => {
+    expect(planNarrationBeats([{ text: 'only', duration: 4 }], [], 30, 1)).toHaveLength(1);
   });
 });

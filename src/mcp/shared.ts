@@ -130,6 +130,51 @@ export function fileUrl(absPath: string): string {
   return pathToFileURL(absPath).href;
 }
 
+/**
+ * Result for any tool that WROTE a file. Always carries the name, a
+ * clickable file:// url, and how long the call took. Building it here
+ * rather than in each handler is what makes it impossible to forget, which
+ * it repeatedly was.
+ */
+export function fileResult(output: string, data: Record<string, unknown> = {}): ToolResult {
+  return jsonContent({
+    name: basename(output),
+    output,
+    url: fileUrl(output),
+    ...data,
+  });
+}
+
+/**
+ * A poster frame for a rendered video, written beside it.
+ *
+ * Taken a little way in rather than at 0s: the first frame of a Short is
+ * often a fade or a title card, which makes a useless thumbnail.
+ */
+export async function writeThumbnail(video: string, atSeconds = 1.5): Promise<string | null> {
+  const out = `${video.replace(/\.[^.]+$/, '')}-thumb.jpg`;
+  try {
+    const { executeFFmpegRaw } = await import('../lib/ffmpeg.js');
+    await executeFFmpegRaw([
+      '-y',
+      '-ss',
+      atSeconds.toFixed(2),
+      '-i',
+      video,
+      '-frames:v',
+      '1',
+      '-vf',
+      'scale=360:-2',
+      '-qscale:v',
+      '4',
+      out,
+    ]);
+    return existsSync(out) ? out : null;
+  } catch {
+    return null; // a missing thumbnail must never fail a finished render
+  }
+}
+
 export function jsonContent(data: unknown): ToolResult {
   return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
 }

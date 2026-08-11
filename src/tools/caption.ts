@@ -125,6 +125,11 @@ export function segmentsToEntries(segments: TranscriptSegment[]): SrtEntry[] {
 
 // ============ ASS GENERATION ============
 
+/** Uppercase reads as the current Shorts/Reels/TikTok convention. */
+export function toCaptionCase(text: string, upper: boolean): string {
+  return upper ? text.toUpperCase() : text;
+}
+
 export interface AssContext {
   entries: SrtEntry[];
   videoWidth: number;
@@ -134,6 +139,8 @@ export interface AssContext {
   position: CaptionPosition;
   highlightColor: string; // ASS BGR format
   maxChars: number;
+  /** Uppercase the burned text. Default true for the shorts style. */
+  uppercase?: boolean;
 }
 
 /** Requested line budget for 'shorts'; narrowed to whatever actually fits. */
@@ -145,6 +152,8 @@ export const SHORTS_MAX_CHARS = 28;
  * font metrics - close enough to keep a line inside the frame.
  */
 const GLYPH_WIDTH_RATIO = 0.62;
+/** Caps have no descender-narrow letters, so they run wider per character. */
+const UPPERCASE_WIDTH_FACTOR = 1.12;
 
 /**
  * Characters that actually fit one line at this width and size. Without
@@ -155,10 +164,12 @@ export function fittingMaxChars(
   videoWidth: number,
   fontSize: number,
   sideMargin: number,
-  requested: number
+  requested: number,
+  uppercase = false
 ): number {
   const usable = Math.max(1, videoWidth - sideMargin * 2);
-  const fits = Math.floor(usable / (fontSize * GLYPH_WIDTH_RATIO));
+  const ratio = GLYPH_WIDTH_RATIO * (uppercase ? UPPERCASE_WIDTH_FACTOR : 1);
+  const fits = Math.floor(usable / (fontSize * ratio));
   return Math.max(8, Math.min(requested, fits));
 }
 
@@ -389,15 +400,27 @@ function distributeWords(
  * events keep exactly one word lit.
  */
 export function generateShortsAss(ctx: AssContext): string {
-  const { videoHeight, fontName, highlightColor } = ctx;
+  const { videoHeight, highlightColor } = ctx;
+  // "Arial Black" is not installed on Linux and fontconfig silently fell
+  // back to Noto Sans Regular, so the weight was synthesised. DejaVu Sans
+  // ships a real Bold face on every distro this runs on.
+  const fontName = ctx.fontName === 'Arial Black' ? 'DejaVu Sans' : ctx.fontName;
   // Big: roughly a sixteenth of frame height is the IG/CapCut proportion.
-  const fontSize = Math.max(ctx.fontSize, Math.round(videoHeight / 14));
+  // height/14 fitted only ~10 characters on a 720-wide canvas, which reads
+  // as one word a line. height/20 keeps it clearly a Shorts caption while
+  // fitting a readable phrase.
+  const fontSize = Math.max(ctx.fontSize, Math.round(videoHeight / 20));
   // Lower third, not the very bottom: at 0.16 the line sat down in the
   // letterbox bar where it reads as an afterthought.
   const marginV = Math.round(videoHeight * 0.24);
-  const sideMargin = 60;
-  const outline = Math.max(4, Math.round(fontSize / 12));
-  const maxChars = fittingMaxChars(ctx.videoWidth, fontSize, sideMargin, ctx.maxChars);
+  const sideMargin = 40;
+  // fontSize/12 was a heavy slab that closed up the counters at this size.
+  const outline = Math.max(2, Math.round(fontSize / 22));
+  const upper = ctx.uppercase !== false;
+  const caseOf = (t: string): string => toCaptionCase(t, upper);
+  // Caps are wider than mixed case, so the budget is measured on what will
+  // actually be drawn.
+  const maxChars = fittingMaxChars(ctx.videoWidth, fontSize, sideMargin, ctx.maxChars, upper);
 
   const header = `[Script Info]
 Title: VidLet Captions
@@ -424,7 +447,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     for (const lineWords of chunkWordsToLines(words, maxChars)) {
       for (let i = 0; i < lineWords.length; i++) {
         const text = lineWords
-          .map((w, j) => (j === i ? `{\\c${highlightColor}}${w.word}{\\c&HFFFFFF&}` : w.word))
+          .map((w, j) =>
+            j === i ? `{\\c${highlightColor}}${caseOf(w.word)}{\\c&HFFFFFF&}` : caseOf(w.word)
+          )
           .join(' ');
         // Hold the last word until the line's end so the line never flickers
         // out early between cues.

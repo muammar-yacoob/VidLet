@@ -23,9 +23,11 @@ import { join } from 'node:path';
 import {
   classifyInputs,
   dedupeRetakes,
+  planNarrationBeats,
   realSpeechWords,
   spansWithText,
   speedFor,
+  splitSentences,
   subtitleToText,
 } from '../lib/autoshort-plan.js';
 import {
@@ -54,8 +56,10 @@ export {
   classifyInputs,
   dedupeRetakes,
   scriptToSrt,
+  planNarrationBeats,
   spansWithText,
   speedFor,
+  splitSentences,
   subtitleToText,
 } from '../lib/autoshort-plan.js';
 
@@ -75,6 +79,12 @@ export interface AutoShortOptions {
   voiceover?: 'auto' | 'tts' | 'keep';
   /** Silence before the first word, so it does not open mid-syllable. */
   leadIn?: number;
+  /**
+   * A clip to open with, played at NATURAL speed. Intros are branding, not
+   * footage: sweeping a 6s logo animation into an 18x timelapse would leave
+   * a third of a second of nothing anyone can read.
+   */
+  intro?: string;
   /**
    * Scan the FINISHED Short for on-screen card numbers, emails, keys and
    * addresses and pixelate them. Default true. Deliberately run on the
@@ -104,6 +114,8 @@ export interface AutoShortResult {
   captionsBurned: boolean;
   /** Output canvas, chosen from how much detail the sources actually have. */
   resolution: string;
+  /** Seconds of un-sped intro at the head, 0 when there is none. */
+  introSeconds: number;
   /** What the sensitive-data scan did, and why, so it is never silent. */
   masking: { scanned: boolean; regionsMasked: number; note?: string };
   music: ResolvedTrack | null;
@@ -311,36 +323,87 @@ export async function planShort(
   return { outputDuration: kept / speed, voiced, videos: files.videos.length };
 }
 
-/** Speak the script and pad it with the lead-in silence. */
+/**
+ * Speak the script as separate lines and lay them on the timeline so they
+ * land on cuts.
+ *
+ * Synthesising the whole script as one take produced a voice that ran
+ * continuously while the footage jumped somewhere else: nothing lined up,
+ * because nothing was ever asked to. Each sentence is now its own take,
+ * placed by planNarrationBeats, with real silence between lines.
+ */
 async function synthesizeNarration(
   script: string,
   workDir: string,
   leadIn: number,
+  outputDuration: number,
+  boundaries: number[],
   options: Pick<AutoShortOptions, 'language' | 'gender'>
 ): Promise<string> {
-  const raw = await generateNarrationAudio({
-    input: script,
-    output: join(workDir, 'narration-raw.mp3'),
-    language: options.language,
-    gender: options.gender,
+  const sentences = splitSentences(script);
+
+  // Lines are independent takes, so they synthesise concurrently.
+  const takes = await Promise.all(
+    sentences.map(async (text, i) => {
+      const path = await generateNarrationAudio({
+        input: text,
+        output: join(workDir, `line-${i}.mp3`),
+        language: options.language,
+        gender: options.gender,
+      });
+      return { text, path, duration: await getMediaDuration(path) };
+    })
+  );
+
+  const beats = planNarrationBeats(takes, boundaries, outputDuration, leadIn);
+  const output = join(workDir, 'narration.m4a');
+
+  // One line needs no mixing, just its offset.
+  const inputs = takes.flatMap((t) => ['-i', t.path]);
+  const delays = beats.map((b, i) => {
+    const ms = Math.round(b.start * 1000);
+    return `[${i}:a]adelay=${ms}|${ms}[d${i}]`;
   });
-  // Lead-in silence so the Short does not open mid-syllable, and the first
-  // caption has a beat to land in.
-  const padded = join(workDir, 'narration.m4a');
-  const ms = Math.round(leadIn * 1000);
+  const mix =
+    beats.length === 1
+      ? '[d0]anull[a]'
+      : `${beats.map((_, i) => `[d${i}]`).join('')}amix=inputs=${beats.length}:duration=longest:normalize=0[a]`;
+
   await executeFFmpegRaw([
     '-y',
-    '-i',
-    raw,
-    '-af',
-    `adelay=${ms}|${ms}`,
+    ...inputs,
+    '-filter_complex',
+    `${delays.join(';')};${mix}`,
+    '-map',
+    '[a]',
     '-c:a',
     'aac',
     '-b:a',
     '192k',
-    padded,
+    output,
   ]);
-  return padded;
+  return output;
+}
+
+/**
+ * Output-time positions where one kept span meets the next. These are the
+ * moments the picture cuts, and so the moments a line of narration should
+ * be allowed to start on.
+ */
+export function cutBoundaries(
+  clips: Array<{ spans: TimeSegment[] }>,
+  speed: number,
+  offset = 0
+): number[] {
+  const out: number[] = [offset];
+  let elapsed = 0;
+  for (const clip of clips) {
+    for (const span of clip.spans) {
+      out.push(offset + elapsed / speed);
+      elapsed += span.end - span.start;
+    }
+  }
+  return out;
 }
 
 interface PreparedClip {
@@ -433,7 +496,8 @@ async function prepareClip(
  * ducked bed.
  */
 export function buildRenderGraph(opts: {
-  clips: Array<{ spans: TimeSegment[]; luma: LumaStats | null }>;
+  /** `spans: null` means "use the whole clip, at natural speed" (an intro). */
+  clips: Array<{ spans: TimeSegment[] | null; luma: LumaStats | null }>;
   speed: number;
   contrast: number;
   keepSourceAudio: boolean;
@@ -454,15 +518,19 @@ export function buildRenderGraph(opts: {
   clips.forEach((clip, i) => {
     const grade =
       target && clip.luma ? matchGrade(clip.luma, target, contrast) : { contrast, brightness: 0 };
-    const select = buildSelectExpr(clip.spans);
     // Trim, grade and frame in one go. Every clip lands on the same canvas
     // because concat demands identical width/height/SAR.
     // Speed is applied HERE, before the scale/blur, not after the concat.
     // The kept footage is several times longer than the finished Short, so
     // scaling it to 1080x1920 first means blurring thousands of frames that
     // are about to be dropped - the single biggest cost in the render.
+    // An intro (spans === null) plays whole and at natural speed; footage
+    // is trimmed to its kept spans and swept up to the timelapse rate.
+    const head = clip.spans
+      ? `select='${buildSelectExpr(clip.spans)}',setpts=N/FRAME_RATE/TB,setpts=PTS/${speed},fps=30`
+      : 'fps=30,setpts=PTS-STARTPTS';
     chains.push(
-      `[${i}:v]select='${select}',setpts=N/FRAME_RATE/TB,setpts=PTS/${speed},fps=30,` +
+      `[${i}:v]${head},` +
         `eq=contrast=${grade.contrast}:brightness=${grade.brightness},split=2[bg${i}][fg${i}]`
     );
     chains.push(
@@ -474,8 +542,8 @@ export function buildRenderGraph(opts: {
       `[fg${i}]scale=${outW}:${outH}:force_original_aspect_ratio=decrease:flags=lanczos[fgs${i}]`
     );
     chains.push(`[bgb${i}][fgs${i}]overlay=(W-w)/2:(H-h)/2,setsar=1[n${i}]`);
-    if (keepSourceAudio) {
-      chains.push(`[${i}:a]aselect='${select}',asetpts=N/SR/TB[na${i}]`);
+    if (keepSourceAudio && clip.spans) {
+      chains.push(`[${i}:a]aselect='${buildSelectExpr(clip.spans)}',asetpts=N/SR/TB[na${i}]`);
     }
   });
 
@@ -581,14 +649,6 @@ export async function autoShort(options: AutoShortOptions): Promise<AutoShortRes
       )
     );
 
-    // An approved script has no dependency on the footage, so the narration
-    // is synthesised WHILE the clips are analysed. TTS is mostly network
-    // wait, and it was the single longest stage when run on its own.
-    const earlyTts =
-      options.scriptIsFinal && rawScript && mode !== 'keep'
-        ? time('tts', () => synthesizeNarration(rawScript, workDir, leadIn, options))
-        : null;
-
     const clips = await clipsPromise;
 
     const voiced = clips.some((c) => c.voiced);
@@ -599,8 +659,11 @@ export async function autoShort(options: AutoShortOptions): Promise<AutoShortRes
     const canvas = chooseCanvas(
       await Promise.all(files.videos.map(async (v) => (await getVideoInfo(v)).height))
     );
-    const speed = speedFor(keptDuration, maxDuration);
-    const outputDuration = keptDuration / speed;
+    // The intro is spent from the same budget, so the timelapse is sped to
+    // fit whatever is left rather than overrunning the ceiling.
+    const introSeconds = options.intro ? await getMediaDuration(options.intro) : 0;
+    const speed = speedFor(keptDuration, Math.max(1, maxDuration - introSeconds));
+    const outputDuration = introSeconds + keptDuration / speed;
     console.log(
       `Kept:     ${fmt.white(keptDuration.toFixed(1))}s of ${sourceDuration.toFixed(1)}s → ${fmt.green(outputDuration.toFixed(1))}s at ${fmt.yellow(`${speed.toFixed(1)}x`)}`
     );
@@ -620,10 +683,16 @@ export async function autoShort(options: AutoShortOptions): Promise<AutoShortRes
     let narrationSeconds = 0;
     if (wantTts) {
       progress('generating narration');
-      // Already in flight when the script was pre-approved.
-      ttsPath = earlyTts
-        ? await earlyTts
-        : await time('tts', () => synthesizeNarration(script, workDir, leadIn, options));
+      ttsPath = await time('tts', () =>
+        synthesizeNarration(
+          script,
+          workDir,
+          leadIn + introSeconds,
+          outputDuration,
+          cutBoundaries(clips, speed, introSeconds),
+          options
+        )
+      );
       narrationSeconds = await getMediaDuration(ttsPath);
     }
 
@@ -655,21 +724,29 @@ export async function autoShort(options: AutoShortOptions): Promise<AutoShortRes
     // ---- one render ----
     progress('rendering');
     await time('render', async () => {
+      // An intro leads the input list so it concatenates first.
+      const graphClips: Array<{ spans: TimeSegment[] | null; luma: LumaStats | null }> =
+        options.intro
+          ? [{ spans: null, luma: null }, ...clips.map((c) => ({ spans: c.spans, luma: c.luma }))]
+          : clips.map((c) => ({ spans: c.spans, luma: c.luma }));
+      const sources = options.intro
+        ? [options.intro, ...clips.map((c) => c.source)]
+        : clips.map((c) => c.source);
       const extraInputs: string[] = [];
-      for (const clip of clips.slice(1)) extraInputs.push('-i', clip.source);
+      for (const src of sources.slice(1)) extraInputs.push('-i', src);
       let ttsIndex: number | undefined;
       let musicIndex: number | undefined;
       if (ttsPath) {
-        ttsIndex = clips.length;
+        ttsIndex = sources.length;
         extraInputs.push('-i', ttsPath);
       }
       if (track) {
-        musicIndex = ttsPath ? clips.length + 1 : clips.length;
+        musicIndex = ttsPath ? sources.length + 1 : sources.length;
         extraInputs.push('-stream_loop', '-1', '-i', track.path);
       }
 
       const graph = buildRenderGraph({
-        clips,
+        clips: graphClips,
         speed,
         contrast,
         keepSourceAudio,
@@ -685,7 +762,7 @@ export async function autoShort(options: AutoShortOptions): Promise<AutoShortRes
 
       const hasAudio = ttsPath !== undefined || track !== null || keepSourceAudio;
       await executeFFmpegWithProgress({
-        input: clips[0].source,
+        input: sources[0],
         output,
         expectedDuration: outputDuration,
         args: [
@@ -742,6 +819,7 @@ export async function autoShort(options: AutoShortOptions): Promise<AutoShortRes
       speed,
       videos: files.videos.length,
       resolution: `${canvas.width}x${canvas.height}`,
+      introSeconds: Number(introSeconds.toFixed(2)),
       spansKept: clips.reduce((n, c) => n + c.spans.length, 0),
       retakesDropped: clips.reduce((n, c) => n + c.retakesDropped, 0),
       voiced,

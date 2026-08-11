@@ -29,12 +29,14 @@ import { previewMusic } from '../tools/music-preview.js';
 import {
   type ToolDefinition,
   type ToolHandler,
+  fileResult,
   fileUrl,
   jsonContent,
   resolveInputPath,
   runWriteTool,
   safeOutputPath,
   withSilencedStdout,
+  writeThumbnail,
 } from './shared.js';
 
 export const AUTOSHORT_TOOLS: ToolDefinition[] = [
@@ -198,6 +200,12 @@ export const AUTOSHORT_TOOLS: ToolDefinition[] = [
           type: 'number',
           description: 'Silence before the first word, in seconds. Default 1.',
         },
+        intro: {
+          type: 'string',
+          description:
+            'A clip or animated GIF to open with, played at NATURAL speed rather than being ' +
+            'swept into the timelapse. Its length is taken out of the duration budget.',
+        },
         mask_sensitive: {
           type: 'boolean',
           description:
@@ -261,6 +269,7 @@ async function handleGenerateShort(args: {
   contrast?: number;
   voiceover?: 'auto' | 'tts' | 'keep';
   lead_in?: number;
+  intro?: string;
   mask_sensitive?: boolean;
   title?: string;
   language?: string;
@@ -364,6 +373,7 @@ async function handleGenerateShort(args: {
       : join(dirname(files.videos[0]), 'VidLet', `${slug}.mp4`);
     const output = safeOutputPath(files.videos[0], desired);
 
+    const startedAt = Date.now();
     return runWriteTool(output, async () => {
       const result = await autoShort({
         inputs: resolved,
@@ -376,14 +386,18 @@ async function handleGenerateShort(args: {
         contrast: args.contrast,
         voiceover,
         leadIn: args.lead_in,
+        intro: args.intro ? resolveInputPath(args.intro) : undefined,
         maskSensitive: args.mask_sensitive,
         language: args.language,
         gender: args.gender,
         output,
       });
-      return jsonContent({
+      const thumbnail = await writeThumbnail(result.output);
+      return fileResult(result.output, {
         ...result,
-        url: fileUrl(result.output),
+        elapsedSeconds: Number(((Date.now() - startedAt) / 1000).toFixed(1)),
+        thumbnail,
+        thumbnailUrl: thumbnail ? fileUrl(thumbnail) : null,
         music: result.music
           ? {
               title: result.music.title,
@@ -392,7 +406,10 @@ async function handleGenerateShort(args: {
               source: result.music.source,
             }
           : null,
-        next_steps: ['Show the user the `url` so they can open the finished Short.'],
+        next_steps: [
+          'Show the user the video `name`, its `url`, `elapsedSeconds`, and the ' +
+            '`thumbnailUrl` as a preview.',
+        ],
       });
     });
   });
@@ -439,7 +456,13 @@ async function handleMaskSensitive({
           regions: probe.regions,
           blockiness,
         });
-        return jsonContent({ ...result, masked: true, url: fileUrl(output) });
+        const thumbnail = await writeThumbnail(output);
+        return fileResult(output, {
+          ...result,
+          masked: true,
+          thumbnail,
+          thumbnailUrl: thumbnail ? fileUrl(thumbnail) : null,
+        });
       });
     }
 
@@ -447,7 +470,13 @@ async function handleMaskSensitive({
     const output = safeOutputPath(input, desired);
     return runWriteTool(output, async () => {
       const result = await maskSensitive({ input, output, regions: supplied, blockiness });
-      return jsonContent({ ...result, masked: true, url: fileUrl(output) });
+      const thumbnail = await writeThumbnail(output);
+      return fileResult(output, {
+        ...result,
+        masked: true,
+        thumbnail,
+        thumbnailUrl: thumbnail ? fileUrl(thumbnail) : null,
+      });
     });
   });
 }
@@ -471,10 +500,13 @@ async function handleAddMusic({
   const output = safeOutputPath(input, desired);
   return runWriteTool(output, () =>
     withSilencedStdout(async () => {
+      const startedAt = Date.now();
       const result = await addMusic({ input, output, music, volume, duck });
-      return jsonContent({
-        output: result.output,
-        url: fileUrl(result.output),
+      const thumbnail = await writeThumbnail(result.output);
+      return fileResult(result.output, {
+        elapsedSeconds: Number(((Date.now() - startedAt) / 1000).toFixed(1)),
+        thumbnail,
+        thumbnailUrl: thumbnail ? fileUrl(thumbnail) : null,
         duration: result.duration,
         ducked: result.ducked,
         music: {

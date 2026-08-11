@@ -135,6 +135,10 @@ function overlaps(
 /**
  * Find sensitive words in one OCR'd frame and return the boxes to cover.
  *
+ * Boxes are padded generously: OCR bounds hug the glyphs, and a mask that
+ * stops exactly at the last pixel of a digit still shows its edge. Masks
+ * are never time-bounded, so the only safety margin that matters is spatial.
+ *
  * OCR splits a card number across several word boxes, so words are joined
  * into short sliding windows before classification and any window that
  * fires contributes all of its boxes. Overlapping boxes are merged, which
@@ -145,7 +149,7 @@ export function regionsForFrame(
   frameW: number,
   frameH: number,
   windowSize = 6,
-  pad = 6
+  pad = 14
 ): MaskRegion[] {
   const raw: MaskRegion[] = [];
 

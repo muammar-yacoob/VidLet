@@ -16,6 +16,7 @@ import { togif } from '../tools/togif.js';
 import { trim } from '../tools/trim.js';
 import {
   PATH_PROPERTY,
+  fileResult,
   type ToolDefinition,
   type ToolHandler,
   jsonContent,
@@ -217,7 +218,7 @@ async function handleGenerateCaptions({
         autoTranscribe: true,
         whisperModel: 'base.en',
       });
-      return jsonContent({ output: result });
+      return fileResult(result);
     })
   );
 }
@@ -237,7 +238,7 @@ async function handleAutoJumpCut({
   return runWriteTool(output, () =>
     withSilencedStdout(async () => {
       const result = await jumpcut({ input, output, silenceThreshold: silence_threshold });
-      return jsonContent({ output: result });
+      return fileResult(result);
     })
   );
 }
@@ -259,7 +260,7 @@ async function handleSpeedUpVideo({
   return runWriteTool(output, () =>
     withSilencedStdout(async () => {
       const result = await speedup({ input, output, speed, pitchShift: pitch_shift });
-      return jsonContent({ output: result });
+      return fileResult(result);
     })
   );
 }
@@ -284,7 +285,7 @@ async function handleTrimVideo({
   return runWriteTool(output, () =>
     withSilencedStdout(async () => {
       const result = await trim({ input, output, start, end });
-      return jsonContent({ output: result });
+      return fileResult(result);
     })
   );
 }
@@ -306,7 +307,7 @@ async function handleCompressVideo({
   return runWriteTool(output, () =>
     withSilencedStdout(async () => {
       const result = await compress({ input, output, bitrate, preset });
-      return jsonContent({ output: result });
+      return fileResult(result);
     })
   );
 }
@@ -328,7 +329,7 @@ async function handleExtractAudio({
   return runWriteTool(output, () =>
     withSilencedStdout(async () => {
       const result = await extractAudio({ input, output, format });
-      return jsonContent({ output: result });
+      return fileResult(result);
     })
   );
 }
@@ -350,7 +351,7 @@ async function handleConvertToGif({
   return runWriteTool(output, () =>
     withSilencedStdout(async () => {
       const result = await togif({ input, output, fps, width });
-      return jsonContent({ output: result });
+      return fileResult(result);
     })
   );
 }

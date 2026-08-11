@@ -6,7 +6,7 @@
  */
 import type { TimeSegment } from './segments.js';
 
-const VIDEO_EXTS = new Set(['.mp4', '.mkv', '.webm', '.mov', '.avi', '.m4v']);
+const VIDEO_EXTS = new Set(['.mp4', '.mkv', '.webm', '.mov', '.avi', '.m4v', '.gif']);
 const SUBTITLE_EXTS = new Set(['.srt', '.vtt']);
 const TEXT_EXTS = new Set(['.txt', '.md']);
 const AUDIO_EXTS = new Set(['.mp3', '.wav', '.m4a', '.aac', '.ogg', '.flac']);
@@ -177,4 +177,74 @@ export function slugifyTitle(title: string, maxChars = 48): string {
 export function titleFromScript(script: string): string {
   const first = script.match(/[^.!?]+/)?.[0]?.trim() ?? script.trim();
   return first || 'short';
+}
+
+/** One spoken sentence, placed on the output timeline. */
+export interface NarrationBeat {
+  text: string;
+  /** Seconds into the output where this line starts. */
+  start: number;
+  /** Measured duration of the synthesised audio. */
+  duration: number;
+}
+
+/** Split a script into speakable sentences, keeping their punctuation. */
+export function splitSentences(script: string): string[] {
+  return (script.match(/[^.!?]+[.!?]*/g) ?? [script])
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
+
+/**
+ * Place each spoken line on the output timeline, snapping to cuts.
+ *
+ * A single continuous voice track over a heavily-cut timelapse sounds
+ * detached from the picture: the words keep going while the footage jumps
+ * somewhere else. Starting each line ON a cut ties the two together, and
+ * the gaps between lines fall where the video changes anyway.
+ *
+ * `boundaries` are the output-time positions where kept spans meet. A line
+ * is snapped to the nearest boundary at or after the earliest point it
+ * could start, but never so far that the narration overruns the video, and
+ * never before the previous line has finished.
+ */
+export function planNarrationBeats(
+  sentences: Array<{ text: string; duration: number }>,
+  boundaries: number[],
+  outputDuration: number,
+  leadIn: number,
+  gap = 0.18
+): NarrationBeat[] {
+  const beats: NarrationBeat[] = [];
+  const sorted = [...boundaries].sort((a, b) => a - b);
+  const totalSpeech = sentences.reduce((n, s) => n + s.duration, 0);
+
+  // Spread whatever time is left over evenly between lines, then let each
+  // line drift forward to the next cut if one is close enough to be worth
+  // snapping to.
+  const slack = Math.max(0, outputDuration - leadIn - totalSpeech);
+  const perGap = sentences.length > 1 ? slack / (sentences.length - 1) : 0;
+
+  let cursor = leadIn;
+  for (let i = 0; i < sentences.length; i++) {
+    const { text, duration } = sentences[i];
+    const idealStart = cursor;
+    // Only snap forward, and only within the slack this line was allotted;
+    // snapping further would push the tail of the script off the end.
+    const reach = idealStart + Math.min(perGap, 1.5);
+    const snapped = sorted.find((b) => b >= idealStart && b <= reach);
+    let start = snapped ?? idealStart;
+    const prev = beats[beats.length - 1];
+    const prevEnd = prev ? prev.start + prev.duration : 0;
+    if (prev) start = Math.max(start, prevEnd + gap);
+    // Never let a line run past the picture. Clamping AFTER the gap is what
+    // keeps a tight script inside the video: the breathing space collapses
+    // first, and only then does the line move.
+    start = Math.min(start, Math.max(0, outputDuration - duration));
+    // Collapsing the gap must never turn into an overlap.
+    if (prev) start = Math.max(start, prevEnd);
+    beats.push({ text, start, duration });
+    cursor = start + duration + perGap;
+  }
+  return beats;
 }

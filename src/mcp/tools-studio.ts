@@ -18,6 +18,7 @@ import {
   type ToolDefinition,
   type ToolHandler,
   editorBaseUrl,
+  fileResult,
   fileUrl,
   jsonContent,
   maxSafeUrlLength,
@@ -286,7 +287,7 @@ async function handleGenerateVoiceover({
           video,
           videoOutput,
         });
-        return jsonContent({ output: result, narration_audio: output });
+        return fileResult(result, { narration_audio: output });
       } catch (e) {
         if (videoOutput) releaseIfEmpty(videoOutput);
         throw e;
@@ -326,8 +327,7 @@ async function handleCreateShort({
         count,
         fromSegments: from_segments,
       });
-      return jsonContent({
-        output: result,
+      return fileResult(result, {
         segments_sidecar: `${output}.segments.json`,
         ...(generate_post ? { post_copy: `${output}.post.txt` } : {}),
       });
