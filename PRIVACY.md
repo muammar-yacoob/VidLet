@@ -2,6 +2,8 @@
 
 **Last updated: June 2026**
 
+_Published by [Spark Games Ltd](https://spark-apps.co) · company no. 15379140_
+
 ## Core Principle
 
 VidLet processes everything locally. Your videos never leave your machine.
@@ -54,4 +56,4 @@ Core video processing requires no internet connection.
 
 ## Contact
 
-For privacy questions, open an issue at https://github.com/muammar-yacoob/VidLet
+Questions? Visit [spark-apps.co](https://spark-apps.co/contact).
