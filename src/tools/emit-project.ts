@@ -35,6 +35,8 @@ export interface EmitProjectInput {
   clips: Array<{ source: string; spans: TimeSegment[] }>;
   /** Multiplier applied to the timelapse footage (not the intro). */
   speed: number;
+  /** Per-clip rate when sections earned different shares of the runtime. */
+  clipSpeeds?: number[];
   /** Intro clip played at natural speed, if any. */
   intro?: string;
   introSeconds: number;
@@ -93,11 +95,12 @@ export async function emitVidletProject(input: EmitProjectInput): Promise<string
   // One clip per kept span: this is the cut list, laid end to end, at the
   // rate the timelapse plays. Editing means dragging these.
   let clipIndex = 0;
-  for (const clip of input.clips) {
+  for (const [ci, clip] of input.clips.entries()) {
     const mediaId = await addMedia(clip.source, 'video');
+    const rate = input.clipSpeeds?.[ci] ?? input.speed;
     for (const span of clip.spans) {
       const sourceSpan = span.end - span.start;
-      const onTimeline = sourceSpan / input.speed;
+      const onTimeline = sourceSpan / rate;
       videoClips.push({
         id: `c${++clipIndex}`,
         mediaId,
@@ -106,7 +109,7 @@ export async function emitVidletProject(input: EmitProjectInput): Promise<string
         duration: Number(onTimeline.toFixed(3)),
         gain: 1,
         muted: true, // narration carries the audio
-        speed: Number(input.speed.toFixed(4)),
+        speed: Number(rate.toFixed(4)),
       });
       timeline += onTimeline;
     }

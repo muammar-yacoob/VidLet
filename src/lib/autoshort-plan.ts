@@ -190,8 +190,19 @@ export interface NarrationBeat {
 
 /** Split a script into speakable sentences, keeping their punctuation. */
 export function splitSentences(script: string): string[] {
-  return (script.match(/[^.!?]+[.!?]*/g) ?? [script])
-    .map((s) => s.trim())
+  // A naive split on "." cut "ducktax.com" in half and spoke "com." as its
+  // own sentence, which is what made the URL sound broken. Protect the dots
+  // that are NOT sentence ends - inside domains, decimals and common
+  // abbreviations - split, then put them back.
+  const GUARD = '\u0000';
+  const guarded = script
+    // domain-ish: a dot between word characters
+    .replace(/(\w)\.(?=\w)/g, `$1${GUARD}`)
+    // a dot after a lone capital, as in initials or "Dr."
+    .replace(/\b([A-Z])\.(?=\s)/g, `$1${GUARD}`);
+
+  return (guarded.match(/[^.!?]+[.!?]*/g) ?? [guarded])
+    .map((s) => s.split(GUARD).join('.').trim())
     .filter((s) => s.length > 0);
 }
 
@@ -586,4 +597,63 @@ export function fitBeatsToRuntime(
     }),
     overran: true,
   };
+}
+
+/**
+ * Speed each clip so its share of the runtime matches its share of the
+ * NARRATION, rather than its share of the source footage.
+ *
+ * With one global speed, output time is proportional to how much footage
+ * survived the cut. That is fine until the script says otherwise: pinning
+ * seven rigging lines to a clip that only earned 13 seconds of a 57 second
+ * Short cannot work, and the narration ends up sprawling over whichever
+ * footage happens to be on screen. Giving the talkative clip more runtime
+ * and the quiet one less is what makes "this line describes this footage"
+ * actually true.
+ *
+ * Returns one multiplier per clip. A clip with no lines still gets shown -
+ * silence over footage is fine - it just gets the minimum share.
+ */
+export function speedPerSection(
+  keptDurations: number[],
+  sectionSpeech: number[],
+  availableSeconds: number,
+  minShare = 0.12
+): number[] {
+  const totalSpeech = sectionSpeech.reduce((a, b) => a + b, 0);
+  if (totalSpeech <= 0 || keptDurations.length === 0) {
+    // Nothing to balance against: one speed for everything.
+    const totalKept = keptDurations.reduce((a, b) => a + b, 0);
+    const uniform = Math.max(1, totalKept / Math.max(0.001, availableSeconds));
+    return keptDurations.map(() => uniform);
+  }
+
+  // Every clip keeps a floor of the runtime so a silent section does not
+  // flash past unreadably.
+  const rawShares = sectionSpeech.map((s) => s / totalSpeech);
+  const floored = rawShares.map((s) => Math.max(s, minShare));
+  const sum = floored.reduce((a, b) => a + b, 0);
+  const shares = floored.map((s) => s / sum);
+
+  return keptDurations.map((kept, i) => {
+    const seconds = Math.max(0.001, shares[i] * availableSeconds);
+    // Never slow footage down below realtime; a timelapse only speeds up.
+    return Math.max(1, kept / seconds);
+  });
+}
+
+/** Output-time window per clip given a per-clip speed. */
+export function windowsFromSpeeds(
+  keptDurations: number[],
+  speeds: number[],
+  offset: number
+): SectionWindow[] {
+  const out: SectionWindow[] = [];
+  let at = offset;
+  for (let i = 0; i < keptDurations.length; i++) {
+    const end = at + keptDurations[i] / speeds[i];
+    out.push({ start: at, end });
+    at = end;
+  }
+  return out;
 }

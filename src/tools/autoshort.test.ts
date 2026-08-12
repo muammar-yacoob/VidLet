@@ -7,11 +7,13 @@ import {
   realSpeechWords,
   slugifyTitle,
   sourceTimeToOutput,
+  speedPerSection,
   splitScriptSections,
   splitSentences,
   startsFromAssignment,
   timeWordsInLine,
   titleFromScript,
+  windowsFromSpeeds,
 } from '../lib/autoshort-plan.js';
 import { buildRenderGraph, clipWindows, ydifToIdleSpans } from './autoshort.js';
 import {
@@ -582,5 +584,68 @@ describe('fitBeatsToRuntime', () => {
 
   it('handles an empty narration', () => {
     expect(fitBeatsToRuntime([], 10)).toEqual({ beats: [], overran: false });
+  });
+});
+
+describe('splitSentences with dots that are not sentence ends', () => {
+  it('keeps a domain whole', () => {
+    // Regression: "ducktax.com" split into "ducktax." and "com.", and the
+    // TTS spoke "com." as its own sentence.
+    expect(splitSentences('Find him on ducktax.com.')).toEqual(['Find him on ducktax.com.']);
+  });
+
+  it('keeps a multi-part domain and a path whole', () => {
+    expect(splitSentences('Go to my.site.co.uk now.')).toEqual(['Go to my.site.co.uk now.']);
+  });
+
+  it('keeps version numbers whole', () => {
+    expect(splitSentences('This is Blender 5.2.3 LTS.')).toEqual(['This is Blender 5.2.3 LTS.']);
+  });
+
+  it('still splits genuine sentences', () => {
+    expect(splitSentences('One thing. Then another.')).toEqual(['One thing.', 'Then another.']);
+  });
+
+  it('splits a sentence that ends immediately before a domain', () => {
+    expect(splitSentences('That is done. ducktax.com is live.')).toEqual([
+      'That is done.',
+      'ducktax.com is live.',
+    ]);
+  });
+});
+
+describe('speedPerSection', () => {
+  it('gives the talkative clip more runtime than its footage earned', () => {
+    // Clip 1 has twice the footage but clip 2 has three times the narration.
+    const speeds = speedPerSection([1000, 500], [10, 30], 50);
+    const w = windowsFromSpeeds([1000, 500], speeds, 0);
+    const first = w[0].end - w[0].start;
+    const second = w[1].end - w[1].start;
+    expect(second).toBeGreaterThan(first);
+  });
+
+  it('fills the available runtime', () => {
+    const kept = [1000, 500];
+    const speeds = speedPerSection(kept, [20, 20], 50);
+    const w = windowsFromSpeeds(kept, speeds, 0);
+    expect(w[w.length - 1].end).toBeCloseTo(50, 1);
+  });
+
+  it('never slows footage below realtime', () => {
+    // A tiny clip with most of the narration must not be stretched.
+    for (const s of speedPerSection([5, 1000], [40, 1], 50)) {
+      expect(s).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  it('still shows a section with no narration at all', () => {
+    const kept = [1000, 500];
+    const w = windowsFromSpeeds(kept, speedPerSection(kept, [40, 0], 50), 0);
+    expect(w[1].end - w[1].start).toBeGreaterThan(0);
+  });
+
+  it('falls back to one uniform speed when there is no narration', () => {
+    const speeds = speedPerSection([600, 600], [0, 0], 60);
+    expect(speeds[0]).toBeCloseTo(speeds[1], 6);
   });
 });

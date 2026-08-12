@@ -74,22 +74,31 @@ export async function synthesizeNarration(
     })
   );
 
-  // When VidLet has looked at the footage, those placements win outright:
-  // they are the only ones that know what is on screen.
-  if (alignedStarts && alignedStarts.length === takes.length) {
+  // Vision placement knows what is on screen, so it wins - EXCEPT over an
+  // explicit `---` marker. A declared section is the person who recorded
+  // the footage saying which lines belong to which clip, and inference must
+  // not overrule that. It did: every rigging line was placed at 19-43s
+  // while the rigging clip did not start until 43s, so the whole second
+  // half of the narration played over the modelling footage.
+  if (alignedStarts && alignedStarts.length === takes.length && !useDeclared) {
     const beats = takes.map((t, i) => ({
       text: t.text,
       start: alignedStarts[i],
       duration: t.duration,
     }));
-    return renderNarrationMix(beats, takes, workDir);
+    const fitted = fitBeatsToRuntime(beats, outputDuration);
+    return renderNarrationMix(fitted.beats, takes, workDir, fitted.overran);
   }
 
   // `outputDuration` here is already the runtime MINUS the end tail, so the
   // sections have to be clamped to it. Leaving them at the full runtime is
   // what let the closing line run to the final frame despite the padding.
-  const usable = sections.map((w) => ({
-    start: Math.min(w.start, outputDuration),
+  const usable = sections.map((w, i) => ({
+    // The FIRST section may begin before its clip does: the opening beat is
+    // measured from the first frame of the video, so narration talks over
+    // an intro rather than waiting politely for it to finish. Anything else
+    // meant a 6s intro pushed the first word to 7s.
+    start: i === 0 ? Math.min(leadIn, w.start) : Math.min(w.start, outputDuration),
     end: Math.min(w.end, outputDuration),
   }));
   // Lines are allocated to the clip they describe, then placed inside that

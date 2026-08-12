@@ -25,9 +25,12 @@ import {
   dedupeRetakes,
   spansWithText,
   speedFor,
+  speedPerSection,
+  splitScriptSections,
   splitSentences,
   subtitleToText,
   timeWordsInLine,
+  windowsFromSpeeds,
 } from '../lib/autoshort-plan.js';
 import {
   executeFFmpegWithProgress,
@@ -57,9 +60,11 @@ export {
   planNarrationBeats,
   spansWithText,
   speedFor,
+  speedPerSection,
   splitScriptSections,
   splitSentences,
   subtitleToText,
+  windowsFromSpeeds,
   fitBeatsToRuntime,
   timeWordsInLine,
   toSpokenForm,
@@ -449,6 +454,8 @@ export function buildRenderGraph(opts: {
   outputDuration: number;
   canvas?: { width: number; height: number };
   fill?: 'pad' | 'crop';
+  /** Per-clip playback rate; falls back to `speed` for every clip. */
+  clipSpeeds?: number[];
 }): string {
   const { clips, speed, contrast, keepSourceAudio, assPath, ttsIndex, musicIndex } = opts;
   const { width: outW, height: outH } = opts.canvas ?? { width: SHORT_W, height: SHORT_H };
@@ -468,8 +475,9 @@ export function buildRenderGraph(opts: {
     // are about to be dropped - the single biggest cost in the render.
     // An intro (spans === null) plays whole and at natural speed; footage
     // is trimmed to its kept spans and swept up to the timelapse rate.
+    const rate = opts.clipSpeeds?.[i] ?? speed;
     const head = clip.spans
-      ? `select='${buildSelectExpr(clip.spans)}',setpts=N/FRAME_RATE/TB,setpts=PTS/${speed},fps=30`
+      ? `select='${buildSelectExpr(clip.spans)}',setpts=N/FRAME_RATE/TB,setpts=PTS/${rate},fps=30`
       : 'fps=30,setpts=PTS-STARTPTS';
     chains.push(
       `[${i}:v]${head},` +
@@ -668,8 +676,28 @@ export async function autoShort(options: AutoShortOptions): Promise<AutoShortRes
     // The intro is spent from the same budget, so the timelapse is sped to
     // fit whatever is left rather than overrunning the ceiling.
     const introSeconds = options.intro ? await getMediaDuration(options.intro) : 0;
-    const speed = speedFor(keptDuration, Math.max(1, maxDuration - introSeconds));
-    const outputDuration = introSeconds + keptDuration / speed;
+    // With declared `---` sections, each clip's share of the runtime is set
+    // by how much narration it carries, not by how much footage survived.
+    // One global speed made output time proportional to source length, so
+    // seven rigging lines were pinned to a clip that had only earned 13
+    // seconds and the narration sprawled over the wrong footage.
+    const declaredSections = splitScriptSections(rawScript);
+    const available = Math.max(1, maxDuration - introSeconds);
+    const perClipSpeed =
+      declaredSections.length > 1 && declaredSections.length === clips.length
+        ? speedPerSection(
+            clips.map((c) => c.kept),
+            declaredSections.map(
+              (d) => splitSentences(d).reduce((n, l) => n + l.split(/\s+/).length, 0) / TTS_WPS
+            ),
+            available
+          )
+        : clips.map(() => speedFor(keptDuration, available));
+    // The graph still takes one number; per-clip speeds only differ when
+    // sections were declared, and the first is representative otherwise.
+    const speed = perClipSpeed[0];
+    const outputDuration =
+      introSeconds + clips.reduce((n, c, i) => n + c.kept / perClipSpeed[i], 0);
     console.log(
       `Kept:     ${fmt.white(keptDuration.toFixed(1))}s of ${sourceDuration.toFixed(1)}s → ${fmt.green(outputDuration.toFixed(1))}s at ${fmt.yellow(`${speed.toFixed(1)}x`)}`
     );
@@ -718,7 +746,7 @@ export async function autoShort(options: AutoShortOptions): Promise<AutoShortRes
             estimated,
             assignment,
             frames.map((f) => f.outputTime),
-            leadIn + introSeconds,
+            leadIn,
             usableEnd
           );
         });
@@ -728,10 +756,14 @@ export async function autoShort(options: AutoShortOptions): Promise<AutoShortRes
         synthesizeNarration(
           script,
           workDir,
-          leadIn + introSeconds,
+          leadIn,
           usableEnd,
           cutBoundaries(clips, speed, introSeconds),
-          clipWindows(clips, speed, introSeconds),
+          windowsFromSpeeds(
+            clips.map((c) => c.kept),
+            perClipSpeed,
+            introSeconds
+          ),
           alignedStarts,
           options
         )
@@ -856,6 +888,7 @@ export async function autoShort(options: AutoShortOptions): Promise<AutoShortRes
       const graph = buildRenderGraph({
         clips: graphClips,
         speed,
+        clipSpeeds: options.intro ? [1, ...perClipSpeed] : perClipSpeed,
         contrast,
         keepSourceAudio,
         assPath,
@@ -918,6 +951,7 @@ export async function autoShort(options: AutoShortOptions): Promise<AutoShortRes
           fps: 30,
           clips: clips.map((c) => ({ source: c.source, spans: c.spans })),
           speed,
+          clipSpeeds: perClipSpeed,
           intro: options.intro,
           introSeconds,
           narration: narrationBeside ? { path: narrationBeside, start: 0 } : null,
