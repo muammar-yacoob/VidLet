@@ -385,6 +385,12 @@ export function outputTimeToSource(
  * backwards), and a line never starts before the previous one has finished
  * or runs past the end.
  */
+/**
+ * How long after the lead-in the first line may start. Past this the video
+ * reads as broken rather than paced.
+ */
+const MAX_OPENING_DELAY = 2.5;
+
 export function startsFromAssignment(
   lines: Array<{ duration: number }>,
   assignment: number[],
@@ -408,8 +414,22 @@ export function startsFromAssignment(
     cursor = start + lines[i].duration + gap;
   }
 
-  // The assignment can point past the end - a model may put the closing
-  // line on the final frame, leaving no room to say it. Rather than
+  // A Short must not open with dead air. The vision model picks which
+  // MOMENT each line belongs to, but it has no stake in when the video
+  // starts talking, and it will happily anchor the opening line to a
+  // keyframe deep into the footage - one assignment put it 20s in, so the
+  // Short began with twenty seconds of silence. Slide the whole run earlier
+  // so the first line lands promptly, preserving the relative spacing the
+  // model chose. A small delay is fine and often deliberate; a long one is
+  // always a mistake.
+  const openingDelay = starts[0] - earliest;
+  if (openingDelay > MAX_OPENING_DELAY) {
+    const shift = openingDelay - MAX_OPENING_DELAY;
+    for (let i = 0; i < starts.length; i++) starts[i] -= shift;
+  }
+
+  // The assignment can also point past the end - a model may put the
+  // closing line on the final frame, leaving no room to say it. Rather than
   // clamping line by line, which just stacks them up against the wall and
   // reintroduces overlap, slide the whole run earlier by the overflow so
   // the spacing the vision model chose is preserved.

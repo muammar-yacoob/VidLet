@@ -43,6 +43,7 @@ import {
 import { type LumaStats, averageStats, matchGrade, parseLumaStats } from '../lib/grade.js';
 import { fmt, header, separator, success } from '../lib/logger.js';
 import { type ResolvedTrack, resolveMusicChoice } from '../lib/music.js';
+import { planKey, readPlan, stableWorkPath, writePlan } from '../lib/plan-cache.js';
 import { type TimeSegment, detectSilence, invertSegments } from '../lib/segments.js';
 import { type TranscriptSegment, transcribe } from '../lib/whisper.js';
 import { type SrtEntry, generateShortsAss } from './caption.js';
@@ -110,6 +111,15 @@ export interface AutoShortOptions {
    */
   alignToContent?: boolean;
   /**
+   * Draft mode: small canvas, fastest encoder, no sensitive-data scan. For
+   * approving timing, narration and captions before paying for the real
+   * render - everything that decides the EDIT is identical, only the
+   * pixels are cheap.
+   */
+  draft?: boolean;
+  /** Reuse/populate the analysis cache. Default true. */
+  cache?: boolean;
+  /**
    * Scan the FINISHED Short for on-screen card numbers, emails, keys and
    * addresses and pixelate them. Default true. Deliberately run on the
    * output rather than the sources: only the frames that survived the cut
@@ -138,6 +148,10 @@ export interface AutoShortResult {
   captionsBurned: boolean;
   /** Output canvas, chosen from how much detail the sources actually have. */
   resolution: string;
+  /** True when this was a cheap draft rather than a publishable render. */
+  draft: boolean;
+  /** True when the analysis pass was served from cache. */
+  cachedAnalysis: boolean;
   /** Seconds of un-sped intro at the head, 0 when there is none. */
   introSeconds: number;
   /** Whether narration was placed by looking at the footage. */
@@ -159,6 +173,9 @@ const SHORT_H = 1920;
  */
 const SMALL_W = 720;
 const SMALL_H = 1280;
+/** Draft canvas: a quarter of the small one's area, still 9:16. */
+const DRAFT_W = 360;
+const DRAFT_H = 640;
 /** Below this source height, the full canvas buys nothing but render time. */
 const SMALL_CANVAS_MAX_SOURCE_H = 540;
 
@@ -550,6 +567,8 @@ async function prepareClip(
   input: string,
   index: number,
   keepVoice: boolean,
+  /** Non-null when the result will be cached, so the denoised copy must persist. */
+  cacheKey: string | null,
   workDir: string,
   progress: (stage: string) => void
 ): Promise<PreparedClip> {
@@ -572,9 +591,13 @@ async function prepareClip(
   let source = input;
   if (voiced && keepVoice) {
     progress(`denoising clip ${index + 1}`);
+    // A cached plan points at this file, so when caching it has to live
+    // somewhere that survives the temp dir being torn down.
     source = await cleanVoice({
       input,
-      output: join(workDir, `clean-${index}.mp4`),
+      output: cacheKey
+        ? stableWorkPath(input, cacheKey, `clean-${index}`)
+        : join(workDir, `clean-${index}.mp4`),
       onProgress: () => {},
     });
   }
@@ -795,25 +818,59 @@ export async function autoShort(options: AutoShortOptions): Promise<AutoShortRes
     // Settled up front: it decides whether denoising is worth doing at all.
     const keepVoice = mode !== 'tts';
 
-    // Clips are independent, so they analyse concurrently. ffmpeg and
-    // whisper are each single-clip-bound; on any multi-core box this is
-    // close to free.
-    const clipsPromise = time('analyse', () =>
-      Promise.all(
-        files.videos.map((video, i) => prepareClip(video, i, keepVoice, workDir, progress))
-      )
-    );
+    // Analysis depends only on the footage and the settings that change
+    // what is KEPT - not on music, titles or canvas - so iterating on a
+    // Short re-derives an identical answer every time unless it is cached.
+    const useCache = options.cache !== false;
+    const cacheKey = planKey(files.videos, { keepVoice, maxDuration });
+    const cached = useCache ? readPlan(cacheKey) : null;
 
-    const clips = await clipsPromise;
+    let cacheHit = false;
+    let clips: PreparedClip[];
+    if (cached) {
+      cacheHit = true;
+      progress('reusing cached analysis');
+      stageSeconds.analyse = 0;
+      clips = cached.clips.map((c) => ({ ...c, transcript: null }));
+    } else {
+      // Clips are independent, so they analyse concurrently. ffmpeg and
+      // whisper are each single-clip-bound; on any multi-core box this is
+      // close to free.
+      clips = await time('analyse', () =>
+        Promise.all(
+          files.videos.map((video, i) =>
+            prepareClip(video, i, keepVoice, useCache ? cacheKey : null, workDir, progress)
+          )
+        )
+      );
+      if (useCache) {
+        writePlan(
+          cacheKey,
+          clips.map((c) => ({
+            source: c.source,
+            spans: c.spans,
+            luma: c.luma,
+            kept: c.kept,
+            retakesDropped: c.retakesDropped,
+            voiced: c.voiced,
+          }))
+        );
+      }
+    }
 
     const voiced = clips.some((c) => c.voiced);
     const keptDuration = clips.reduce((n, c) => n + c.kept, 0);
     const sourceDuration = (
       await Promise.all(files.videos.map(async (v) => (await getVideoInfo(v)).duration))
     ).reduce((a, b) => a + b, 0);
-    const canvas = chooseCanvas(
-      await Promise.all(files.videos.map(async (v) => (await getVideoInfo(v)).height))
-    );
+    // A draft is for judging the edit, not the picture, so it renders on a
+    // quarter-area canvas. Everything upstream (spans, speed, narration,
+    // caption timing) is identical to the real render.
+    const canvas = options.draft
+      ? { width: DRAFT_W, height: DRAFT_H }
+      : chooseCanvas(
+          await Promise.all(files.videos.map(async (v) => (await getVideoInfo(v)).height))
+        );
     // The intro is spent from the same budget, so the timelapse is sped to
     // fit whatever is left rather than overrunning the ceiling.
     const introSeconds = options.intro ? await getMediaDuration(options.intro) : 0;
@@ -1029,7 +1086,9 @@ export async function autoShort(options: AutoShortOptions): Promise<AutoShortRes
           // integrated Radeon measured SLOWER than this once hwupload was
           // paid for, and libx264 medium/crf18 cost 20% more than
           // veryfast/crf20 for no visible gain at phone size.
-          ...(await fastEncoderArgs()),
+          ...(options.draft
+            ? ['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '30']
+            : await fastEncoderArgs()),
           '-movflags',
           '+faststart',
         ],
@@ -1041,7 +1100,9 @@ export async function autoShort(options: AutoShortOptions): Promise<AutoShortRes
       regionsMasked: 0,
       note: 'Sensitive-data scan disabled by the caller.',
     };
-    if (options.maskSensitive !== false) {
+    // A draft is never published, so scanning it for card numbers is time
+    // spent on a file that gets deleted.
+    if (options.maskSensitive !== false && !options.draft) {
       progress('scanning for sensitive info');
       masking = await time('mask', async () => {
         const scan = await runMask({ input: output, output: '', dryRun: true, sampleFps: 0.5 });
@@ -1070,6 +1131,8 @@ export async function autoShort(options: AutoShortOptions): Promise<AutoShortRes
       speed,
       videos: files.videos.length,
       resolution: `${canvas.width}x${canvas.height}`,
+      draft: options.draft === true,
+      cachedAnalysis: cacheHit,
       introSeconds: Number(introSeconds.toFixed(2)),
       spansKept: clips.reduce((n, c) => n + c.spans.length, 0),
       retakesDropped: clips.reduce((n, c) => n + c.retakesDropped, 0),

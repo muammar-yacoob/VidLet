@@ -136,6 +136,36 @@ export const AUTOSHORT_TOOLS: ToolDefinition[] = [
     },
   },
   {
+    name: 'preview_short',
+    description:
+      'Render a FAST, low-quality draft of the Short so the edit can be approved before ' +
+      'paying for the real thing. Identical pipeline - same cuts, speed, narration, caption ' +
+      'timing and intro - but a 360x640 canvas, the fastest encoder, no music and no ' +
+      'sensitive-data scan. It also warms the analysis cache, so approving it and calling ' +
+      'generate_short with the same inputs skips re-analysing the footage entirely. Use this ' +
+      'whenever the user is iterating on narration or timing; show them the returned url and ' +
+      'ask whether to render it properly.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        paths: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Same inputs you would give generate_short.',
+        },
+        narration: { type: 'string', description: 'Draft narration text.' },
+        final_script: { type: 'string', description: 'Approved narration, used verbatim.' },
+        intro: { type: 'string', description: 'Intro clip or GIF, played at natural speed.' },
+        max_duration: { type: 'number', description: 'Length ceiling in seconds, max 59.' },
+        voiceover: { type: 'string', enum: ['auto', 'tts', 'keep'] },
+        language: { type: 'string' },
+        gender: { type: 'string', enum: ['female', 'male'] },
+        output_path: { type: 'string', description: 'Optional explicit output path.' },
+      },
+      required: ['paths'],
+    },
+  },
+  {
     name: 'generate_short',
     description:
       'One call from raw files to a finished YouTube Short. Give it the attached files ' +
@@ -264,6 +294,68 @@ async function handlePreviewMusic({
         'Play each url for the user and ask which bed they want (or none), then call ' +
           'generate_short with music set to that mood name, a file path, or "none".',
       ],
+    });
+  });
+}
+
+async function handlePreviewShort(args: {
+  paths?: string[];
+  narration?: string;
+  final_script?: string;
+  intro?: string;
+  max_duration?: number;
+  voiceover?: 'auto' | 'tts' | 'keep';
+  language?: string;
+  gender?: 'female' | 'male';
+  output_path?: string;
+}) {
+  const { paths } = args;
+  if (!Array.isArray(paths) || paths.length === 0) {
+    throw new Error('`paths` is required - the attached files, videos first.');
+  }
+  const resolved = paths.map((p) => resolveInputPath(p));
+  const files = classifyInputs(resolved);
+  if (files.videos.length === 0) {
+    throw new Error(`No video files among the inputs: ${resolved.join(', ')}`);
+  }
+
+  return withSilencedStdout(async () => {
+    const script = args.final_script ?? resolveScriptSource(files, args.narration);
+    const slug = slugifyTitle(titleFromScript(script) || 'preview');
+    const desired = args.output_path
+      ? resolve(args.output_path)
+      : join(dirname(files.videos[0]), 'VidLet', `${slug}-preview.mp4`);
+    const output = safeOutputPath(files.videos[0], desired);
+
+    const startedAt = Date.now();
+    return runWriteTool(output, async () => {
+      const result = await autoShort({
+        inputs: resolved,
+        narration: script,
+        scriptIsFinal: args.final_script !== undefined,
+        // A draft with a bed sounds finished and invites approval of things
+        // the draft cannot show; silence keeps the focus on the edit.
+        music: 'none',
+        maxDuration: args.max_duration,
+        voiceover: args.voiceover,
+        intro: args.intro ? resolveInputPath(args.intro) : undefined,
+        language: args.language,
+        gender: args.gender,
+        draft: true,
+        output,
+      });
+      const thumbnail = await writeThumbnail(result.output);
+      return fileResult(result.output, {
+        ...result,
+        elapsedSeconds: Number(((Date.now() - startedAt) / 1000).toFixed(1)),
+        thumbnail,
+        thumbnailUrl: thumbnail ? fileUrl(thumbnail) : null,
+        next_steps: [
+          'Show the user this draft url and ask whether the timing, narration and captions ' +
+            'are right. On approval, call generate_short with the SAME paths and script - the ' +
+            'analysis is cached, so the real render skips straight to encoding.',
+        ],
+      });
     });
   });
 }
@@ -556,6 +648,7 @@ async function handleAddMusic({
 
 export const AUTOSHORT_HANDLERS: Record<string, ToolHandler> = {
   preview_music: handlePreviewMusic,
+  preview_short: handlePreviewShort,
   add_music: handleAddMusic,
   mask_sensitive: handleMaskSensitive,
   generate_short: handleGenerateShort,

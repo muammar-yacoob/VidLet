@@ -469,6 +469,25 @@ describe('startsFromAssignment', () => {
   it('survives an out-of-range or missing assignment', () => {
     expect(() => startsFromAssignment(lines, [99, Number.NaN], times, 0, 40)).not.toThrow();
   });
+
+  it('never opens with a long stretch of silence', () => {
+    // Regression: a vision model anchored the opening line to a keyframe 20s
+    // in, so the Short began with twenty seconds of nothing being said.
+    const starts = startsFromAssignment(lines, [2, 3, 3], times, 0, 60);
+    expect(starts[0]).toBeLessThanOrEqual(2.5);
+  });
+
+  it('preserves the relative spacing the model chose when it slides the run', () => {
+    const starts = startsFromAssignment(lines, [2, 3, 3], times, 0, 60);
+    // Assigned to t=20 and t=30: a 10s gap that must survive the shift.
+    expect(starts[1] - starts[0]).toBeCloseTo(10, 5);
+  });
+
+  it('leaves a short, deliberate opening delay alone', () => {
+    // Assigned to the 10s keyframe with earliest 8: a 2s delay is fine.
+    const starts = startsFromAssignment(lines, [1, 2, 3], times, 8, 60);
+    expect(starts[0]).toBe(10);
+  });
 });
 
 describe('splitScriptSections', () => {
