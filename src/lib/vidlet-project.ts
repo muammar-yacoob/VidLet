@@ -67,6 +67,13 @@ const videoClipSchema = z
     ...baseClipShape,
     gain: z.number().min(0).default(1),
     muted: z.boolean().default(false),
+    /**
+     * Playback rate. `duration` is always the length on the TIMELINE, so a
+     * clip with speed 20 consumes 20x that much source. Timelapse edits are
+     * unrepresentable without this, and a project that cannot express the
+     * edit it came from is not worth emitting.
+     */
+    speed: z.number().positive().max(100).default(1),
   })
   .passthrough();
 

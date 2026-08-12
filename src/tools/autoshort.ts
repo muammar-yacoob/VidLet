@@ -19,7 +19,7 @@
  */
 import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import {
   classifyInputs,
   dedupeRetakes,
@@ -48,6 +48,7 @@ import { type TimeSegment, detectSilence, invertSegments } from '../lib/segments
 import { type TranscriptSegment, transcribe } from '../lib/whisper.js';
 import { type SrtEntry, generateShortsAss } from './caption.js';
 import { cleanVoice } from './cleanvoice.js';
+import { emitVidletProject, projectPathFor } from './emit-project.js';
 import { maskSensitive as runMask } from './mask.js';
 import { buildSpeedupAudioFilters } from './speedup.js';
 import { buildSelectExpr, escapeFilterPath } from './timelapse.js';
@@ -120,6 +121,18 @@ export interface AutoShortOptions {
   /** Reuse/populate the analysis cache. Default true. */
   cache?: boolean;
   /**
+   * Write the edit as a .vidlet project beside the output. Default true:
+   * the render shows the result, the project shows the reasoning, and the
+   * expensive part (deciding the edit) is already paid for.
+   */
+  emitProject?: boolean;
+  /**
+   * Encode the video. Default true. Setting it false gives the project
+   * without the render, for when the edit is going to be tweaked in the
+   * editor anyway and encoding it first would be wasted work.
+   */
+  render?: boolean;
+  /**
    * Scan the FINISHED Short for on-screen card numbers, emails, keys and
    * addresses and pixelate them. Default true. Deliberately run on the
    * output rather than the sources: only the frames that survived the cut
@@ -152,6 +165,10 @@ export interface AutoShortResult {
   draft: boolean;
   /** True when the analysis pass was served from cache. */
   cachedAnalysis: boolean;
+  /** The .vidlet project describing this edit, when one was written. */
+  project: string | null;
+  /** False when only the project was produced. */
+  rendered: boolean;
   /** Seconds of un-sped intro at the head, 0 when there is none. */
   introSeconds: number;
   /** Whether narration was placed by looking at the footage. */
@@ -950,6 +967,9 @@ export async function autoShort(options: AutoShortOptions): Promise<AutoShortRes
 
     // ---- caption timings come from the narration audio itself ----
     let assPath: string | undefined;
+    // Kept outside the caption closure so the emitted project can carry the
+    // same lines as subtitle entries rather than re-deriving them.
+    let captionEntries: SrtEntry[] = [];
     if (wantCaptions && !ttsPath && keepSourceAudio) {
       // A recorded voice was kept, so caption THAT. The transcript already
       // exists from retake de-duplication; without this the Short simply
@@ -957,6 +977,7 @@ export async function autoShort(options: AutoShortOptions): Promise<AutoShortRes
       progress('timing captions');
       assPath = await time('captions', async () => {
         const entries: SrtEntry[] = [];
+        captionEntries = entries;
         clips.forEach((clip, ci) => {
           for (const seg of clip.transcript ?? []) {
             const start = sourceTimeToOutput(clips, speed, introSeconds, ci, seg.start);
@@ -1003,7 +1024,7 @@ export async function autoShort(options: AutoShortOptions): Promise<AutoShortRes
         // running whisper over synthesised speech cost a pass per render
         // and mis-heard the script ("Been working" came back as "I've
         // been"). Real recorded voice is the only case that needs it.
-        const entries: SrtEntry[] = narrationTakes.map((take, i) => {
+        captionEntries = narrationTakes.map((take, i) => {
           const words = timeWordsInLine(take.text, take.start, take.duration);
           return {
             index: i + 1,
@@ -1014,7 +1035,7 @@ export async function autoShort(options: AutoShortOptions): Promise<AutoShortRes
           };
         });
         const ass = generateShortsAss({
-          entries,
+          entries: captionEntries,
           videoWidth: canvas.width,
           videoHeight: canvas.height,
           fontSize: 48,
@@ -1030,8 +1051,10 @@ export async function autoShort(options: AutoShortOptions): Promise<AutoShortRes
     }
 
     // ---- one render ----
-    progress('rendering');
+    const wantRender = options.render !== false;
+    if (wantRender) progress('rendering');
     await time('render', async () => {
+      if (!wantRender) return;
       // An intro leads the input list so it concatenates first.
       const graphClips: Array<{ spans: TimeSegment[] | null; luma: LumaStats | null }> =
         options.intro
@@ -1095,6 +1118,42 @@ export async function autoShort(options: AutoShortOptions): Promise<AutoShortRes
       });
     });
 
+    // ---- the edit, as data ----
+    let projectPath: string | null = null;
+    if (options.emitProject !== false) {
+      projectPath = await time('project', async () => {
+        const path = projectPathFor(output);
+        // The narration is synthesised into a temp dir that is torn down at
+        // the end of this call, so a project pointing there would reference
+        // media that no longer exists and could never be re-rendered. Keep
+        // a copy beside the project instead.
+        let narrationBeside: string | null = null;
+        if (ttsPath) {
+          narrationBeside = `${output.replace(/\.[^.]+$/, '')}-narration.m4a`;
+          copyFileSync(ttsPath, narrationBeside);
+        }
+        await emitVidletProject({
+          output: path,
+          title: basename(output).replace(/\.[^.]+$/, ''),
+          width: canvas.width,
+          height: canvas.height,
+          fps: 30,
+          clips: clips.map((c) => ({ source: c.source, spans: c.spans })),
+          speed,
+          intro: options.intro,
+          introSeconds,
+          narration: narrationBeside ? { path: narrationBeside, start: 0 } : null,
+          music: track ? { path: track.path, volume: musicVolume } : null,
+          subtitles: captionEntries.map((e) => ({
+            start: e.startTime,
+            end: e.endTime,
+            text: e.text,
+          })),
+        });
+        return path;
+      });
+    }
+
     let masking: AutoShortResult['masking'] = {
       scanned: false,
       regionsMasked: 0,
@@ -1102,7 +1161,7 @@ export async function autoShort(options: AutoShortOptions): Promise<AutoShortRes
     };
     // A draft is never published, so scanning it for card numbers is time
     // spent on a file that gets deleted.
-    if (options.maskSensitive !== false && !options.draft) {
+    if (options.maskSensitive !== false && !options.draft && wantRender) {
       progress('scanning for sensitive info');
       masking = await time('mask', async () => {
         const scan = await runMask({ input: output, output: '', dryRun: true, sampleFps: 0.5 });
@@ -1133,6 +1192,8 @@ export async function autoShort(options: AutoShortOptions): Promise<AutoShortRes
       resolution: `${canvas.width}x${canvas.height}`,
       draft: options.draft === true,
       cachedAnalysis: cacheHit,
+      project: projectPath,
+      rendered: wantRender,
       introSeconds: Number(introSeconds.toFixed(2)),
       spansKept: clips.reduce((n, c) => n + c.spans.length, 0),
       retakesDropped: clips.reduce((n, c) => n + c.retakesDropped, 0),

@@ -246,6 +246,12 @@ export const AUTOSHORT_TOOLS: ToolDefinition[] = [
             'describe what is on screen, instead of spacing them arithmetically. Default ' +
             'true; falls back silently without a Groq key.',
         },
+        render: {
+          type: 'boolean',
+          description:
+            'Encode the video. Default true. Set false to get ONLY the .vidlet project, for ' +
+            'when the edit is going to be tweaked in the editor before it is worth encoding.',
+        },
         mask_sensitive: {
           type: 'boolean',
           description:
@@ -344,12 +350,13 @@ async function handlePreviewShort(args: {
         draft: true,
         output,
       });
-      const thumbnail = await writeThumbnail(result.output);
+      const thumbnail = result.rendered ? await writeThumbnail(result.output) : null;
       return fileResult(result.output, {
         ...result,
         elapsedSeconds: Number(((Date.now() - startedAt) / 1000).toFixed(1)),
         thumbnail,
         thumbnailUrl: thumbnail ? fileUrl(thumbnail) : null,
+        projectUrl: result.project ? fileUrl(result.project) : null,
         next_steps: [
           'Show the user this draft url and ask whether the timing, narration and captions ' +
             'are right. On approval, call generate_short with the SAME paths and script - the ' +
@@ -373,6 +380,7 @@ async function handleGenerateShort(args: {
   lead_in?: number;
   intro?: string;
   align_to_content?: boolean;
+  render?: boolean;
   mask_sensitive?: boolean;
   title?: string;
   language?: string;
@@ -512,17 +520,19 @@ async function handleGenerateShort(args: {
         leadIn: args.lead_in,
         intro: args.intro ? resolveInputPath(args.intro) : undefined,
         alignToContent: args.align_to_content,
+        render: args.render,
         maskSensitive: args.mask_sensitive,
         language: args.language,
         gender: args.gender,
         output,
       });
-      const thumbnail = await writeThumbnail(result.output);
+      const thumbnail = result.rendered ? await writeThumbnail(result.output) : null;
       return fileResult(result.output, {
         ...result,
         elapsedSeconds: Number(((Date.now() - startedAt) / 1000).toFixed(1)),
         thumbnail,
         thumbnailUrl: thumbnail ? fileUrl(thumbnail) : null,
+        projectUrl: result.project ? fileUrl(result.project) : null,
         music: result.music
           ? {
               title: result.music.title,
@@ -533,7 +543,9 @@ async function handleGenerateShort(args: {
           : null,
         next_steps: [
           'Show the user the video `name`, its `url`, `elapsedSeconds`, and the ' +
-            '`thumbnailUrl` as a preview.',
+            '`thumbnailUrl` as a preview. Mention `projectUrl`: the same edit as a .vidlet ' +
+            'project they can open with open_in_editor to tweak cuts, narration timing or ' +
+            'captions, then re-render with render_project.',
         ],
       });
     });

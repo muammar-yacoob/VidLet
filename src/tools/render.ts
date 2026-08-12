@@ -35,6 +35,7 @@ import {
   resolveProjectMedia,
 } from '../lib/vidlet-project.js';
 import { hasAudioClips, mixProjectAudio } from './render-audio.js';
+import { buildSpeedupAudioFilters } from './speedup.js';
 import { uniquePath } from './voiceover.js';
 
 export interface RenderProjectOptions {
@@ -207,21 +208,32 @@ async function encodeClipSegment(
 ): Promise<string> {
   const out = join(ctx.tmp, `seg-${index}.ts`);
   const duration = clip.duration;
+  const speed = clip.speed ?? 1;
   const isImage = media.kind === 'image';
+  // `duration` is the length on the timeline, so a sped-up clip has to READ
+  // that much multiplied by the rate before setpts compresses it back.
+  const sourceSpan = duration * speed;
   const inputArgs = isImage
     ? ['-loop', '1', '-framerate', String(ctx.fps), '-t', n(duration), '-i', mediaPath]
-    : ['-ss', n(clip.sourceIn), '-t', n(duration), '-i', mediaPath];
+    : ['-ss', n(clip.sourceIn), '-t', n(sourceSpan), '-i', mediaPath];
 
   // Aspect-fit onto the canvas, pad with the background color, normalize
   // fps; tpad clones the last frame if the source runs short of `duration`.
+  // setpts comes FIRST so the fps filter resamples the sped-up stream
+  // rather than the original, otherwise the frames are merely retimed and
+  // the segment still runs long.
+  const speedStep = speed !== 1 && !isImage ? `setpts=PTS/${n(speed)},` : '';
   const vf =
-    `scale=${ctx.width}:${ctx.height}:force_original_aspect_ratio=decrease,` +
+    `${speedStep}scale=${ctx.width}:${ctx.height}:force_original_aspect_ratio=decrease,` +
     `pad=${ctx.width}:${ctx.height}:(ow-iw)/2:(oh-ih)/2:color=${ctx.background},` +
     `fps=${ctx.fps},setsar=1,format=yuv420p,tpad=stop=-1:stop_mode=clone`;
   const useSourceAudio = !isImage && !clip.muted && hasAudio;
   const gainStep = clip.gain !== 1 ? `volume=${n(clip.gain)},` : '';
+  // Chained atempo, so the audio tracks the video without changing pitch.
+  const tempoStep =
+    speed !== 1 && useSourceAudio ? `${buildSpeedupAudioFilters(speed, 1, 48000)},` : '';
   const audioChain = useSourceAudio
-    ? `[0:a]${gainStep}aformat=sample_rates=48000:channel_layouts=stereo,apad[a]`
+    ? `[0:a]${gainStep}${tempoStep}aformat=sample_rates=48000:channel_layouts=stereo,apad[a]`
     : '[1:a]anull[a]';
 
   await executeFFmpegRaw([
