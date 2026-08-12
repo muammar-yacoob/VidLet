@@ -146,9 +146,15 @@ export const AUTOSHORT_TOOLS: ToolDefinition[] = [
       'timed to that voice, and mixes a ducked music bed. The output is named after its ' +
       'content, not the source timestamp, and the result carries a `url` (file://) - always ' +
       "surface that url to the user. When a decision is the user's (music, a description " +
-      'for silent footage, approving the narration script) it returns a `questions` array ' +
-      'INSTEAD of rendering: relay each question verbatim with its options, then call again ' +
-      'with the answers as arguments. Never overwrites inputs.',
+      'for silent footage, the TTS voice, approving the narration script) it returns a ' +
+      '`questions` array INSTEAD of rendering: relay each question verbatim with its ' +
+      'options, then call again with the answers as arguments. A finished render can also ' +
+      'carry a `masking` question asking whether to cover what the sensitive-data scan ' +
+      'found - relay that one too; the video is already usable and nothing was blurred. A ' +
+      'finished render additionally carries a `youtube` block (three graded title variants, ' +
+      'three thumbnail frames, hashtags with real view counts) - show it in full and offer ' +
+      'to publish via upload_to_youtube, which A/B tests the two titles and thumbs the user ' +
+      'picks. Never overwrites inputs.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -245,9 +251,17 @@ export const AUTOSHORT_TOOLS: ToolDefinition[] = [
         mask_sensitive: {
           type: 'boolean',
           description:
-            'Scan the footage for on-screen card numbers, emails, phones, keys and ' +
-            'addresses and pixelate them. Default true, but it needs tesseract installed; ' +
-            'when missing, the result says so in `masking` rather than silently skipping.',
+            'Scan the finished Short for on-screen card numbers, emails, phones, keys and ' +
+            'addresses. Default true. Finding something REPORTS it as a `masking` question ' +
+            'and covers nothing - on a screen recording the hits are often window titles, ' +
+            'so blurring on a guess would damage the edit. Needs tesseract installed; when ' +
+            'missing, the result says so in `masking` rather than silently skipping.',
+        },
+        mask_apply: {
+          type: 'boolean',
+          description:
+            'Pixelate what the scan finds instead of asking. Default false. Use only when ' +
+            'the user has already said yes, or the pipeline is unattended.',
         },
         title: {
           type: 'string',
@@ -256,7 +270,11 @@ export const AUTOSHORT_TOOLS: ToolDefinition[] = [
             'one derived from the narration.',
         },
         language: { type: 'string', description: 'TTS language code, default en.' },
-        gender: { type: 'string', enum: ['female', 'male'], description: 'TTS voice gender.' },
+        gender: {
+          type: 'string',
+          enum: ['female', 'male'],
+          description: 'TTS voice gender. Omit to be asked (the voice question).',
+        },
         output_path: { type: 'string', description: 'Optional explicit output path.' },
       },
       required: ['paths'],

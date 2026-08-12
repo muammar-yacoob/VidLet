@@ -66,12 +66,13 @@ export const YOUTUBE_TOOLS: ToolDefinition[] = [
     description:
       'Publish a finished Short to the connected YouTube channel - with a human approval ' +
       'gate. First call: verifies the connection (returns a connect question if there is ' +
-      'none), then generates two title variants (graded by a virality scorer), hashtags with ' +
-      'real view counts from trending videos, and two thumbnail candidates from the video, ' +
-      'and returns it all as a `questions` round WITHOUT uploading. Relay the proposal ' +
-      'verbatim for approval. Only a re-call with confirm: true and the approved fields ' +
-      'uploads (resumable), sets the thumbnail, and starts an A/B test (variant A live, ' +
-      'variant B stored in a sidecar for rotate_youtube_test). Result carries the YouTube url.',
+      'none), then generates three title variants (graded by a virality scorer), hashtags ' +
+      'with real view counts from trending videos, and three thumbnail candidates from the ' +
+      'video, and returns it all as a `questions` round WITHOUT uploading. Relay the ' +
+      'proposal verbatim for approval; the user picks two of the three titles and thumbs as ' +
+      'the A/B pair. Only a re-call with confirm: true and the approved fields uploads ' +
+      '(resumable), sets the thumbnail, and starts an A/B test (variant A live, variant B ' +
+      'stored in a sidecar for rotate_youtube_test). Result carries the YouTube url.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -248,19 +249,16 @@ async function handleUploadToYouTube(args: {
             proposal: {
               channel: channel.title,
               privacy: args.privacy ?? 'public',
-              title_a: {
-                text: titles[0].title,
-                grade: titles[0].score.grade,
-                score: titles[0].score.total,
-              },
-              title_b: {
-                text: titles[1].title,
-                grade: titles[1].score.grade,
-                score: titles[1].score.total,
-              },
+              // Three of each; the user picks two as the A/B pair.
+              titles: titles.map((t) => ({
+                text: t.title,
+                grade: t.score.grade,
+                score: t.score.total,
+              })),
               thumbnails: {
                 a: fileUrl(thumbs[0]),
                 b: fileUrl(thumbs[1]),
+                c: fileUrl(thumbs[2]),
               },
               hashtags: hashtags.map((h) => ({
                 tag: h.tag,
@@ -270,7 +268,7 @@ async function handleUploadToYouTube(args: {
               description,
             },
             options: [
-              'Approve - re-call with confirm: true plus title_a, title_b, tags, thumbnail_a, thumbnail_b and description from this proposal',
+              'Approve - re-call with confirm: true plus title_a, title_b (any two of the three titles), thumbnail_a, thumbnail_b (any two of the three thumbs), tags and description',
               'Edit - re-call with confirm: true and your edited versions of those fields',
               'Cancel - do not call again',
             ],
@@ -287,8 +285,10 @@ async function handleUploadToYouTube(args: {
           description,
         },
         next_steps: [
-          'Show the user the proposal, including both thumbnail urls and both graded titles. ' +
-            'Only after they approve, call again with confirm: true and the approved fields.',
+          'Show the user the proposal: all three thumbnail urls, all three graded titles, ' +
+            'and the hashtags. They pick two of each as the A/B pair (prepared defaults to ' +
+            'the first two). Only after they approve, call again with confirm: true and the ' +
+            'approved fields.',
         ],
       });
     }
