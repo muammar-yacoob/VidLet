@@ -155,6 +155,51 @@ const GLYPH_WIDTH_RATIO = 0.62;
 /** Caps have no descender-narrow letters, so they run wider per character. */
 const UPPERCASE_WIDTH_FACTOR = 1.12;
 
+/** Estimated on-screen pixel width of a line at this font size. */
+export function estimateTextWidth(text: string, fontSize: number, uppercase = false): number {
+  const ratio = GLYPH_WIDTH_RATIO * (uppercase ? UPPERCASE_WIDTH_FACTOR : 1);
+  return text.length * fontSize * ratio;
+}
+
+/**
+ * Uniform scale (as an ASS \\fscx/\\fscy percentage) that shrinks a line
+ * just enough to fit `usableWidth`, or 100 when it already fits.
+ *
+ * This is the "flex to fit" half of keeping a URL or email on one line:
+ * chunkWordsToLines never splits a single whitespace-delimited token, so a
+ * long domain is already guaranteed to land whole on one Dialogue line -
+ * but a domain wider than the frame would otherwise render clipped or push
+ * past the edge. Shrinking beats wrapping: a URL split across two lines
+ * reads as broken, a slightly smaller URL still reads as one thing.
+ */
+export function scaleToFit(
+  text: string,
+  fontSize: number,
+  usableWidth: number,
+  uppercase = false
+): number {
+  const width = estimateTextWidth(text, fontSize, uppercase);
+  if (width <= usableWidth) return 100;
+  const pct = Math.floor((usableWidth / width) * 100);
+  return Math.max(40, Math.min(100, pct));
+}
+
+/**
+ * Matches a bare URL or email, the way a narration script or subtitle
+ * would actually contain one. Not used to gate any rendering behaviour -
+ * chunkWordsToLines already treats every whitespace-delimited token as
+ * atomic, URLs and ordinary words alike - it exists so a test can pin the
+ * exact class of token this guarantee is about, and prove the render path
+ * (uppercasing, chunking, scaling) never rewrites the '@' or '.' inside it.
+ */
+const URL_OR_EMAIL_RE =
+  /^(?:[\w.+-]+@[\w-]+\.[\w.-]+|(?:https?:\/\/)?(?:www\.)?[\w-]+(?:\.[\w-]+)+(?:\/\S*)?)$/i;
+
+export function isUrlOrEmail(word: string): boolean {
+  const bare = word.replace(/[.,!?;:]+$/, '');
+  return /\.[a-z]{2,}/i.test(bare) && URL_OR_EMAIL_RE.test(bare);
+}
+
 /**
  * Characters that actually fit one line at this width and size. Without
  * this a nominally "28 char" line renders wider than the frame and gets
@@ -445,6 +490,13 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     if (words.length === 0) continue;
 
     for (const lineWords of chunkWordsToLines(words, maxChars)) {
+      // A single long token - a URL or email is the common case - can be
+      // atomic (chunkWordsToLines never splits one) yet still wider than
+      // the frame. Scale the whole line down rather than let it wrap or
+      // clip: one smaller line reads better than a URL torn in half.
+      const plain = lineWords.map((w) => caseOf(w.word)).join(' ');
+      const scale = scaleToFit(plain, fontSize, ctx.videoWidth - sideMargin * 2, upper);
+      const scaleTag = scale < 100 ? `{\\fscx${scale}\\fscy${scale}}` : '';
       for (let i = 0; i < lineWords.length; i++) {
         const text = lineWords
           .map((w, j) =>
@@ -455,7 +507,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         // out early between cues.
         const end = i === lineWords.length - 1 ? lineWords[i].end : lineWords[i + 1].start;
         lines.push(
-          `Dialogue: 0,${toAssTime(lineWords[i].start)},${toAssTime(end)},Shorts,,0,0,0,,${text}`
+          `Dialogue: 0,${toAssTime(lineWords[i].start)},${toAssTime(end)},Shorts,,0,0,0,,${scaleTag}${text}`
         );
       }
     }

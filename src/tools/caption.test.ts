@@ -2,8 +2,13 @@ import { describe, expect, it } from 'vitest';
 import {
   SHORTS_MAX_CHARS,
   chunkWordsToLines,
+  estimateTextWidth,
   fittingMaxChars,
+  generateShortsAss,
+  isUrlOrEmail,
   mergePunctuationTokens,
+  scaleToFit,
+  toCaptionCase,
 } from './caption.js';
 
 const w = (word: string, start: number, end: number) => ({ word, start, end });
@@ -102,5 +107,109 @@ describe('mergePunctuationTokens - contractions', () => {
       'it',
       'is',
     ]);
+  });
+});
+
+describe('estimateTextWidth / scaleToFit', () => {
+  it('reports 100 (no shrink) when the line already fits', () => {
+    expect(scaleToFit('short line', 48, 1000)).toBe(100);
+  });
+
+  it('shrinks proportionally when a line is wider than the frame', () => {
+    const wide = 'a'.repeat(80); // width 2380.8px at fontSize 48
+    const scale = scaleToFit(wide, 48, 1800); // needs ~76%, above the readability floor
+    expect(scale).toBeLessThan(100);
+    expect(scale).toBeGreaterThan(40);
+    const scaledWidth = estimateTextWidth(wide, 48) * (scale / 100);
+    expect(scaledWidth).toBeLessThanOrEqual(1800 + 30); // floor() rounds down, so within a step
+  });
+
+  it('never shrinks below the readability floor', () => {
+    expect(scaleToFit('x'.repeat(500), 48, 10)).toBe(40);
+  });
+});
+
+describe('isUrlOrEmail', () => {
+  it('recognises a bare domain and an email', () => {
+    expect(isUrlOrEmail('taxducks.com')).toBe(true);
+    expect(isUrlOrEmail('hello@site.com')).toBe(true);
+    expect(isUrlOrEmail('https://taxducks.com/blog')).toBe(true);
+  });
+
+  it('tolerates trailing sentence punctuation', () => {
+    expect(isUrlOrEmail('taxducks.com.')).toBe(true);
+    expect(isUrlOrEmail('taxducks.com,')).toBe(true);
+  });
+
+  it('does not flag ordinary words or abbreviations', () => {
+    for (const w of ['duck', 'e.g.', 'Mr.', 'dot', 'com', 'hello,']) {
+      expect(isUrlOrEmail(w), `should not flag: ${w}`).toBe(false);
+    }
+  });
+});
+
+describe('URL/email survive the render path intact (regression)', () => {
+  it('chunkWordsToLines keeps a domain as a single atomic token', () => {
+    const words = 'check us out at taxducks.com today'
+      .split(' ')
+      .map((t, i) => ({ word: t, start: i, end: i + 1 }));
+    const lines = chunkWordsToLines(words, 28);
+    const flat = lines.flat().map((w) => w.word);
+    expect(flat).toContain('taxducks.com');
+    // Never split across a word boundary: exactly one token holds it.
+    expect(flat.filter((w) => w.includes('taxducks')).length).toBe(1);
+  });
+
+  it('uppercasing a domain preserves the @ and the dot literally', () => {
+    expect(toCaptionCase('taxducks.com', true)).toBe('TAXDUCKS.COM');
+    expect(toCaptionCase('hello@site.com', true)).toBe('HELLO@SITE.COM');
+  });
+
+  it('a burned line for a URL contains the real characters, not spelled-out words', () => {
+    const ass = generateShortsAss({
+      entries: [
+        {
+          index: 1,
+          startTime: 0,
+          endTime: 2,
+          text: 'visit taxducks.com',
+          words: [
+            { word: 'visit', start: 0, end: 1 },
+            { word: 'taxducks.com', start: 1, end: 2 },
+          ],
+        },
+      ],
+      videoWidth: 1080,
+      videoHeight: 1920,
+      fontSize: 48,
+      fontName: 'Arial Black',
+      position: 'bottom',
+      highlightColor: '&H00FFFF&',
+      maxChars: 28,
+    });
+    expect(ass).toContain('TAXDUCKS.COM');
+    expect(ass).not.toMatch(/DOT|\bAT\b/);
+  });
+
+  it('a domain too wide for the frame gets a scale tag instead of wrapping', () => {
+    const ass = generateShortsAss({
+      entries: [
+        {
+          index: 1,
+          startTime: 0,
+          endTime: 2,
+          text: 'x',
+          words: [{ word: `${'reallylongsubdomain'.repeat(3)}.com`, start: 0, end: 2 }],
+        },
+      ],
+      videoWidth: 1080,
+      videoHeight: 1920,
+      fontSize: 100,
+      fontName: 'Arial Black',
+      position: 'bottom',
+      highlightColor: '&H00FFFF&',
+      maxChars: 28,
+    });
+    expect(ass).toMatch(/\\fscx\d+\\fscy\d+/);
   });
 });
