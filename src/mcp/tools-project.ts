@@ -202,18 +202,26 @@ async function handleRenderProject({
   output_path,
   resolution,
   draft,
+  caption_style,
 }: {
   path?: string;
   output_path?: string;
   resolution?: string;
   draft?: boolean;
+  caption_style?: string;
 }) {
   const input = resolveInputPath(path);
   const desired = output_path ? resolve(output_path) : changeExtension(input, '.mp4');
   const output = safeOutputPath(input, desired);
   return runWriteTool(output, () =>
     withSilencedStdout(async () => {
-      const result = await renderProject({ projectPath: input, output, resolution, draft });
+      const result = await renderProject({
+        projectPath: input,
+        output,
+        resolution,
+        draft,
+        captionStyle: caption_style,
+      });
       return jsonContent({
         output: result.output,
         duration: result.duration,

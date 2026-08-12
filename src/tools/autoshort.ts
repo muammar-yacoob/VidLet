@@ -356,6 +356,9 @@ export async function autoShort(options: AutoShortOptions): Promise<AutoShortRes
             start: e.startTime,
             end: e.endTime,
             text: e.text,
+            // The measured per-word timing behind the burned karaoke. Dropping
+            // it here is what made a re-render come back as plain blocks.
+            words: e.words,
           })),
         });
         return path;
