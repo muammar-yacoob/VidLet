@@ -4,7 +4,9 @@
   <meta charset="UTF-8">
   <title>VidLet - MKV to MP4</title>
   <link rel="stylesheet" href="/css/theme.css">
-  <link rel="icon" href="/favicon.ico">
+  <link rel="stylesheet" href="/css/loader.css">
+  <link rel="icon" href="/favicon.ico" sizes="32x32">
+  <link rel="icon" href="/vidlet-icon.svg" type="image/svg+xml">
 </head>
 <body>
   <div class="app">
@@ -36,7 +38,13 @@
     </div>
 
     <div class="ld" id="loading">
-      <div class="sp"></div>
+      <svg class="vidlet-loader vidlet-loader-sm" viewBox="0 0 512 512" aria-hidden="true">
+        <g stroke-linejoin="round" stroke-width="20">
+          <g class="vl-ghost"><path class="vl-tip" d="M318 246 L410 302 L318 358 Z"/></g>
+          <path class="vl-body" d="M176 124 L300 200 L300 312 L176 388 Z"/>
+          <path class="vl-tip" d="M318 246 L410 302 L318 358 Z"/>
+        </g>
+      </svg>
       <span>Converting...</span>
     </div>
 

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <title>VidLet (maskable)</title>
+  <!-- Full-bleed variant for Android adaptive icons. The mark is scaled to 76%
+       so it clears the maskable safe zone (the central 80% circle) whatever
+       shape the launcher crops to. -->
+  <rect width="512" height="512" fill="#14141C"/>
+  <g transform="translate(256 256) scale(0.76) translate(-256 -256)" stroke-linejoin="round" stroke-width="20">
+    <path d="M176 124 L300 200 L300 312 L176 388 Z" fill="#FFF6E5" stroke="#FFF6E5"/>
+    <path d="M318 246 L410 302 L318 358 Z" fill="#FFC53D" stroke="#FFC53D"/>
+  </g>
+</svg>
