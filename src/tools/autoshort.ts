@@ -46,6 +46,7 @@ import { type TimeSegment, detectSilence, invertSegments } from '../lib/segments
 import { type TranscriptSegment, transcribe } from '../lib/whisper.js';
 import { type SrtEntry, generateShortsAss } from './caption.js';
 import { cleanVoice } from './cleanvoice.js';
+import { renderCtaPng } from './cta-overlay.js';
 import { emitVidletProject, projectPathFor } from './emit-project.js';
 import { maskSensitive as runMask } from './mask.js';
 import { buildSpeedupAudioFilters } from './speedup.js';
@@ -137,6 +138,12 @@ export interface AutoShortOptions {
   /** Contrast boost on top of per-clip matching. Default 1.25. */
   contrast?: number;
   voiceover?: 'auto' | 'tts' | 'keep';
+  /**
+   * A call-to-action pinned near the top for the whole Short: the domain,
+   * its favicon and an optional tagline. Speaking a URL never sounds
+   * right, so this is where the address belongs.
+   */
+  cta?: { url: string; tagline?: string };
   /** Silence before the first word, so it does not open mid-syllable. */
   leadIn?: number;
   /**
@@ -456,6 +463,8 @@ export function buildRenderGraph(opts: {
   fill?: 'pad' | 'crop';
   /** Per-clip playback rate; falls back to `speed` for every clip. */
   clipSpeeds?: number[];
+  /** Rasterised CTA pill: which input carries it, and how tall it is. */
+  cta?: { index: number; height: number };
 }): string {
   const { clips, speed, contrast, keepSourceAudio, assPath, ttsIndex, musicIndex } = opts;
   const { width: outW, height: outH } = opts.canvas ?? { width: SHORT_W, height: SHORT_H };
@@ -505,7 +514,16 @@ export function buildRenderGraph(opts: {
   const vIn = clips.map((_, i) => `[n${i}]`).join('');
   chains.push(`${vIn}concat=n=${clips.length}:v=1:a=0[cv]`);
   const captions = assPath ? `,ass='${escapeFilterPath(assPath)}'` : '';
-  chains.push(`[cv]${captions ? captions.slice(1) : 'null'},format=yuv420p[v]`);
+  if (opts.cta) {
+    // Captions first, then the pill on top: a caption must never draw over
+    // the call to action.
+    chains.push(`[cv]${captions ? captions.slice(1) : 'null'},format=yuv420p[capped]`);
+    // Sits below the safe-area margin, centred, for the whole runtime.
+    const y = Math.round(outH * 0.045);
+    chains.push(`[capped][${opts.cta.index}:v]overlay=(W-w)/2:${y}:format=auto[v]`);
+  } else {
+    chains.push(`[cv]${captions ? captions.slice(1) : 'null'},format=yuv420p[v]`);
+  }
 
   // ---- audio ----
   let voiceLabel: string | null = null;
@@ -885,6 +903,14 @@ export async function autoShort(options: AutoShortOptions): Promise<AutoShortRes
         extraInputs.push('-stream_loop', '-1', '-i', track.path);
       }
 
+      // The pill is rasterised before the graph so its real size can place
+      // it; a guessed size would drift as the tagline changes.
+      let ctaOverlay: { path: string; width: number; height: number } | null = null;
+      if (options.cta?.url) {
+        ctaOverlay = await renderCtaPng(options.cta, canvas.width, workDir);
+        extraInputs.push('-i', ctaOverlay.path);
+      }
+
       const graph = buildRenderGraph({
         clips: graphClips,
         speed,
@@ -898,6 +924,12 @@ export async function autoShort(options: AutoShortOptions): Promise<AutoShortRes
         outputDuration,
         canvas,
         fill: options.fill,
+        cta: ctaOverlay
+          ? {
+              index: sources.length + (ttsPath ? 1 : 0) + (track ? 1 : 0),
+              height: ctaOverlay.height,
+            }
+          : undefined,
       });
       const graphPath = join(workDir, 'graph.txt');
       writeFileSync(graphPath, graph, 'utf8');

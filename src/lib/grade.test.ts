@@ -38,34 +38,41 @@ describe('matchGrade', () => {
     expect(g.brightness).toBeCloseTo(0, 2);
   });
 
-  it('multiplies the creative boost on top of the match', () => {
-    expect(matchGrade(flat, flat, 1.25).contrast).toBeCloseTo(1.25, 3);
+  it('applies only a token creative boost, never compounding it', () => {
+    // A boost multiplied onto a correction a flat clip already needed
+    // produced a 1.73x stretch, which is what looked harsh.
+    expect(matchGrade(flat, flat, 1.25).contrast).toBeCloseTo(1.05, 3);
   });
 
   it('clamps rather than blowing the picture out', () => {
     const g = matchGrade({ avg: 128, low: 127, high: 129 }, punchy, 3);
-    expect(g.contrast).toBeLessThanOrEqual(3);
-    expect(Math.abs(g.brightness)).toBeLessThanOrEqual(0.3);
+    expect(g.contrast).toBeLessThanOrEqual(1.6);
+    expect(Math.abs(g.brightness)).toBeLessThanOrEqual(0.25);
   });
 
-  it('closes the gap between two clips without erasing it', () => {
-    // Matching is deliberately partial: fully equalising meant stretching
-    // the flatter clip so hard that it read as harsher than its neighbour.
-    const dull = { avg: 80, low: 60, high: 120 }; // spread 60
-    const lively = { avg: 128, low: 40, high: 200 }; // spread 160
+  it('lands two different clips on the SAME spread', () => {
+    // Partial matching left the two halves of a Short measurably apart,
+    // which is the mismatch matching exists to remove.
+    const dull = { avg: 80, low: 50, high: 130 }; // spread 80
+    const lively = { avg: 128, low: 40, high: 160 }; // spread 120
     const target = averageStats([dull, lively]);
     const spreadAfter = (s: typeof dull) => (s.high - s.low) * matchGrade(s, target).contrast;
-    const before = Math.abs(160 - 60);
-    const after = Math.abs(spreadAfter(lively) - spreadAfter(dull));
-    expect(after).toBeLessThan(before); // closer than they started
-    expect(after).toBeGreaterThan(0); // but not forced identical
+    expect(spreadAfter(dull)).toBeCloseTo(spreadAfter(lively), 0);
+  });
+
+  it('lands the real modelling and rigging clips on the same spread', () => {
+    const modelling = { avg: 75, low: 38, high: 132 };
+    const rigging = { avg: 65, low: 37, high: 90 };
+    const target = averageStats([modelling, rigging]);
+    const after = (s: typeof modelling) => (s.high - s.low) * matchGrade(s, target, 1.12).contrast;
+    expect(Math.abs(after(modelling) - after(rigging))).toBeLessThan(2);
   });
 
   it('gives up matching rather than exceeding the clamp on an extreme clip', () => {
     // A near-flat clip cannot reach a wide target without destroying it,
     // so it stops at the ceiling instead of being stretched to breaking.
     const g = matchGrade({ avg: 128, low: 127, high: 129 }, punchy);
-    expect(g.contrast).toBe(1.35);
+    expect(g.contrast).toBe(1.6);
   });
 
   it('never pushes a clip into a harsh grade, even against a punchy target', () => {
@@ -74,7 +81,7 @@ describe('matchGrade', () => {
     // clip beside it.
     const flatScreen = { avg: 65, low: 37, high: 90 };
     const target = { avg: 70, low: 37, high: 111 };
-    expect(matchGrade(flatScreen, target, 1.12).contrast).toBeLessThanOrEqual(1.35);
+    expect(matchGrade(flatScreen, target, 1.12).contrast).toBeLessThanOrEqual(1.6);
   });
 });
 

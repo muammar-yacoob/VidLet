@@ -246,6 +246,17 @@ export const AUTOSHORT_TOOLS: ToolDefinition[] = [
             'describe what is on screen, instead of spacing them arithmetically. Default ' +
             'true; falls back silently without a Groq key.',
         },
+        cta_url: {
+          type: 'string',
+          description:
+            'Domain to pin at the top of the Short as a styled pill with its favicon, e.g. ' +
+            '"ducktax.com". This is where a URL belongs: spoken aloud it never sounds right, ' +
+            'so write the script to say the brand and let this show the address.',
+        },
+        cta_tagline: {
+          type: 'string',
+          description: 'Short line under the domain in the CTA pill.',
+        },
         fill: {
           type: 'string',
           enum: ['pad', 'crop'],
@@ -394,6 +405,8 @@ async function handleGenerateShort(args: {
   lead_in?: number;
   intro?: string;
   align_to_content?: boolean;
+  cta_url?: string;
+  cta_tagline?: string;
   fill?: 'pad' | 'crop';
   render?: boolean;
   mask_sensitive?: boolean;
@@ -535,6 +548,7 @@ async function handleGenerateShort(args: {
         leadIn: args.lead_in,
         intro: args.intro ? resolveInputPath(args.intro) : undefined,
         alignToContent: args.align_to_content,
+        cta: args.cta_url ? { url: args.cta_url, tagline: args.cta_tagline } : undefined,
         fill: args.fill,
         render: args.render,
         maskSensitive: args.mask_sensitive,

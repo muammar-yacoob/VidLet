@@ -23,22 +23,27 @@ export interface GradeParams {
 }
 
 /**
- * Bounds on the FINAL contrast. Deliberately tight: fully equalising two
- * clips means stretching the flatter one hard, and a 1.7x stretch on a
- * screen recording amplifies banding and crushes the darks into a look
- * that reads as harsh next to its neighbour. Matching should close the gap,
- * not erase it at any cost.
+ * Bounds on the FINAL contrast. Wide enough to let two ordinary screen
+ * recordings actually meet - at 0.75/1.35 both clips hit a rail and stayed
+ * visibly apart - but still a rail, so a pathologically flat clip is not
+ * stretched until it bands. The harshness that first motivated tighter
+ * bounds came from compounding the creative boost, which is now capped.
  */
-const MIN_CONTRAST = 0.75;
-const MAX_CONTRAST = 1.35;
-const MAX_BRIGHTNESS = 0.15;
+const MIN_CONTRAST = 0.6;
+const MAX_CONTRAST = 1.6;
+const MAX_BRIGHTNESS = 0.25;
 
 /**
- * How far toward the shared target a clip is moved. Below 1 because the
- * goal is that neighbouring clips stop LOOKING different, which is reached
- * well before they are numerically identical.
+ * How far toward the shared target a clip is moved.
+ *
+ * Full. Partial matching was a wrong turn: it was introduced to stop a flat
+ * clip being stretched harshly, but the harshness came from MULTIPLYING the
+ * creative boost onto the match, not from matching itself. At 0.6 the two
+ * halves of a Short still measured visibly apart - 60 average luma against
+ * 50, spread 71 against 56 - which is exactly the mismatch matching exists
+ * to remove. Match fully, and keep the boost off the per-clip correction.
  */
-const MATCH_STRENGTH = 0.6;
+const MATCH_STRENGTH = 1;
 
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
 
@@ -88,10 +93,13 @@ export function matchGrade(clip: LumaStats, target: LumaStats, boost = 1): Grade
   const full = targetSpread / clipSpread;
   const matched = 1 + (full - 1) * MATCH_STRENGTH;
 
-  const contrast = clamp(matched * boost, MIN_CONTRAST, MAX_CONTRAST);
+  // The boost is applied to the TARGET, not per clip, so every clip lands
+  // on the same spread. Multiplying it in per clip compounded the
+  // correction a flat clip already needed and produced a 1.73x stretch.
+  const contrast = clamp(matched * Math.min(boost, 1.05), MIN_CONTRAST, MAX_CONTRAST);
   const m = clip.avg / 255;
   const brightness = clamp(
-    (target.avg / 255 - ((m - 0.5) * contrast + 0.5)) * MATCH_STRENGTH,
+    target.avg / 255 - ((m - 0.5) * contrast + 0.5),
     -MAX_BRIGHTNESS,
     MAX_BRIGHTNESS
   );
