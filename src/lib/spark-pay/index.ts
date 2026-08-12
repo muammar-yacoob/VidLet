@@ -13,7 +13,7 @@
  * things that cost real money (server-side AI, the YouTube broker), not a
  * copy-protection scheme, and they are deliberately not obfuscated.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import plansJson from './plans.json' with { type: 'json' };

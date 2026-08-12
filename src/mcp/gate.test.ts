@@ -44,7 +44,7 @@ describe('feature gates', () => {
     expect((await gated.probe_video({})).isError).toBeUndefined();
   });
 
-  it('does not spend the day\'s allowance on a call it refused', async () => {
+  it("does not spend the day's allowance on a call it refused", async () => {
     const gated = gateHandlers({ upload_to_youtube: ok, probe_video: ok });
     for (let i = 0; i < 5; i++) await gated.upload_to_youtube({});
     // All 10 free calls should still be available.

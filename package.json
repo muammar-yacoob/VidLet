@@ -23,6 +23,7 @@
     "lint:fix": "biome lint --write src",
     "format": "biome format --write src",
     "check": "biome check --write src",
+    "plans:sync": "node scripts/sync-plans.mjs",
     "test": "vitest",
     "test:run": "vitest run",
     "typecheck": "tsc --noEmit",
