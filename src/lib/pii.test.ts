@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   classifyText,
+  describeRegion,
   luhnValid,
+  type MaskRegion,
   type OcrWord,
+  type PiiKind,
   regionsForFrame,
   unionRegions,
   withinAreaLimit,
@@ -179,5 +182,33 @@ describe('regionsForFrame area guard', () => {
       { text: 'c@d.com', x: 10, y: 10, width: 700, height: 600 },
     ];
     expect(regionsForFrame(wide, 720, 1280)).toEqual([]);
+  });
+});
+
+describe('describeRegion', () => {
+  const box = (x: number, y: number, kinds: PiiKind[] = ['email']): MaskRegion => ({
+    x,
+    y,
+    width: 100,
+    height: 20,
+    kinds,
+  });
+
+  it('names the kind and where it sits', () => {
+    expect(describeRegion(box(20, 40), 720, 1280)).toBe('an email address, top-left');
+  });
+
+  it('calls the dead centre just "centre"', () => {
+    expect(describeRegion(box(310, 630), 720, 1280)).toBe('an email address, centre');
+  });
+
+  it('joins several kinds in one region', () => {
+    expect(describeRegion(box(600, 1200, ['card', 'phone']), 720, 1280)).toBe(
+      'a card number and a phone number, bottom-right'
+    );
+  });
+
+  it('still describes a region with no classified kind', () => {
+    expect(describeRegion(box(310, 630, []), 720, 1280)).toBe('something, centre');
   });
 });
