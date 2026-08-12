@@ -13,8 +13,20 @@ export interface ToolDefinition {
   inputSchema: Record<string, unknown>;
 }
 
+/**
+ * MCP content blocks. The spec carries text, image, audio and embedded
+ * resources - there is NO video block, so a rendered Short can never play
+ * inside a chat client. A poster frame plus a file:// link is the closest
+ * honest equivalent, and the frame at least makes the result visible at a
+ * glance instead of a path the user has to go and open.
+ */
+export type ToolContent =
+  | { type: 'text'; text: string }
+  | { type: 'image'; data: string; mimeType: string }
+  | { type: 'resource_link'; uri: string; name: string; mimeType?: string };
+
 export interface ToolResult {
-  content: Array<{ type: 'text'; text: string }>;
+  content: ToolContent[];
   isError?: boolean;
 }
 
@@ -137,12 +149,55 @@ export function fileUrl(absPath: string): string {
  * it repeatedly was.
  */
 export function fileResult(output: string, data: Record<string, unknown> = {}): ToolResult {
-  return jsonContent({
+  const result = jsonContent({
     name: basename(output),
     output,
     url: fileUrl(output),
     ...data,
   });
+
+  // Show the poster frame inline when there is one. Kept small on purpose:
+  // an image block costs tokens on every call, and the point is a glance
+  // that says "this is what you made", not a viewing experience.
+  const thumb = typeof data.thumbnail === 'string' ? data.thumbnail : null;
+  if (thumb && existsSync(thumb)) {
+    try {
+      const bytes = statSync(thumb).size;
+      if (bytes <= MAX_INLINE_IMAGE_BYTES) {
+        result.content.push({
+          type: 'image',
+          data: readFileSync(thumb).toString('base64'),
+          mimeType: thumb.endsWith('.png') ? 'image/png' : 'image/jpeg',
+        });
+      }
+    } catch {
+      // A poster frame that cannot be read is not worth failing a render for.
+    }
+  }
+
+  // resource_link, not an embedded resource: an embedded one has to carry
+  // the bytes inline, which for a video is absurd. A link lets a client
+  // that knows how to open the file offer it.
+  result.content.push({
+    type: 'resource_link',
+    uri: fileUrl(output),
+    name: basename(output),
+    mimeType: mimeFor(output),
+  });
+  return result;
+}
+
+/** Above this an inline poster frame costs more than it informs. */
+const MAX_INLINE_IMAGE_BYTES = 400_000;
+
+function mimeFor(path: string): string {
+  if (path.endsWith('.mp4')) return 'video/mp4';
+  if (path.endsWith('.mp3')) return 'audio/mpeg';
+  if (path.endsWith('.m4a')) return 'audio/mp4';
+  if (path.endsWith('.gif')) return 'image/gif';
+  if (path.endsWith('.jpg') || path.endsWith('.jpeg')) return 'image/jpeg';
+  if (path.endsWith('.png')) return 'image/png';
+  return 'application/octet-stream';
 }
 
 /**
