@@ -1,0 +1,111 @@
+/* The VidLet mark, animated: the amber tip flies off and snaps back into the
+   cut - a jump cut on a loop. Pure CSS, no player library, so it can sit in
+   front of any long-running operation without costing a download.
+
+   Markup (keep the ghost first so it emerges from behind the body):
+
+     <svg class="vidlet-loader" viewBox="0 0 512 512" aria-hidden="true">
+       <g stroke-linejoin="round" stroke-width="20">
+         <g class="vl-ghost"><path class="vl-tip" d="M318 246 L410 302 L318 358 Z"/></g>
+         <path class="vl-body" d="M176 124 L300 200 L300 312 L176 388 Z"/>
+         <path class="vl-tip" d="M318 246 L410 302 L318 358 Z"/>
+       </g>
+     </svg>
+*/
+
+.vidlet-loader {
+  display: block;
+  width: 96px;
+  height: 96px;
+}
+/* The single-tool windows are small; the loader should not dominate them. */
+.vidlet-loader-sm {
+  width: 52px;
+  height: 52px;
+}
+.vidlet-loader path {
+  /* Without fill-box the origin is the whole SVG viewport, which makes the
+     scale steps swing the tip off its own centre. */
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.vidlet-loader .vl-body {
+  fill: #fff6e5;
+  stroke: #fff6e5;
+  animation: vl-nudge 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+.vidlet-loader .vl-tip {
+  fill: #ffc53d;
+  stroke: #ffc53d;
+  animation: vl-cut 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+.vidlet-loader .vl-ghost {
+  opacity: 0.35;
+}
+.vidlet-loader .vl-ghost .vl-tip {
+  animation-delay: -0.1s;
+}
+
+/* Translations are in viewBox units, so the motion scales with the loader. */
+@keyframes vl-cut {
+  0%,
+  30% {
+    transform: translateX(0) scale(1);
+    opacity: 1;
+  }
+  48% {
+    transform: translateX(62px) scale(0.94);
+    opacity: 1;
+  }
+  60% {
+    transform: translateX(88px) scale(0.86);
+    opacity: 0;
+  }
+  61%,
+  74% {
+    transform: translateX(-58px) scale(0.86);
+    opacity: 0;
+  }
+  86% {
+    transform: translateX(6px) scale(1.06);
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(0) scale(1);
+    opacity: 1;
+  }
+}
+
+/* The body takes the recoil, so the cut lands rather than just sliding. */
+@keyframes vl-nudge {
+  0%,
+  30% {
+    transform: scaleX(1);
+  }
+  55% {
+    transform: scaleX(1.04);
+  }
+  86% {
+    transform: scaleX(0.97);
+  }
+  100% {
+    transform: scaleX(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vidlet-loader .vl-body,
+  .vidlet-loader .vl-tip,
+  .vidlet-loader .vl-ghost .vl-tip {
+    animation: vl-breathe 1.8s ease-in-out infinite;
+  }
+}
+@keyframes vl-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}

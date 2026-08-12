@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <title>VidLet — Tiny TV</title>
+  <rect width="512" height="512" rx="116" fill="#14141C"/>
+  <g stroke="#FFC53D" stroke-width="22" stroke-linecap="round">
+    <path d="M256 168 L176 78"/>
+    <path d="M256 168 L336 78"/>
+  </g>
+  <rect x="64" y="160" width="384" height="248" rx="46" fill="#FFC53D"/>
+  <rect x="98" y="196" width="252" height="176" rx="30" fill="#14141C"/>
+  <path d="M196 244 L268 284 L196 324 Z" fill="#FFF6E5" stroke="#FFF6E5" stroke-width="16" stroke-linejoin="round"/>
+  <circle cx="399" cy="238" r="21" fill="#14141C"/>
+  <circle cx="399" cy="316" r="21" fill="#14141C"/>
+</svg>

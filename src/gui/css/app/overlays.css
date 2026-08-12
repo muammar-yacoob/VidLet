@@ -160,10 +160,6 @@
 .dn.on {
   display: flex;
 }
-.lottie-loader {
-  width: 100px;
-  height: 100px;
-}
 .ld span {
   margin-top: 4px;
   color: var(--txt2);
