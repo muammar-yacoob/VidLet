@@ -48,20 +48,33 @@ describe('matchGrade', () => {
     expect(Math.abs(g.brightness)).toBeLessThanOrEqual(0.3);
   });
 
-  it('grades two different clips onto the same spread', () => {
-    // Chosen to sit inside the contrast clamp, so this measures the matching
-    // maths rather than the safety rails (covered by the clamp test above).
-    const dull = { avg: 80, low: 60, high: 120 };
-    const lively = { avg: 128, low: 40, high: 200 };
+  it('closes the gap between two clips without erasing it', () => {
+    // Matching is deliberately partial: fully equalising meant stretching
+    // the flatter clip so hard that it read as harsher than its neighbour.
+    const dull = { avg: 80, low: 60, high: 120 }; // spread 60
+    const lively = { avg: 128, low: 40, high: 200 }; // spread 160
     const target = averageStats([dull, lively]);
     const spreadAfter = (s: typeof dull) => (s.high - s.low) * matchGrade(s, target).contrast;
-    expect(spreadAfter(dull)).toBeCloseTo(spreadAfter(lively), 0);
+    const before = Math.abs(160 - 60);
+    const after = Math.abs(spreadAfter(lively) - spreadAfter(dull));
+    expect(after).toBeLessThan(before); // closer than they started
+    expect(after).toBeGreaterThan(0); // but not forced identical
   });
 
   it('gives up matching rather than exceeding the clamp on an extreme clip', () => {
-    // A near-flat clip cannot reach a wide target without destroying it.
+    // A near-flat clip cannot reach a wide target without destroying it,
+    // so it stops at the ceiling instead of being stretched to breaking.
     const g = matchGrade({ avg: 128, low: 127, high: 129 }, punchy);
-    expect(g.contrast).toBe(3);
+    expect(g.contrast).toBe(1.35);
+  });
+
+  it('never pushes a clip into a harsh grade, even against a punchy target', () => {
+    // Regression: full matching plus the creative boost compounded to 1.73x
+    // on a flat screen recording, which looked visibly harsher than the
+    // clip beside it.
+    const flatScreen = { avg: 65, low: 37, high: 90 };
+    const target = { avg: 70, low: 37, high: 111 };
+    expect(matchGrade(flatScreen, target, 1.12).contrast).toBeLessThanOrEqual(1.35);
   });
 });
 

@@ -246,6 +246,15 @@ export const AUTOSHORT_TOOLS: ToolDefinition[] = [
             'describe what is on screen, instead of spacing them arithmetically. Default ' +
             'true; falls back silently without a Groq key.',
         },
+        fill: {
+          type: 'string',
+          enum: ['pad', 'crop'],
+          description:
+            'How near-square footage meets the 9:16 canvas. "pad" (default) fits the whole ' +
+            'frame with a blurred backdrop, keeping screen-recording text readable. "crop" ' +
+            'fills the canvas edge to edge but cuts the sides off - on a 320x360 source that ' +
+            'is 37% of the width, so side panels are lost.',
+        },
         render: {
           type: 'boolean',
           description:
@@ -351,18 +360,23 @@ async function handlePreviewShort(args: {
         output,
       });
       const thumbnail = result.rendered ? await writeThumbnail(result.output) : null;
-      return fileResult(result.output, {
-        ...result,
-        elapsedSeconds: Number(((Date.now() - startedAt) / 1000).toFixed(1)),
-        thumbnail,
-        thumbnailUrl: thumbnail ? fileUrl(thumbnail) : null,
-        projectUrl: result.project ? fileUrl(result.project) : null,
-        next_steps: [
-          'Show the user this draft url and ask whether the timing, narration and captions ' +
-            'are right. On approval, call generate_short with the SAME paths and script - the ' +
-            'analysis is cached, so the real render skips straight to encoding.',
-        ],
-      });
+      return fileResult(
+        result.output,
+        {
+          ...result,
+          elapsedSeconds: Number(((Date.now() - startedAt) / 1000).toFixed(1)),
+          thumbnail,
+          thumbnailUrl: thumbnail ? fileUrl(thumbnail) : null,
+          projectUrl: result.project ? fileUrl(result.project) : null,
+          next_steps: [
+            'Show the user this draft url and ask whether the timing, narration and captions ' +
+              'are right. On approval, call generate_short with the SAME paths and script - the ' +
+              'analysis and the narration audio are cached, so the real render reuses this ' +
+              "draft's exact voice and only pays for the encode.",
+          ],
+        },
+        result.project ? [result.project] : []
+      );
     });
   });
 }
@@ -380,6 +394,7 @@ async function handleGenerateShort(args: {
   lead_in?: number;
   intro?: string;
   align_to_content?: boolean;
+  fill?: 'pad' | 'crop';
   render?: boolean;
   mask_sensitive?: boolean;
   title?: string;
@@ -520,6 +535,7 @@ async function handleGenerateShort(args: {
         leadIn: args.lead_in,
         intro: args.intro ? resolveInputPath(args.intro) : undefined,
         alignToContent: args.align_to_content,
+        fill: args.fill,
         render: args.render,
         maskSensitive: args.mask_sensitive,
         language: args.language,
@@ -527,27 +543,31 @@ async function handleGenerateShort(args: {
         output,
       });
       const thumbnail = result.rendered ? await writeThumbnail(result.output) : null;
-      return fileResult(result.output, {
-        ...result,
-        elapsedSeconds: Number(((Date.now() - startedAt) / 1000).toFixed(1)),
-        thumbnail,
-        thumbnailUrl: thumbnail ? fileUrl(thumbnail) : null,
-        projectUrl: result.project ? fileUrl(result.project) : null,
-        music: result.music
-          ? {
-              title: result.music.title,
-              artist: result.music.artist,
-              license: result.music.license,
-              source: result.music.source,
-            }
-          : null,
-        next_steps: [
-          'Show the user the video `name`, its `url`, `elapsedSeconds`, and the ' +
-            '`thumbnailUrl` as a preview. Mention `projectUrl`: the same edit as a .vidlet ' +
-            'project they can open with open_in_editor to tweak cuts, narration timing or ' +
-            'captions, then re-render with render_project.',
-        ],
-      });
+      return fileResult(
+        result.output,
+        {
+          ...result,
+          elapsedSeconds: Number(((Date.now() - startedAt) / 1000).toFixed(1)),
+          thumbnail,
+          thumbnailUrl: thumbnail ? fileUrl(thumbnail) : null,
+          projectUrl: result.project ? fileUrl(result.project) : null,
+          music: result.music
+            ? {
+                title: result.music.title,
+                artist: result.music.artist,
+                license: result.music.license,
+                source: result.music.source,
+              }
+            : null,
+          next_steps: [
+            'Show the user the video `name`, its `url`, `elapsedSeconds`, and the ' +
+              '`thumbnailUrl` as a preview. Mention `projectUrl`: the same edit as a .vidlet ' +
+              'project they can open with open_in_editor to tweak cuts, narration timing or ' +
+              'captions, then re-render with render_project.',
+          ],
+        },
+        result.project ? [result.project] : []
+      );
     });
   });
 }

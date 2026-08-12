@@ -386,10 +386,11 @@ export function outputTimeToSource(
  * or runs past the end.
  */
 /**
- * How long after the lead-in the first line may start. Past this the video
- * reads as broken rather than paced.
+ * How long after the lead-in the first line may start. Zero: the opening
+ * beat is fixed for every Short, so the vision model decides the SPACING of
+ * the lines but never when the video starts talking.
  */
-const MAX_OPENING_DELAY = 2.5;
+const MAX_OPENING_DELAY = 0;
 
 export function startsFromAssignment(
   lines: Array<{ duration: number }>,
@@ -495,4 +496,94 @@ export function sourceTimeToOutput(
     }
   }
   return null; // this moment did not survive the cut
+}
+
+/**
+ * Rewrite URLs and emails into how they should be SPOKEN, leaving the
+ * caption text untouched.
+ *
+ * Edge TTS reads "ducktax.com" at roughly the right length, which is why a
+ * duration check said it was fine, but length is not pronunciation: it
+ * runs the domain and the TLD together into something garbled. Spelling it
+ * out for the voice while the caption keeps the real characters is the
+ * split ViralCat uses, and it is the only way to get both right from a
+ * single script.
+ */
+export function toSpokenForm(text: string): string {
+  return (
+    text
+      // Strip a protocol and any www, which nobody says aloud.
+      .replace(/\bhttps?:\/\//gi, '')
+      .replace(/\bwww\./gi, '')
+      // Emails first: the @ has to become a word before the dots do.
+      .replace(/\b([\w.+-]+)@([\w-]+(?:\.[\w-]+)+)/g, (_m, user, host) => `${user} at ${host}`)
+      // Multi-part TLDs before single ones, so .co.uk does not become
+      // "dot co dot uk" via two passes with a stray pause between them.
+      .replace(/\.co\.uk\b/gi, ' dot co dot U K')
+      .replace(/\.com\b/gi, ' dot com')
+      .replace(/\.org\b/gi, ' dot org')
+      .replace(/\.net\b/gi, ' dot net')
+      .replace(/\.io\b/gi, ' dot I O')
+      .replace(/\.dev\b/gi, ' dot dev')
+      .replace(/\.app\b/gi, ' dot app')
+      .replace(/\.ai\b/gi, ' dot A I')
+      // A slash path is read as a word too.
+      .replace(/\/(\w)/g, ' slash $1')
+      .replace(/\s{2,}/g, ' ')
+      .trim()
+  );
+}
+
+/**
+ * Pull a narration back inside the runtime when it overruns.
+ *
+ * Placement runs before the audio exists, so it works from ESTIMATED
+ * durations; the real speech is often longer. When it is, the closing lines
+ * fell off the end of the video and were silently cut - a Short that never
+ * said its own call to action. Squeeze the gaps first, since dead air is
+ * the cheapest thing to lose, and only compress into a hard pack if the
+ * script genuinely cannot fit.
+ */
+export function fitBeatsToRuntime(
+  beats: NarrationBeat[],
+  latest: number,
+  minGap = 0.06
+): { beats: NarrationBeat[]; overran: boolean } {
+  if (beats.length === 0) return { beats, overran: false };
+  const last = beats[beats.length - 1];
+  if (last.start + last.duration <= latest) return { beats, overran: false };
+
+  // Re-lay the lines end to end from the first start, keeping only a
+  // minimal gap. This preserves order and the opening beat.
+  const start0 = beats[0].start;
+  const total = beats.reduce((n, b) => n + b.duration, 0) + minGap * (beats.length - 1);
+  const available = latest - start0;
+
+  if (total <= available) {
+    // The speech fits; it was the spacing that did not. Distribute the
+    // slack evenly so the lines still breathe.
+    const slack = available - total;
+    const perGap = beats.length > 1 ? slack / (beats.length - 1) : 0;
+    let cursor = start0;
+    return {
+      beats: beats.map((b) => {
+        const placed = { ...b, start: cursor };
+        cursor += b.duration + minGap + perGap;
+        return placed;
+      }),
+      overran: true,
+    };
+  }
+
+  // Even shoulder to shoulder it does not fit: pack tight and let the
+  // caller report that the script is longer than the video.
+  let cursor = start0;
+  return {
+    beats: beats.map((b) => {
+      const placed = { ...b, start: cursor };
+      cursor += b.duration;
+      return placed;
+    }),
+    overran: true,
+  };
 }

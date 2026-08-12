@@ -23,7 +23,13 @@ export interface ToolDefinition {
 export type ToolContent =
   | { type: 'text'; text: string }
   | { type: 'image'; data: string; mimeType: string }
-  | { type: 'resource_link'; uri: string; name: string; mimeType?: string };
+  | {
+      type: 'resource_link';
+      uri: string;
+      name: string;
+      mimeType?: string;
+      description?: string;
+    };
 
 export interface ToolResult {
   content: ToolContent[];
@@ -148,7 +154,12 @@ export function fileUrl(absPath: string): string {
  * rather than in each handler is what makes it impossible to forget, which
  * it repeatedly was.
  */
-export function fileResult(output: string, data: Record<string, unknown> = {}): ToolResult {
+export function fileResult(
+  output: string,
+  data: Record<string, unknown> = {},
+  /** Extra artifacts to surface as their own file cards, e.g. the project. */
+  alsoLink: string[] = []
+): ToolResult {
   const result = jsonContent({
     name: basename(output),
     output,
@@ -176,14 +187,19 @@ export function fileResult(output: string, data: Record<string, unknown> = {}): 
   }
 
   // resource_link, not an embedded resource: an embedded one has to carry
-  // the bytes inline, which for a video is absurd. A link lets a client
-  // that knows how to open the file offer it.
-  result.content.push({
-    type: 'resource_link',
-    uri: fileUrl(output),
-    name: basename(output),
-    mimeType: mimeFor(output),
-  });
+  // the bytes inline, which for a video is absurd. A link renders as a file
+  // card the user can click, which is the whole point - a bare path in JSON
+  // is something they have to go and find.
+  for (const path of [output, ...alsoLink]) {
+    if (!existsSync(path)) continue;
+    result.content.push({
+      type: 'resource_link',
+      uri: fileUrl(path),
+      name: basename(path),
+      mimeType: mimeFor(path),
+      description: `${(statSync(path).size / 1048576).toFixed(1)} MB`,
+    });
+  }
   return result;
 }
 
@@ -195,6 +211,7 @@ function mimeFor(path: string): string {
   if (path.endsWith('.mp3')) return 'audio/mpeg';
   if (path.endsWith('.m4a')) return 'audio/mp4';
   if (path.endsWith('.gif')) return 'image/gif';
+  if (path.endsWith('.vidlet')) return 'application/json';
   if (path.endsWith('.jpg') || path.endsWith('.jpeg')) return 'image/jpeg';
   if (path.endsWith('.png')) return 'image/png';
   return 'application/octet-stream';

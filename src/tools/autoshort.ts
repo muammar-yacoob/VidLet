@@ -23,24 +23,19 @@ import { basename, join } from 'node:path';
 import {
   classifyInputs,
   dedupeRetakes,
-  planNarrationBeats,
-  realSpeechWords,
   spansWithText,
   speedFor,
-  splitScriptSections,
   splitSentences,
   subtitleToText,
   timeWordsInLine,
 } from '../lib/autoshort-plan.js';
 import {
-  executeFFmpegAnalysis,
-  executeFFmpegRaw,
   executeFFmpegWithProgress,
   getMediaDuration,
   getVideoInfo,
   videoEncoderArgs,
 } from '../lib/ffmpeg.js';
-import { type LumaStats, averageStats, matchGrade, parseLumaStats } from '../lib/grade.js';
+import { type LumaStats, averageStats, matchGrade } from '../lib/grade.js';
 import { fmt, header, separator, success } from '../lib/logger.js';
 import { type ResolvedTrack, resolveMusicChoice } from '../lib/music.js';
 import { planKey, readPlan, stableWorkPath, writePlan } from '../lib/plan-cache.js';
@@ -52,7 +47,6 @@ import { emitVidletProject, projectPathFor } from './emit-project.js';
 import { maskSensitive as runMask } from './mask.js';
 import { buildSpeedupAudioFilters } from './speedup.js';
 import { buildSelectExpr, escapeFilterPath } from './timelapse.js';
-import { generateNarrationAudio } from './voiceover.js';
 
 export {
   type ClassifiedInputs,
@@ -66,18 +60,66 @@ export {
   splitScriptSections,
   splitSentences,
   subtitleToText,
+  fitBeatsToRuntime,
   timeWordsInLine,
+  toSpokenForm,
 } from '../lib/autoshort-plan.js';
 import {
   type SectionWindow,
-  allocateLinesToSections,
   sourceTimeToOutput,
   startsFromAssignment,
 } from '../lib/autoshort-plan.js';
 import { assignLinesToFrames, describeTimeline } from './narration-align.js';
 
+import {
+  DRAFT_H,
+  DRAFT_W,
+  SHORT_H,
+  SHORT_W,
+  analyzeClip,
+  chooseCanvas,
+  detectVoicedAudio,
+  sniffSpeech,
+} from './autoshort-analysis.js';
+import { type PlacedTake, synthesizeNarration } from './autoshort-narration.js';
+
+export {
+  type ClipAnalysis,
+  analyzeClip,
+  chooseCanvas,
+  detectVoicedAudio,
+  measureLuma,
+  sniffSpeech,
+  ydifToIdleSpans,
+} from './autoshort-analysis.js';
+export type { PlacedTake } from './autoshort-narration.js';
+
+/** Words per second Edge neural TTS actually delivers (~175 wpm). */
+const TTS_WPS = 2.9;
+/**
+ * Fraction of the runtime narration should cover. Raised from 0.85, which
+ * left long stretches of a Short silent and forced later sections to be
+ * summarised in a line.
+ */
+const NARRATION_COVERAGE = 0.92;
+/**
+ * Silence before the first word. Fixed rather than tunable-by-accident: a
+ * Short has about a second to earn attention.
+ */
+const DEFAULT_LEAD_IN = 0.7;
+/** Picture kept after the last word, for the music to breathe out. */
+const DEFAULT_TAIL_PAD = 1.8;
+
 export interface AutoShortOptions {
   inputs: string[];
+  /**
+   * How near-square footage meets a 9:16 canvas. 'pad' (default) fits the
+   * whole frame and fills the rest with a blurred copy, keeping every pixel
+   * of a screen recording readable. 'crop' zooms until the content fills
+   * the canvas, which looks properly full-screen but cuts the sides off -
+   * on a 320x360 source that is 37% of the width, so side panels go.
+   */
+  fill?: 'pad' | 'crop';
   /** Narration text. Used verbatim when `scriptIsFinal`, else rewritten. */
   narration?: string;
   /** Skip the AI rewrite - this text was already approved by a human. */
@@ -180,150 +222,6 @@ export interface AutoShortResult {
   stageSeconds: Record<string, number>;
 }
 
-const SHORT_W = 1080;
-const SHORT_H = 1920;
-/**
- * Smaller 9:16 canvas, used when the source has nowhere near enough pixels
- * to justify the full one. A 320x360 screen capture upscaled to 1080x1920
- * is 3.4x of invented detail; 720x1280 is still 2.25x and costs 45% less
- * to filter and encode (measured: 5.55s vs 3.03s on the same chain).
- */
-const SMALL_W = 720;
-const SMALL_H = 1280;
-/** Draft canvas: a quarter of the small one's area, still 9:16. */
-const DRAFT_W = 360;
-const DRAFT_H = 640;
-/** Below this source height, the full canvas buys nothing but render time. */
-const SMALL_CANVAS_MAX_SOURCE_H = 540;
-
-/** Output canvas: full size unless every source is far too small to use it. */
-export function chooseCanvas(sourceHeights: number[]): { width: number; height: number } {
-  const tallest = Math.max(0, ...sourceHeights);
-  return tallest > SMALL_CANVAS_MAX_SOURCE_H
-    ? { width: SHORT_W, height: SHORT_H }
-    : { width: SMALL_W, height: SMALL_H };
-}
-/**
- * The background copy is blurred at a quarter of the output resolution and
- * scaled back up. gblur cost scales with area, and a sigma-32 blur at full
- * size is indistinguishable from sigma-8 at quarter size once upscaled.
- */
-/** Words per second Edge neural TTS actually delivers (~175 wpm). */
-const TTS_WPS = 2.9;
-/** Fraction of the runtime narration should cover. Not 100%: it needs air. */
-const NARRATION_COVERAGE = 0.85;
-/** Default silence before the first word. */
-const DEFAULT_LEAD_IN = 1;
-/** Default picture kept after the last word, for the music to breathe out. */
-const DEFAULT_TAIL_PAD = 1.8;
-/**
- * Mean absolute inter-frame luma difference below which a sampled step is
- * "nothing happened". ffmpeg computes this natively as signalstats YDIF,
- * replacing a pass that decoded every sampled frame to PNG and diffed it in
- * JavaScript.
- */
-const IDLE_YDIF = 0.45;
-/** Analysis sampling rate, frames per second. */
-const ANALYSIS_FPS = 2;
-
-export interface ClipAnalysis {
-  idle: TimeSegment[];
-  luma: LumaStats | null;
-}
-
-/** Runs of low inter-frame difference, as idle time segments. */
-export function ydifToIdleSpans(
-  ydif: number[],
-  interval: number,
-  minIdleSeconds: number
-): TimeSegment[] {
-  const minSteps = Math.max(1, Math.ceil(minIdleSeconds / interval));
-  const spans: TimeSegment[] = [];
-  let runStart = -1;
-  for (let i = 0; i <= ydif.length; i++) {
-    if (i < ydif.length && ydif[i] < IDLE_YDIF) {
-      if (runStart === -1) runStart = i;
-    } else if (runStart !== -1) {
-      if (i - runStart >= minSteps) {
-        spans.push({ start: runStart * interval, end: i * interval });
-      }
-      runStart = -1;
-    }
-  }
-  return spans;
-}
-
-/**
- * Sample the clip once and derive both signals from the same decode.
- * signalstats reports YDIF (inter-frame motion) alongside YAVG/YLOW/YHIGH,
- * so idle detection and contrast measurement share a pass.
- */
-export async function analyzeClip(input: string, minIdleSeconds = 2): Promise<ClipAnalysis> {
-  const log = await executeFFmpegAnalysis(input, [
-    '-vf',
-    `fps=${ANALYSIS_FPS},scale=320:-1,signalstats,metadata=print`,
-  ]);
-  const ydif = [...log.matchAll(/lavfi\.signalstats\.YDIF=([\d.]+)/g)].map((m) =>
-    Number.parseFloat(m[1])
-  );
-  return {
-    idle: ydifToIdleSpans(ydif, 1 / ANALYSIS_FPS, minIdleSeconds),
-    luma: parseLumaStats(log),
-  };
-}
-
-/** Luma profile of a clip, for cross-clip contrast matching. */
-export async function measureLuma(input: string): Promise<LumaStats | null> {
-  return (await analyzeClip(input)).luma;
-}
-
-/** True when the file has an audio stream with actual signal in it. */
-export async function detectVoicedAudio(input: string): Promise<boolean> {
-  if (!(await getVideoInfo(input)).hasAudio) return false;
-  const stderr = await executeFFmpegAnalysis(input, ['-af', 'volumedetect']);
-  const max = stderr.match(/max_volume:\s*(-?[\d.]+) dB/);
-  return max !== null && Number.parseFloat(max[1]) > -30;
-}
-
-/**
- * True when the audio contains actual SPEECH, not just signal. A constant
- * desktop hum passes the volume check but transcribes to [BLANK_AUDIO], so
- * whisper a ~60s slice from the middle and count real words.
- */
-export async function sniffSpeech(input: string): Promise<boolean> {
-  const info = await getVideoInfo(input);
-  const sliceLen = Math.min(60, info.duration);
-  const start = Math.max(0, info.duration / 2 - sliceLen / 2);
-  const workDir = mkdtempSync(join(tmpdir(), 'vidlet-sniff-'));
-  try {
-    // Audio-only slice: whisper never needs the pixels.
-    const slice = join(workDir, 'slice.m4a');
-    await executeFFmpegRaw([
-      '-y',
-      '-ss',
-      start.toFixed(2),
-      '-i',
-      input,
-      '-t',
-      sliceLen.toFixed(2),
-      '-vn',
-      '-c:a',
-      'aac',
-      slice,
-    ]);
-    const result = await transcribe(slice, { model: 'base.en' });
-    const words = realSpeechWords(result.segments.map((s) => s.text).join(' '));
-    return words / (sliceLen / 60) >= 8;
-  } finally {
-    rmSync(workDir, { recursive: true, force: true });
-  }
-}
-
-/**
- * Rewrite narration in a modern, cheerful creator voice, sized to the
- * runtime. Exported so the MCP layer can put the draft in front of a human
- * BEFORE anything renders.
- */
 export async function rephraseScript(raw: string, outputSeconds: number): Promise<string | null> {
   if (!process.env.GROQ_API_KEY?.trim()) return null;
   const { groqChatJSON } = await import('../lib/groq.js');
@@ -394,137 +292,6 @@ export async function planShort(
  * because nothing was ever asked to. Each sentence is now its own take,
  * placed by planNarrationBeats, with real silence between lines.
  */
-export interface PlacedTake {
-  path: string;
-  text: string;
-  start: number;
-  duration: number;
-}
-
-async function synthesizeNarration(
-  script: string,
-  workDir: string,
-  leadIn: number,
-  outputDuration: number,
-  boundaries: number[],
-  sections: SectionWindow[],
-  /** Vision-derived start time per line, when alignment succeeded. */
-  alignedStarts: number[] | null,
-  options: Pick<AutoShortOptions, 'language' | 'gender'>
-): Promise<{ path: string; takes: PlacedTake[] }> {
-  // An explicit `---` marker per clip beats any inference: the person who
-  // recorded it knows which lines describe which footage.
-  const declared = splitScriptSections(script);
-  const useDeclared = declared.length > 1 && declared.length === sections.length;
-  const sentences = splitSentences(script.replace(/^\s*-{3,}\s*$/gm, ' '));
-
-  // Lines are independent takes, so they synthesise concurrently.
-  const takes = await Promise.all(
-    sentences.map(async (text, i) => {
-      const path = await generateNarrationAudio({
-        input: text,
-        output: join(workDir, `line-${i}.mp3`),
-        language: options.language,
-        gender: options.gender,
-      });
-      return { text, path, duration: await getMediaDuration(path) };
-    })
-  );
-
-  // When VidLet has looked at the footage, those placements win outright:
-  // they are the only ones that know what is on screen.
-  if (alignedStarts && alignedStarts.length === takes.length) {
-    const beats = takes.map((t, i) => ({
-      text: t.text,
-      start: alignedStarts[i],
-      duration: t.duration,
-    }));
-    return renderNarrationMix(beats, takes, workDir);
-  }
-
-  // `outputDuration` here is already the runtime MINUS the end tail, so the
-  // sections have to be clamped to it. Leaving them at the full runtime is
-  // what let the closing line run to the final frame despite the padding.
-  const usable = sections.map((w) => ({
-    start: Math.min(w.start, outputDuration),
-    end: Math.min(w.end, outputDuration),
-  }));
-  // Lines are allocated to the clip they describe, then placed inside that
-  // clip's own window, so "then we rig it" cannot start while the modelling
-  // footage is still on screen.
-  // Declared sections map straight onto clips; otherwise fall back to
-  // splitting by how long each clip runs.
-  const groups = useDeclared
-    ? (() => {
-        const counts = declared.map((d) => splitSentences(d).length);
-        const out: (typeof takes)[] = [];
-        let at = 0;
-        for (const n of counts) {
-          out.push(takes.slice(at, at + n));
-          at += n;
-        }
-        return out;
-      })()
-    : allocateLinesToSections(takes, usable);
-  const beats: ReturnType<typeof planNarrationBeats> = [];
-  groups.forEach((group, i) => {
-    if (group.length === 0) return;
-    const win = usable[i] ?? { start: leadIn, end: outputDuration };
-    const placed = planNarrationBeats(
-      group,
-      boundaries.filter((b) => b >= win.start && b < win.end),
-      win.end,
-      Math.max(win.start, i === 0 ? leadIn : win.start)
-    );
-    beats.push(...placed);
-  });
-  return renderNarrationMix(beats, takes, workDir);
-}
-
-/** Lay each spoken take at its start time and mix them into one track. */
-async function renderNarrationMix(
-  beats: Array<{ text: string; start: number; duration: number }>,
-  takes: Array<{ path: string }>,
-  workDir: string
-): Promise<{ path: string; takes: PlacedTake[] }> {
-  const output = join(workDir, 'narration.m4a');
-
-  // One line needs no mixing, just its offset.
-  const inputs = takes.flatMap((t) => ['-i', t.path]);
-  const delays = beats.map((b, i) => {
-    const ms = Math.round(b.start * 1000);
-    return `[${i}:a]adelay=${ms}|${ms}[d${i}]`;
-  });
-  const mix =
-    beats.length === 1
-      ? '[d0]anull[a]'
-      : `${beats.map((_, i) => `[d${i}]`).join('')}amix=inputs=${beats.length}:duration=longest:normalize=0[a]`;
-
-  await executeFFmpegRaw([
-    '-y',
-    ...inputs,
-    '-filter_complex',
-    `${delays.join(';')};${mix}`,
-    '-map',
-    '[a]',
-    '-c:a',
-    'aac',
-    '-b:a',
-    '192k',
-    output,
-  ]);
-  return {
-    path: output,
-    takes: beats.map((b, i) => ({
-      path: takes[i].path,
-      text: b.text,
-      start: b.start,
-      duration: b.duration,
-    })),
-  };
-}
-
-/** Output-time window each clip occupies, after any intro. */
 export function clipWindows(
   clips: Array<{ kept: number }>,
   speed: number,
@@ -681,6 +448,7 @@ export function buildRenderGraph(opts: {
   musicVolume: number;
   outputDuration: number;
   canvas?: { width: number; height: number };
+  fill?: 'pad' | 'crop';
 }): string {
   const { clips, speed, contrast, keepSourceAudio, assPath, ttsIndex, musicIndex } = opts;
   const { width: outW, height: outH } = opts.canvas ?? { width: SHORT_W, height: SHORT_H };
@@ -713,7 +481,12 @@ export function buildRenderGraph(opts: {
         `drawbox=x=0:y=0:w=iw:h=ih:color=black@0.4:thickness=fill[bgb${i}]`
     );
     chains.push(
-      `[fg${i}]scale=${outW}:${outH}:force_original_aspect_ratio=decrease:flags=lanczos[fgs${i}]`
+      opts.fill === 'crop'
+        ? // Zoom until the canvas is covered, then trim the overflow. The
+          // blurred backdrop still exists underneath but is never seen.
+          `[fg${i}]scale=${outW}:${outH}:force_original_aspect_ratio=increase:flags=lanczos,` +
+            `crop=${outW}:${outH}[fgs${i}]`
+        : `[fg${i}]scale=${outW}:${outH}:force_original_aspect_ratio=decrease:flags=lanczos[fgs${i}]`
     );
     chains.push(`[bgb${i}][fgs${i}]overlay=(W-w)/2:(H-h)/2,setsar=1[n${i}]`);
     if (keepSourceAudio && clip.spans) {
@@ -802,7 +575,7 @@ export async function autoShort(options: AutoShortOptions): Promise<AutoShortRes
   const { inputs, output } = options;
   const maxDuration = Math.min(59, options.maxDuration ?? 57);
   const wantCaptions = options.captions !== false;
-  const contrast = options.contrast ?? 1.25;
+  const contrast = options.contrast ?? 1.12;
   const musicVolume = options.musicVolume ?? 0.08;
   const leadIn = options.leadIn ?? DEFAULT_LEAD_IN;
   const tailPad = options.tailPad ?? DEFAULT_TAIL_PAD;
@@ -883,11 +656,15 @@ export async function autoShort(options: AutoShortOptions): Promise<AutoShortRes
     // A draft is for judging the edit, not the picture, so it renders on a
     // quarter-area canvas. Everything upstream (spans, speed, narration,
     // caption timing) is identical to the real render.
-    const canvas = options.draft
-      ? { width: DRAFT_W, height: DRAFT_H }
-      : chooseCanvas(
-          await Promise.all(files.videos.map(async (v) => (await getVideoInfo(v)).height))
-        );
+    // The canvas a real render would use. Captions are always laid out
+    // against THIS, even in a draft: font size drives how many characters
+    // fit a line, so authoring at the draft's smaller canvas broke the
+    // lines differently and the draft stopped being representative. libass
+    // scales the result to whatever the video actually is.
+    const referenceCanvas = chooseCanvas(
+      await Promise.all(files.videos.map(async (v) => (await getVideoInfo(v)).height))
+    );
+    const canvas = options.draft ? { width: DRAFT_W, height: DRAFT_H } : referenceCanvas;
     // The intro is spent from the same budget, so the timelapse is sped to
     // fit whatever is left rather than overrunning the ceiling.
     const introSeconds = options.intro ? await getMediaDuration(options.intro) : 0;
@@ -1004,8 +781,8 @@ export async function autoShort(options: AutoShortOptions): Promise<AutoShortRes
         if (entries.length === 0) return undefined;
         const ass = generateShortsAss({
           entries: entries.sort((a, b) => a.startTime - b.startTime),
-          videoWidth: canvas.width,
-          videoHeight: canvas.height,
+          videoWidth: referenceCanvas.width,
+          videoHeight: referenceCanvas.height,
           fontSize: 48,
           fontName: 'Arial Black',
           position: 'bottom',
@@ -1036,8 +813,8 @@ export async function autoShort(options: AutoShortOptions): Promise<AutoShortRes
         });
         const ass = generateShortsAss({
           entries: captionEntries,
-          videoWidth: canvas.width,
-          videoHeight: canvas.height,
+          videoWidth: referenceCanvas.width,
+          videoHeight: referenceCanvas.height,
           fontSize: 48,
           fontName: 'Arial Black',
           position: 'bottom',
@@ -1087,6 +864,7 @@ export async function autoShort(options: AutoShortOptions): Promise<AutoShortRes
         musicVolume,
         outputDuration,
         canvas,
+        fill: options.fill,
       });
       const graphPath = join(workDir, 'graph.txt');
       writeFileSync(graphPath, graph, 'utf8');

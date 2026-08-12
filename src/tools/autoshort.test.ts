@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   allocateLinesToSections,
+  fitBeatsToRuntime,
   outputTimeToSource,
   planNarrationBeats,
   realSpeechWords,
@@ -483,10 +484,13 @@ describe('startsFromAssignment', () => {
     expect(starts[1] - starts[0]).toBeCloseTo(10, 5);
   });
 
-  it('leaves a short, deliberate opening delay alone', () => {
-    // Assigned to the 10s keyframe with earliest 8: a 2s delay is fine.
+  it('pins the opening beat, whatever keyframe the model picked', () => {
+    // The opening pause is fixed for every Short, so the model decides the
+    // SPACING of the lines but never when the video starts talking.
     const starts = startsFromAssignment(lines, [1, 2, 3], times, 8, 60);
-    expect(starts[0]).toBe(10);
+    expect(starts[0]).toBe(8);
+    // Relative spacing from the assignment still survives the slide.
+    expect(starts[1] - starts[0]).toBeCloseTo(10, 5);
   });
 });
 
@@ -532,5 +536,51 @@ describe('sourceTimeToOutput', () => {
     if (!point) throw new Error('expected a mapped point');
     const back = sourceTimeToOutput(clips, 2, 5, point.clipIndex, point.sourceTime);
     expect(back).toBeCloseTo(11, 6);
+  });
+});
+
+describe('fitBeatsToRuntime', () => {
+  const beat = (start: number, duration: number, text = 'x') => ({ text, start, duration });
+
+  it('leaves a narration that already fits untouched', () => {
+    const beats = [beat(1, 3), beat(5, 3)];
+    const out = fitBeatsToRuntime(beats, 20);
+    expect(out.overran).toBe(false);
+    expect(out.beats).toEqual(beats);
+  });
+
+  it('pulls an overrunning narration back inside the runtime', () => {
+    // Regression: real TTS ran longer than the estimate used for placement,
+    // so the closing lines fell off the end and were silently cut.
+    const beats = [beat(1, 10), beat(20, 10)];
+    const out = fitBeatsToRuntime(beats, 25);
+    expect(out.overran).toBe(true);
+    const last = out.beats[out.beats.length - 1];
+    expect(last.start + last.duration).toBeLessThanOrEqual(25.01);
+  });
+
+  it('keeps the opening beat where it was', () => {
+    const out = fitBeatsToRuntime([beat(2, 10), beat(20, 10)], 25);
+    expect(out.beats[0].start).toBe(2);
+  });
+
+  it('never reorders or overlaps lines', () => {
+    const out = fitBeatsToRuntime([beat(1, 8), beat(12, 8), beat(24, 8)], 26);
+    for (let i = 1; i < out.beats.length; i++) {
+      expect(out.beats[i].start).toBeGreaterThanOrEqual(
+        out.beats[i - 1].start + out.beats[i - 1].duration - 0.001
+      );
+    }
+  });
+
+  it('packs tight and still reports when the script simply cannot fit', () => {
+    const out = fitBeatsToRuntime([beat(1, 20), beat(22, 20)], 25);
+    expect(out.overran).toBe(true);
+    // Shoulder to shoulder from the opening beat, no gaps left to give.
+    expect(out.beats[1].start).toBeCloseTo(21, 5);
+  });
+
+  it('handles an empty narration', () => {
+    expect(fitBeatsToRuntime([], 10)).toEqual({ beats: [], overran: false });
   });
 });

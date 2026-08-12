@@ -22,10 +22,23 @@ export interface GradeParams {
   brightness: number;
 }
 
-/** ffmpeg eq bounds - past these the picture crushes or blows out. */
-const MIN_CONTRAST = 0.5;
-const MAX_CONTRAST = 3;
-const MAX_BRIGHTNESS = 0.3;
+/**
+ * Bounds on the FINAL contrast. Deliberately tight: fully equalising two
+ * clips means stretching the flatter one hard, and a 1.7x stretch on a
+ * screen recording amplifies banding and crushes the darks into a look
+ * that reads as harsh next to its neighbour. Matching should close the gap,
+ * not erase it at any cost.
+ */
+const MIN_CONTRAST = 0.75;
+const MAX_CONTRAST = 1.35;
+const MAX_BRIGHTNESS = 0.15;
+
+/**
+ * How far toward the shared target a clip is moved. Below 1 because the
+ * goal is that neighbouring clips stop LOOKING different, which is reached
+ * well before they are numerically identical.
+ */
+const MATCH_STRENGTH = 0.6;
 
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
 
@@ -68,10 +81,17 @@ export function matchGrade(clip: LumaStats, target: LumaStats, boost = 1): Grade
   const clipSpread = Math.max(1, clip.high - clip.low) / 255;
   const targetSpread = Math.max(1, target.high - target.low) / 255;
 
-  const contrast = clamp((targetSpread / clipSpread) * boost, MIN_CONTRAST, MAX_CONTRAST);
+  // Move PART of the way to the target rather than all of it. Full
+  // correction gave a flat clip 1.39x, which the creative boost then
+  // compounded to 1.73x - the second half of a Short looking visibly
+  // harsher than the first.
+  const full = targetSpread / clipSpread;
+  const matched = 1 + (full - 1) * MATCH_STRENGTH;
+
+  const contrast = clamp(matched * boost, MIN_CONTRAST, MAX_CONTRAST);
   const m = clip.avg / 255;
   const brightness = clamp(
-    target.avg / 255 - ((m - 0.5) * contrast + 0.5),
+    (target.avg / 255 - ((m - 0.5) * contrast + 0.5)) * MATCH_STRENGTH,
     -MAX_BRIGHTNESS,
     MAX_BRIGHTNESS
   );
