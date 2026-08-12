@@ -26,12 +26,12 @@
    */
   function updateFilterPreview() {
     // Read slider values (all use 0 as neutral)
-    const brightness = Number.parseInt($('filter-brightness')?.value) || 0;
-    const contrast = Number.parseInt($('filter-contrast')?.value) || 0;
-    const saturation = Number.parseInt($('filter-saturation')?.value) || 0;
+    const brightness = Number.parseInt($('filter-brightness')?.value, 10) || 0;
+    const contrast = Number.parseInt($('filter-contrast')?.value, 10) || 0;
+    const saturation = Number.parseInt($('filter-saturation')?.value, 10) || 0;
     const blur = Number.parseFloat($('filter-blur')?.value) || 0;
-    const vignetteIntensity = Number.parseInt($('filter-vignette-intensity')?.value) || 0;
-    const bloomIntensity = Number.parseInt($('filter-bloom-intensity')?.value) || 0;
+    const vignetteIntensity = Number.parseInt($('filter-vignette-intensity')?.value, 10) || 0;
+    const bloomIntensity = Number.parseInt($('filter-bloom-intensity')?.value, 10) || 0;
 
     // Update state
     filterState.brightness = brightness;

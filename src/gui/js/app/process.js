@@ -43,8 +43,8 @@
       // Clean mode is a different tool wearing the audio panel
       const opts = {
         tool: 'cleanvoice',
-        noiseReduction: Number.parseInt($('clean-noise').value),
-        targetLoudness: Number.parseInt($('clean-loudness').value),
+        noiseReduction: Number.parseInt($('clean-noise').value, 10),
+        targetLoudness: Number.parseInt($('clean-loudness').value, 10),
       };
       const nsStart = Number.parseFloat($('clean-noise-start').value);
       const nsEnd = Number.parseFloat($('clean-noise-end').value);
@@ -73,7 +73,7 @@
     }),
 
     autocleanup: () => ({
-      noiseReduction: Number.parseInt($('cleanup-denoise').value),
+      noiseReduction: Number.parseInt($('cleanup-denoise').value, 10),
       minSilenceDuration: Number.parseFloat($('cleanup-silence').value),
       skipContrast: $('cleanup-skip-contrast').value === 'true',
       cleanupContrast: 1.15,
@@ -81,11 +81,11 @@
 
     jumpcut: () => ({
       jumpcutPace: $('jumpcut-pace')?.value || 'normal',
-      jumpcutZoom: Number.parseInt($('jumpcut-zoom')?.value) || 3,
+      jumpcutZoom: Number.parseInt($('jumpcut-zoom')?.value, 10) || 3,
     }),
 
     short: () => ({
-      maxDuration: Number.parseInt($('short-duration').value) || 57,
+      maxDuration: Number.parseInt($('short-duration').value, 10) || 57,
       captions: $('short-captions').value === 'true',
     }),
 

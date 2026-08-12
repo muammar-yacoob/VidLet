@@ -61,7 +61,7 @@
   "dependencies": {
     "@dotlottie/dotlottie-js": "^1.6.3",
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "@spark-apps/video-kit": "^0.1.0",
+    "@spark-apps/video-kit": "^0.1.1",
     "commander": "^13.1.0",
     "execa": "^9.5.2",
     "express": "^5.2.1",

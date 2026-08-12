@@ -38,8 +38,8 @@
    */
   function updateEstimate() {
     const duration = videoInfo?.duration || 10;
-    const fps = Number.parseInt($('togif-fps')?.value) || 15;
-    const width = Number.parseInt($('togif-width')?.value) || 480;
+    const fps = Number.parseInt($('togif-fps')?.value, 10) || 15;
+    const width = Number.parseInt($('togif-width')?.value, 10) || 480;
 
     const frames = fps * duration;
     const bytesPerFrame = (width / 480) * 15000;
@@ -81,8 +81,8 @@
    */
   function getOptions() {
     return {
-      fps: Number.parseInt($('togif-fps')?.value) || 15,
-      width: Number.parseInt($('togif-width')?.value) || 480,
+      fps: Number.parseInt($('togif-fps')?.value, 10) || 15,
+      width: Number.parseInt($('togif-width')?.value, 10) || 480,
       dither: $('togif-dither')?.value || 'floyd_steinberg',
     };
   }

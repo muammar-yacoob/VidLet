@@ -18,7 +18,7 @@ window.VidLet = window.VidLet || {};
    */
   async function build(_frameSkip, onProgress) {
     const source = V.$('videoPreview');
-    if (!source || !source.duration) return;
+    if (!source?.duration) return;
 
     // Create a hidden video element for background caching
     const video = document.createElement('video');

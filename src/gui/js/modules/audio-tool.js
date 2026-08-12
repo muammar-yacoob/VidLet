@@ -24,7 +24,7 @@
    * Update audio volume from slider
    */
   function updateVolume() {
-    audioVolume = Number.parseInt($('audio-volume')?.value);
+    audioVolume = Number.parseInt($('audio-volume')?.value, 10);
     if ($('audio-vol-val')) {
       $('audio-vol-val').textContent = `${audioVolume}%`;
     }

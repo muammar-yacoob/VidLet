@@ -20,7 +20,7 @@
         e.preventDefault();
         e.stopPropagation();
 
-        const segmentIndex = Number.parseInt(handle.dataset.segment);
+        const segmentIndex = Number.parseInt(handle.dataset.segment, 10);
         const side = handle.dataset.side; // 'start' or 'end'
         const seg = S.segments[segmentIndex];
         if (!seg) return;

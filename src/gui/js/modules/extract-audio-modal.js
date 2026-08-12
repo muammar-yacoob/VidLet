@@ -65,7 +65,7 @@
   function getOptions() {
     return {
       format: $('extract-audio-format')?.value || 'mp3',
-      bitrate: Number.parseInt($('extract-audio-bitrate')?.value) || 192,
+      bitrate: Number.parseInt($('extract-audio-bitrate')?.value, 10) || 192,
     };
   }
 

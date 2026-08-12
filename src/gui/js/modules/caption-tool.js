@@ -247,7 +247,7 @@ Words light up as they play
     else if (position === 'center') overlay.classList.add('pos-center');
 
     // Scale font size based on video preview height
-    const size = Number.parseInt($('caption-size')?.value) || 48;
+    const size = Number.parseInt($('caption-size')?.value, 10) || 48;
     const video = $('videoPreview');
     const scale = video ? video.clientHeight / 720 : 0.4;
     const previewSize = Math.round(size * scale);
@@ -274,7 +274,7 @@ Words light up as they play
       captionStyle: captionStyleVal,
       captionColor: captionColorVal,
       captionPosition: $('caption-position')?.value || 'bottom',
-      captionFontSize: Number.parseInt($('caption-size')?.value) || 48,
+      captionFontSize: Number.parseInt($('caption-size')?.value, 10) || 48,
       usingDefault: captionUsingDefault,
     };
   }

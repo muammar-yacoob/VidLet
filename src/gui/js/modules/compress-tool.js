@@ -53,7 +53,7 @@
     const duration = videoInfo?.duration || 60;
     const origBitrate = videoInfo?.bitrate || 5000;
 
-    const bitrate = Number.parseInt($('compress-bitrate')?.value) || 2500;
+    const bitrate = Number.parseInt($('compress-bitrate')?.value, 10) || 2500;
     const compressSize = (bitrate * 1000 * duration) / 8;
     const reduction = origBitrate > 0 ? Math.round((1 - bitrate / origBitrate) * 100) : 0;
 
@@ -93,7 +93,7 @@
    */
   function getOptions() {
     return {
-      bitrate: Number.parseInt($('compress-bitrate')?.value) || 2500,
+      bitrate: Number.parseInt($('compress-bitrate')?.value, 10) || 2500,
       preset: $('compress-preset')?.value || 'medium',
       codec: $('compress-codec')?.value || 'h264',
     };

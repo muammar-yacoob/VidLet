@@ -26,7 +26,7 @@
   function getOptions() {
     return {
       fastCopy: mkvFastCopy,
-      quality: Number.parseInt($('mkv2mp4-quality')?.value) || 23,
+      quality: Number.parseInt($('mkv2mp4-quality')?.value, 10) || 23,
     };
   }
 

@@ -83,8 +83,8 @@
 
     if (!slider || !marker) return;
 
-    const min = Number.parseInt(slider.min) || 10;
-    const max = Number.parseInt(slider.max) || 300;
+    const min = Number.parseInt(slider.min, 10) || 10;
+    const max = Number.parseInt(slider.max, 10) || 300;
 
     if (60 >= min && 60 <= max) {
       const pct = ((60 - min) / (max - min)) * 100;

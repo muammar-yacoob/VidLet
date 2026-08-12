@@ -259,8 +259,8 @@
     const html = document.documentElement;
     if (html.dataset.vidlet !== undefined) {
       init({
-        width: Number.parseInt(html.dataset.width) || undefined,
-        height: Number.parseInt(html.dataset.height) || undefined,
+        width: Number.parseInt(html.dataset.width, 10) || undefined,
+        height: Number.parseInt(html.dataset.height, 10) || undefined,
       });
     }
   });

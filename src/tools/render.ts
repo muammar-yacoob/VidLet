@@ -35,7 +35,11 @@ import {
   type VidletProject,
 } from '../lib/vidlet-project.js';
 import { hasAudioClips, mixProjectAudio } from './render-audio.js';
+import { buildSubtitleAss } from './render-subtitles.js';
 import { buildSpeedupAudioFilters } from './speedup.js';
+
+export { buildSubtitleAss } from './render-subtitles.js';
+
 import { uniquePath } from './voiceover.js';
 
 export interface RenderProjectOptions {
@@ -101,63 +105,6 @@ function draftCanvas(canvas: Canvas): Canvas {
   const factor = Math.min(1, 1280 / canvas.width, 720 / canvas.height);
   if (factor >= 1) return canvas;
   return { width: even(canvas.width * factor), height: even(canvas.height * factor) };
-}
-
-// ============ SUBTITLES (ASS) ============
-
-const ASS_ALIGNMENT = { bottom: 2, center: 5, top: 8 } as const;
-
-/** "#RRGGBB" -> ASS "&H00BBGGRR" (BGR order). */
-function hexToAssColor(hex: string): string {
-  const r = hex.slice(1, 3);
-  const g = hex.slice(3, 5);
-  const b = hex.slice(5, 7);
-  return `&H00${b}${g}${r}`.toUpperCase();
-}
-
-function toAssTime(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.floor(seconds % 60);
-  const cs = Math.floor((seconds % 1) * 100);
-  return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(cs).padStart(2, '0')}`;
-}
-
-/** Build ASS for the project's subtitles block, or null when there are no entries. */
-export function buildSubtitleAss(project: VidletProject, canvas: Canvas): string | null {
-  const { style, entries } = project.subtitles;
-  if (entries.length === 0) return null;
-  // fontSize is specified against the project canvas; scale to the render canvas.
-  const fontSize = Math.max(
-    8,
-    Math.round(style.fontSize * (canvas.height / project.settings.height))
-  );
-  const alignment = ASS_ALIGNMENT[style.position];
-  const marginV = style.position === 'center' ? 0 : Math.max(10, Math.round(canvas.height * 0.04));
-  const outline = style.outline ? Math.max(1, Math.round(fontSize / 16)) : 0;
-  const color = hexToAssColor(style.color);
-
-  const header = `[Script Info]
-Title: VidLet Render
-ScriptType: v4.00+
-PlayResX: ${canvas.width}
-PlayResY: ${canvas.height}
-ScaledBorderAndShadow: yes
-
-[V4+ Styles]
-Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,${style.fontFamily},${fontSize},${color},${color},&H00202020,&H80000000,0,0,0,0,100,100,0,0,1,${outline},0,${alignment},40,40,${marginV},1
-
-[Events]
-Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-`;
-  const lines = [...entries]
-    .sort((a, b) => a.start - b.start)
-    .map((entry) => {
-      const text = entry.text.replace(/\r?\n/g, '\\N');
-      return `Dialogue: 0,${toAssTime(entry.start)},${toAssTime(entry.end)},Default,,0,0,0,,${text}`;
-    });
-  return header + lines.join('\n');
 }
 
 /** Escape a path for use inside an ffmpeg filter graph (ass=...). */

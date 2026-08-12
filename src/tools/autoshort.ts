@@ -17,41 +17,32 @@
  *  6. single render: select + grade + pad + concat + speed + captions,
  *     with narration over a ducked music bed
  */
-import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+
+export { buildRenderGraph } from './autoshort-graph.js';
+export type { AutoShortOptions, AutoShortResult } from './autoshort-types.js';
+
+import { copyFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
-import { MASTER_CHAIN } from '@spark-apps/video-kit';
 import {
   classifyInputs,
-  dedupeRetakes,
-  spansWithText,
   speedFor,
   speedPerSection,
   splitScriptSections,
   splitSentences,
-  subtitleToText,
-  timeWordsInLine,
-  windowsFromSpeeds,
 } from '../lib/autoshort-plan.js';
-import {
-  executeFFmpegWithProgress,
-  getMediaDuration,
-  getVideoInfo,
-  videoEncoderArgs,
-} from '../lib/ffmpeg.js';
-import { averageStats, type LumaStats, matchGrade } from '../lib/grade.js';
+import { executeFFmpegWithProgress, getMediaDuration, getVideoInfo } from '../lib/ffmpeg.js';
+import type { LumaStats } from '../lib/grade.js';
 import { fmt, header, separator, success } from '../lib/logger.js';
-import { type ResolvedTrack, resolveMusicChoice } from '../lib/music.js';
-import { planKey, readPlan, stableWorkPath, writePlan } from '../lib/plan-cache.js';
-import { detectSilence, invertSegments, type TimeSegment } from '../lib/segments.js';
-import { type TranscriptSegment, transcribe } from '../lib/whisper.js';
-import { generateShortsAss, type SrtEntry } from './caption.js';
-import { cleanVoice } from './cleanvoice.js';
+import { resolveMusicChoice } from '../lib/music.js';
+import { planKey, readPlan, writePlan } from '../lib/plan-cache.js';
+import type { TimeSegment } from '../lib/segments.js';
+import { buildRenderGraph, fastEncoderArgs } from './autoshort-graph.js';
+import type { AutoShortOptions, AutoShortResult } from './autoshort-types.js';
+import { resolveVoiceAndCaptions } from './autoshort-voice.js';
 import { renderCtaPng } from './cta-overlay.js';
 import { emitVidletProject, projectPathFor } from './emit-project.js';
 import { maskSensitive as runMask } from './mask.js';
-import { buildSpeedupAudioFilters } from './speedup.js';
-import { buildSelectExpr, escapeFilterPath } from './timelapse.js';
 
 export {
   type ClassifiedInputs,
@@ -72,23 +63,7 @@ export {
   windowsFromSpeeds,
 } from '../lib/autoshort-plan.js';
 
-import {
-  type SectionWindow,
-  sourceTimeToOutput,
-  startsFromAssignment,
-} from '../lib/autoshort-plan.js';
-import {
-  analyzeClip,
-  chooseCanvas,
-  DRAFT_H,
-  DRAFT_W,
-  detectVoicedAudio,
-  SHORT_H,
-  SHORT_W,
-  sniffSpeech,
-} from './autoshort-analysis.js';
-import { type PlacedTake, synthesizeNarration } from './autoshort-narration.js';
-import { assignLinesToFrames, describeTimeline } from './narration-align.js';
+import { chooseCanvas, DRAFT_H, DRAFT_W } from './autoshort-analysis.js';
 
 export {
   analyzeClip,
@@ -101,502 +76,16 @@ export {
 } from './autoshort-analysis.js';
 export type { PlacedTake } from './autoshort-narration.js';
 
-/** Words per second Edge neural TTS actually delivers (~175 wpm). */
-const TTS_WPS = 2.9;
-/**
- * Fraction of the runtime narration should cover. Raised from 0.85, which
- * left long stretches of a Short silent and forced later sections to be
- * summarised in a line.
- */
-const NARRATION_COVERAGE = 0.92;
-/**
- * Silence before the first word. Fixed rather than tunable-by-accident: a
- * Short has about a second to earn attention.
- */
-const DEFAULT_LEAD_IN = 0.7;
-/** Picture kept after the last word, for the music to breathe out. */
-const DEFAULT_TAIL_PAD = 1.8;
+import { DEFAULT_LEAD_IN, DEFAULT_TAIL_PAD, TTS_WPS } from './autoshort-constants.js';
+import { type PreparedClip, prepareClip, resolveScriptSource } from './autoshort-stages.js';
 
-export interface AutoShortOptions {
-  inputs: string[];
-  /**
-   * How near-square footage meets a 9:16 canvas. 'pad' (default) fits the
-   * whole frame and fills the rest with a blurred copy, keeping every pixel
-   * of a screen recording readable. 'crop' zooms until the content fills
-   * the canvas, which looks properly full-screen but cuts the sides off -
-   * on a 320x360 source that is 37% of the width, so side panels go.
-   */
-  fill?: 'pad' | 'crop';
-  /** Narration text. Used verbatim when `scriptIsFinal`, else rewritten. */
-  narration?: string;
-  /** Skip the AI rewrite - this text was already approved by a human. */
-  scriptIsFinal?: boolean;
-  music?: string;
-  /** Bed level, 0-1. Default 0.08 - it sits under the voice, not beside it. */
-  musicVolume?: number;
-  maxDuration?: number;
-  captions?: boolean;
-  /** Contrast boost on top of per-clip matching. Default 1.25. */
-  contrast?: number;
-  voiceover?: 'auto' | 'tts' | 'keep';
-  /**
-   * A call-to-action pinned near the top for the whole Short: the domain,
-   * its favicon and an optional tagline. Speaking a URL never sounds
-   * right, so this is where the address belongs.
-   */
-  cta?: { url: string; tagline?: string };
-  /** Silence before the first word, so it does not open mid-syllable. */
-  leadIn?: number;
-  /**
-   * Seconds of picture kept after the last word. Ending on the final
-   * syllable feels like the file was truncated; a short tail lets the music
-   * fade and the last frame land.
-   */
-  tailPad?: number;
-  /**
-   * A clip to open with, played at NATURAL speed. Intros are branding, not
-   * footage: sweeping a 6s logo animation into an 18x timelapse would leave
-   * a third of a second of nothing anyone can read.
-   */
-  intro?: string;
-  /**
-   * Place each narration line by LOOKING at the footage (Groq vision) so
-   * the words describe what is on screen, rather than spacing lines
-   * arithmetically. Default true; degrades silently to proportional
-   * placement without a key.
-   */
-  alignToContent?: boolean;
-  /**
-   * Draft mode: small canvas, fastest encoder, no sensitive-data scan. For
-   * approving timing, narration and captions before paying for the real
-   * render - everything that decides the EDIT is identical, only the
-   * pixels are cheap.
-   */
-  draft?: boolean;
-  /** Reuse/populate the analysis cache. Default true. */
-  cache?: boolean;
-  /**
-   * Write the edit as a .vidlet project beside the output. Default true:
-   * the render shows the result, the project shows the reasoning, and the
-   * expensive part (deciding the edit) is already paid for.
-   */
-  emitProject?: boolean;
-  /**
-   * Encode the video. Default true. Setting it false gives the project
-   * without the render, for when the edit is going to be tweaked in the
-   * editor anyway and encoding it first would be wasted work.
-   */
-  render?: boolean;
-  /**
-   * Scan the FINISHED Short for on-screen card numbers, emails, keys and
-   * addresses and pixelate them. Default true. Deliberately run on the
-   * output rather than the sources: only the frames that survived the cut
-   * can leak anything, and there are a few dozen of them instead of tens of
-   * thousands.
-   */
-  maskSensitive?: boolean;
-  output?: string;
-  language?: string;
-  gender?: 'female' | 'male';
-  onProgress?: (stage: string) => void;
-}
-
-export interface AutoShortResult {
-  output: string;
-  sourceDuration: number;
-  keptDuration: number;
-  outputDuration: number;
-  speed: number;
-  videos: number;
-  spansKept: number;
-  retakesDropped: number;
-  voiced: boolean;
-  narration: 'tts' | 'original-voice' | 'none';
-  narrationSeconds: number;
-  captionsBurned: boolean;
-  /** Output canvas, chosen from how much detail the sources actually have. */
-  resolution: string;
-  /** True when this was a cheap draft rather than a publishable render. */
-  draft: boolean;
-  /** True when the analysis pass was served from cache. */
-  cachedAnalysis: boolean;
-  /** The .vidlet project describing this edit, when one was written. */
-  project: string | null;
-  /** False when only the project was produced. */
-  rendered: boolean;
-  /** Seconds of un-sped intro at the head, 0 when there is none. */
-  introSeconds: number;
-  /** Whether narration was placed by looking at the footage. */
-  contentAligned: boolean;
-  /** What the sensitive-data scan did, and why, so it is never silent. */
-  masking: { scanned: boolean; regionsMasked: number; note?: string };
-  music: ResolvedTrack | null;
-  /** Wall-clock per stage, so a slow render can be attributed. */
-  stageSeconds: Record<string, number>;
-}
-
-export async function rephraseScript(raw: string, outputSeconds: number): Promise<string | null> {
-  if (!process.env.GROQ_API_KEY?.trim()) return null;
-  const { groqChatJSON } = await import('../lib/groq.js');
-  const targetWords = Math.max(12, Math.round(outputSeconds * TTS_WPS * NARRATION_COVERAGE));
-  try {
-    const result = await groqChatJSON<{ script: string }>([
-      {
-        role: 'system',
-        content: `You write voiceover for YouTube Shorts that people actually finish. Rewrite the draft in a warm, upbeat, modern creator voice - how a friendly YouTuber talks to camera. Hook the viewer in the first three words. Short punchy sentences of four to ten words. Mirror the draft's own voice and person: if the draft says "I", stay in first person and keep it personal; if it addresses the viewer, stay in second person. Present tense, contractions. If the draft opens with a specific line, keep that opening intact. Sound genuinely delighted by the thing rather than salesy. Vary the rhythm so it never drones. End on a satisfying payoff line, not a call to action. Never use: "dive in", "unleash", "game-changer", "in this video", "let's explore", "journey", "buckle up". No emojis, no hashtags, no stage directions, no headings, and never an em dash or any dash used as punctuation, because TTS reads it as an odd pause. Use commas or full stops. If you mention a URL or email, write it exactly as it is spoken - the real characters, e.g. "taxducks.com" or "hello@site.com" - never spelled out as the words "dot" or "at"; the caption burns in whatever you write, so spelling it out puts the word "dot" on screen. This is read aloud, so plain spoken words only. Length matters: write ${targetWords} words, and never fewer than ${Math.round(targetWords * 0.9)}, because this is read aloud over a ${Math.round(outputSeconds)} second video and has to carry most of it. Respond with JSON {"script": "<${targetWords} words of spoken narration>"}`,
-      },
-      { role: 'user', content: raw },
-    ]);
-    return result.script?.trim() || null;
-  } catch {
-    return null; // model trouble - the raw script still works
-  }
-}
-
-/** Narration text from whichever source the caller supplied. */
-export function resolveScriptSource(
-  files: ReturnType<typeof classifyInputs>,
-  narration?: string
-): string {
-  if (narration?.trim()) return narration.trim();
-  if (files.narrationPath) return readFileSync(files.narrationPath, 'utf8').trim();
-  if (files.subtitlePath) return subtitleToText(readFileSync(files.subtitlePath, 'utf8'));
-  return '';
-}
-
-/**
- * Everything the MCP layer needs to ask its questions without rendering:
- * how long the Short will be, and whether the footage already has a voice.
- */
-export async function planShort(
-  inputs: string[],
-  maxDuration = 57
-): Promise<{ outputDuration: number; voiced: boolean; videos: number }> {
-  const files = classifyInputs(inputs);
-  if (files.videos.length === 0) throw new Error('No video files among the inputs.');
-  let kept = 0;
-  let voiced = false;
-  for (const video of files.videos) {
-    const info = await getVideoInfo(video);
-    const analysis = await analyzeClip(video);
-    const spans = invertSegments(info.duration, analysis.idle, { padding: 0.35, minLength: 0.8 });
-    kept += (spans.length > 0 ? spans : [{ start: 0, end: info.duration }]).reduce(
-      (n, s) => n + (s.end - s.start),
-      0
-    );
-    if (!voiced && (await detectVoicedAudio(video))) {
-      try {
-        voiced = await sniffSpeech(video);
-      } catch {
-        voiced = true;
-      }
-    }
-  }
-  const speed = speedFor(kept, Math.min(59, maxDuration));
-  return { outputDuration: kept / speed, voiced, videos: files.videos.length };
-}
-
-/**
- * Speak the script as separate lines and lay them on the timeline so they
- * land on cuts.
- *
- * Synthesising the whole script as one take produced a voice that ran
- * continuously while the footage jumped somewhere else: nothing lined up,
- * because nothing was ever asked to. Each sentence is now its own take,
- * placed by planNarrationBeats, with real silence between lines.
- */
-export function clipWindows(
-  clips: Array<{ kept: number }>,
-  speed: number,
-  offset: number
-): SectionWindow[] {
-  const out: SectionWindow[] = [];
-  let elapsed = offset;
-  for (const clip of clips) {
-    const end = elapsed + clip.kept / speed;
-    out.push({ start: elapsed, end });
-    elapsed = end;
-  }
-  return out;
-}
-
-/**
- * Output-time positions where one kept span meets the next. These are the
- * moments the picture cuts, and so the moments a line of narration should
- * be allowed to start on.
- */
-export function cutBoundaries(
-  clips: Array<{ spans: TimeSegment[] }>,
-  speed: number,
-  offset = 0
-): number[] {
-  const out: number[] = [offset];
-  let elapsed = 0;
-  for (const clip of clips) {
-    for (const span of clip.spans) {
-      out.push(offset + elapsed / speed);
-      elapsed += span.end - span.start;
-    }
-  }
-  return out;
-}
-
-interface PreparedClip {
-  source: string;
-  /**
-   * Transcript of the ORIGINAL voice, when there was one. Already paid for
-   * by retake de-duplication, so captioning a recorded voice costs nothing
-   * extra rather than a second pass.
-   */
-  transcript: TranscriptSegment[] | null;
-  spans: TimeSegment[];
-  luma: LumaStats | null;
-  kept: number;
-  retakesDropped: number;
-  voiced: boolean;
-}
-
-/**
- * Decide what to keep from one clip. Nothing is encoded here - the spans go
- * straight into the single render pass as a select expression.
- */
-async function prepareClip(
-  input: string,
-  index: number,
-  keepVoice: boolean,
-  /** Non-null when the result will be cached, so the denoised copy must persist. */
-  cacheKey: string | null,
-  workDir: string,
-  progress: (stage: string) => void
-): Promise<PreparedClip> {
-  let voiced = false;
-  // With voiceover: 'tts' the source audio is discarded whatever it holds,
-  // so asking whether it contains speech buys nothing and costs a whisper
-  // pass per clip. Speech recognition only earns its keep on audio we are
-  // actually going to use.
-  if (keepVoice && (await detectVoicedAudio(input))) {
-    progress(`listening for speech in clip ${index + 1}`);
-    try {
-      voiced = await sniffSpeech(input);
-    } catch {
-      voiced = true; // whisper unavailable - trust the volume signal
-    }
-  }
-
-  // Denoising only earns its cost when the voice survives into the output.
-  // Under a TTS narration the source audio is discarded anyway.
-  let source = input;
-  if (voiced && keepVoice) {
-    progress(`denoising clip ${index + 1}`);
-    // A cached plan points at this file, so when caching it has to live
-    // somewhere that survives the temp dir being torn down.
-    source = await cleanVoice({
-      input,
-      output: cacheKey
-        ? stableWorkPath(input, cacheKey, `clean-${index}`)
-        : join(workDir, `clean-${index}.mp4`),
-      onProgress: () => {},
-    });
-  }
-
-  const info = await getVideoInfo(source);
-  progress(`analysing clip ${index + 1}`);
-  const analysis = await analyzeClip(source);
-
-  let spans: TimeSegment[];
-  if (voiced) {
-    // The ORIGINAL file deliberately: cleanVoice loudnorms to -14 LUFS,
-    // which lifts quiet passages past silencedetect's threshold.
-    const silences = await detectSilence(input, {
-      minDuration: 1.2,
-      thresholdDb: -32,
-      videoDuration: info.duration,
-    });
-    spans = invertSegments(info.duration, silences, { padding: 0.25, minLength: 0.6 });
-  } else {
-    spans = invertSegments(info.duration, analysis.idle, { padding: 0.35, minLength: 0.8 });
-  }
-  if (spans.length === 0) spans = [{ start: 0, end: info.duration }];
-
-  let retakesDropped = 0;
-  let transcript: TranscriptSegment[] | null = null;
-  if (voiced && keepVoice) {
-    try {
-      progress(`transcribing clip ${index + 1} for retakes`);
-      const result = await transcribe(source, { model: 'base.en' });
-      transcript = result.segments;
-      const unique = dedupeRetakes(spansWithText(spans, result.segments));
-      retakesDropped = spans.length - unique.length;
-      spans = unique;
-    } catch {
-      // whisper unavailable - keep every span rather than dying
-    }
-  }
-
-  return {
-    source,
-    transcript,
-    spans,
-    luma: analysis.luma,
-    kept: spans.reduce((n, s) => n + (s.end - s.start), 0),
-    retakesDropped,
-    voiced,
-  };
-}
-
-/**
- * The whole edit as one filtergraph: per-clip trim and grade, framed to a
- * common canvas, concatenated, sped up, captions burned, narration over a
- * ducked bed.
- */
-export function buildRenderGraph(opts: {
-  /** `spans: null` means "use the whole clip, at natural speed" (an intro). */
-  clips: Array<{ spans: TimeSegment[] | null; luma: LumaStats | null }>;
-  speed: number;
-  contrast: number;
-  keepSourceAudio: boolean;
-  assPath?: string;
-  ttsIndex?: number;
-  musicIndex?: number;
-  musicVolume: number;
-  outputDuration: number;
-  canvas?: { width: number; height: number };
-  fill?: 'pad' | 'crop';
-  /** Per-clip playback rate; falls back to `speed` for every clip. */
-  clipSpeeds?: number[];
-  /** Rasterised CTA pill: which input carries it, and how tall it is. */
-  cta?: { index: number; height: number };
-}): string {
-  const { clips, speed, contrast, keepSourceAudio, assPath, ttsIndex, musicIndex } = opts;
-  const { width: outW, height: outH } = opts.canvas ?? { width: SHORT_W, height: SHORT_H };
-  const chains: string[] = [];
-
-  const measured = clips.flatMap((c) => (c.luma ? [c.luma] : []));
-  const target = measured.length > 0 ? averageStats(measured) : null;
-
-  clips.forEach((clip, i) => {
-    const grade =
-      target && clip.luma ? matchGrade(clip.luma, target, contrast) : { contrast, brightness: 0 };
-    // Trim, grade and frame in one go. Every clip lands on the same canvas
-    // because concat demands identical width/height/SAR.
-    // Speed is applied HERE, before the scale/blur, not after the concat.
-    // The kept footage is several times longer than the finished Short, so
-    // scaling it to 1080x1920 first means blurring thousands of frames that
-    // are about to be dropped - the single biggest cost in the render.
-    // An intro (spans === null) plays whole and at natural speed; footage
-    // is trimmed to its kept spans and swept up to the timelapse rate.
-    const rate = opts.clipSpeeds?.[i] ?? speed;
-    const head = clip.spans
-      ? `select='${buildSelectExpr(clip.spans)}',setpts=N/FRAME_RATE/TB,setpts=PTS/${rate},fps=30`
-      : 'fps=30,setpts=PTS-STARTPTS';
-    chains.push(
-      `[${i}:v]${head},` +
-        `eq=contrast=${grade.contrast}:brightness=${grade.brightness},split=2[bg${i}][fg${i}]`
-    );
-    chains.push(
-      `[bg${i}]scale=${Math.round(outW / 4)}:${Math.round(outH / 4)}:force_original_aspect_ratio=increase,` +
-        `crop=${Math.round(outW / 4)}:${Math.round(outH / 4)},gblur=sigma=8,scale=${outW}:${outH},` +
-        `drawbox=x=0:y=0:w=iw:h=ih:color=black@0.4:thickness=fill[bgb${i}]`
-    );
-    chains.push(
-      opts.fill === 'crop'
-        ? // Zoom until the canvas is covered, then trim the overflow. The
-          // blurred backdrop still exists underneath but is never seen.
-          `[fg${i}]scale=${outW}:${outH}:force_original_aspect_ratio=increase:flags=lanczos,` +
-            `crop=${outW}:${outH}[fgs${i}]`
-        : `[fg${i}]scale=${outW}:${outH}:force_original_aspect_ratio=decrease:flags=lanczos[fgs${i}]`
-    );
-    chains.push(`[bgb${i}][fgs${i}]overlay=(W-w)/2:(H-h)/2,setsar=1[n${i}]`);
-    if (keepSourceAudio && clip.spans) {
-      chains.push(`[${i}:a]aselect='${buildSelectExpr(clip.spans)}',asetpts=N/SR/TB[na${i}]`);
-    }
-  });
-
-  const vIn = clips.map((_, i) => `[n${i}]`).join('');
-  chains.push(`${vIn}concat=n=${clips.length}:v=1:a=0[cv]`);
-  const captions = assPath ? `,ass='${escapeFilterPath(assPath)}'` : '';
-  if (opts.cta) {
-    // Captions first, then the pill on top: a caption must never draw over
-    // the call to action.
-    chains.push(`[cv]${captions ? captions.slice(1) : 'null'},format=yuv420p[capped]`);
-    // Sits below the safe-area margin, centred, for the whole runtime.
-    const y = Math.round(outH * 0.045);
-    chains.push(`[capped][${opts.cta.index}:v]overlay=(W-w)/2:${y}:format=auto[v]`);
-  } else {
-    chains.push(`[cv]${captions ? captions.slice(1) : 'null'},format=yuv420p[v]`);
-  }
-
-  // ---- audio ----
-  let voiceLabel: string | null = null;
-  if (ttsIndex !== undefined) {
-    chains.push(`[${ttsIndex}:a]aresample=48000,aformat=channel_layouts=stereo,apad[voice]`);
-    voiceLabel = '[voice]';
-  } else if (keepSourceAudio) {
-    const aIn = clips.map((_, i) => `[na${i}]`).join('');
-    // Video speed happens per clip; the source audio still needs the same
-    // factor applied here, pitch-preserved.
-    chains.push(
-      `${aIn}concat=n=${clips.length}:v=0:a=1,${buildSpeedupAudioFilters(speed, 1, 48000)},aresample=48000[srcaud]`
-    );
-    voiceLabel = '[srcaud]';
-  }
-
-  if (musicIndex !== undefined) {
-    const fadeStart = Math.max(0, opts.outputDuration - 2);
-    chains.push(
-      `[${musicIndex}:a]aresample=48000,aformat=channel_layouts=stereo,` +
-        `atrim=0:${opts.outputDuration.toFixed(3)},asetpts=PTS-STARTPTS,` +
-        `volume=${opts.musicVolume},afade=t=in:st=0:d=1.5,` +
-        `afade=t=out:st=${fadeStart.toFixed(3)}:d=2[bed]`
-    );
-    if (voiceLabel) {
-      // Duck the bed under the voice rather than relying on level alone:
-      // present between lines, out of the way underneath them.
-      chains.push(`${voiceLabel}asplit=2[vmix][vkey]`);
-      chains.push(
-        '[bed][vkey]sidechaincompress=threshold=0.02:ratio=12:attack=15:release=350[duckedbed]'
-      );
-      chains.push('[duckedbed][vmix]amix=inputs=2:duration=first:normalize=0[a]');
-    } else {
-      chains.push('[bed]anull[a]');
-    }
-  } else if (voiceLabel) {
-    chains.push(`${voiceLabel}atrim=0:${opts.outputDuration.toFixed(3)}[premix]`);
-    chains.push('[premix]anull[mixed]');
-  }
-  // YouTube, Instagram and TikTok all normalise playback to roughly
-  // -14 LUFS. Arriving at that level means the platform leaves the audio
-  // alone instead of pulling it up or down. Skipped entirely when the
-  // Short is silent, since there would be no [a] to normalise.
-  const hasAudioChain = musicIndex !== undefined || voiceLabel !== null;
-  if (hasAudioChain) {
-    const last = chains[chains.length - 1];
-    if (last.endsWith('[a]')) {
-      chains[chains.length - 1] = `${last.slice(0, -3)}[mixed]`;
-    }
-    // loudnorm alone is not enough: in single-pass mode it cannot see the
-    // whole file's peaks in advance, so it estimates gain from a running
-    // measurement and overshoots on sharp transients - exactly what TTS
-    // consonants produce. Measured on a real render: TP=-1.5 was requested
-    // and the output peaked at +0.9 dBTP, past digital clipping. alimiter
-    // afterward is a hard, lookahead-based ceiling that catches whatever
-    // loudnorm's estimate missed, at -1 dBTP (YouTube's own ceiling).
-    chains.push(`[mixed]${MASTER_CHAIN}[a]`);
-  }
-
-  return chains.join(';');
-}
-
-/**
- * Encoder for the final pass. Real GPU encoders are worth it; integrated
- * VAAPI is not, because the expensive part of this graph is the CPU-side
- * blur and scale, and hwupload only adds a transfer.
- */
-async function fastEncoderArgs(): Promise<string[]> {
-  const gpu = await videoEncoderArgs();
-  if (gpu.includes('h264_nvenc')) return gpu;
-  return ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20'];
-}
+export {
+  clipWindows,
+  cutBoundaries,
+  planShort,
+  rephraseScript,
+  resolveScriptSource,
+} from './autoshort-stages.js';
 
 export async function autoShort(options: AutoShortOptions): Promise<AutoShortResult> {
   const { inputs, output } = options;
@@ -721,162 +210,36 @@ export async function autoShort(options: AutoShortOptions): Promise<AutoShortRes
       `Kept:     ${fmt.white(keptDuration.toFixed(1))}s of ${sourceDuration.toFixed(1)}s → ${fmt.green(outputDuration.toFixed(1))}s at ${fmt.yellow(`${speed.toFixed(1)}x`)}`
     );
 
-    // ---- narration resolved BEFORE a frame is touched ----
-    let script = rawScript;
-    if (rawScript && !options.scriptIsFinal) {
-      progress('rewriting narration');
-      const better = await time('rewrite', () => rephraseScript(rawScript, outputDuration));
-      if (better) script = better;
-    }
-
-    const wantTts = script !== '' && mode !== 'keep' && (mode === 'tts' || !voiced);
-    const keepSourceAudio = voiced && !wantTts && mode !== 'tts';
-
-    let ttsPath: string | undefined;
-    let narrationTakes: PlacedTake[] = [];
-    let narrationSeconds = 0;
-    let alignedStartsUsed = false;
-    if (wantTts) {
-      progress('generating narration');
-      // Look at the footage and decide where each line belongs, BEFORE
-      // anything is spoken or rendered. Falls back to proportional
-      // placement when there is no Groq key or the models are unavailable.
-      const usableEnd = Math.max(introSeconds + 1, outputDuration - tailPad);
-      let alignedStarts: number[] | null = null;
-      if (options.alignToContent !== false) {
-        alignedStarts = await time('align', async () => {
-          const frames = await describeTimeline({
-            clips,
-            speed,
-            introSeconds,
-            outputDuration: usableEnd,
-          });
-          if (frames.length === 0) return null;
-          const lines = splitSentences(script);
-          const assignment = await assignLinesToFrames(lines, frames);
-          if (!assignment) return null;
-          // Durations are not known until the audio exists, so estimate
-          // from words here; the exact values only shift starts slightly
-          // and the no-overlap pass fixes the rest.
-          const estimated = lines.map((l) => ({
-            duration: l.split(/\s+/).filter(Boolean).length / TTS_WPS,
-          }));
-          return startsFromAssignment(
-            estimated,
-            assignment,
-            frames.map((f) => f.outputTime),
-            leadIn,
-            usableEnd
-          );
-        });
-      }
-
-      const spoken = await time('tts', () =>
-        synthesizeNarration(
-          script,
-          workDir,
-          leadIn,
-          usableEnd,
-          cutBoundaries(clips, speed, introSeconds),
-          windowsFromSpeeds(
-            clips.map((c) => c.kept),
-            perClipSpeed,
-            introSeconds
-          ),
-          alignedStarts,
-          options
-        )
-      );
-      alignedStartsUsed = alignedStarts !== null;
-      ttsPath = spoken.path;
-      narrationTakes = spoken.takes;
-      narrationSeconds = await getMediaDuration(ttsPath);
-    }
-
-    // ---- caption timings come from the narration audio itself ----
-    let assPath: string | undefined;
-    // Kept outside the caption closure so the emitted project can carry the
-    // same lines as subtitle entries rather than re-deriving them.
-    let captionEntries: SrtEntry[] = [];
-    if (wantCaptions && !ttsPath && keepSourceAudio) {
-      // A recorded voice was kept, so caption THAT. The transcript already
-      // exists from retake de-duplication; without this the Short simply
-      // had no captions whenever the maker used their own voice.
-      progress('timing captions');
-      assPath = await time('captions', async () => {
-        const entries: SrtEntry[] = [];
-        captionEntries = entries;
-        clips.forEach((clip, ci) => {
-          for (const seg of clip.transcript ?? []) {
-            const start = sourceTimeToOutput(clips, speed, introSeconds, ci, seg.start);
-            const end = sourceTimeToOutput(clips, speed, introSeconds, ci, seg.end);
-            // A segment straddling a cut has no single place to live.
-            if (start === null || end === null || end <= start) continue;
-            entries.push({
-              index: entries.length + 1,
-              startTime: start,
-              endTime: end,
-              text: seg.text.trim(),
-              words: (seg.words ?? [])
-                .map((w) => {
-                  const ws = sourceTimeToOutput(clips, speed, introSeconds, ci, w.start);
-                  const we = sourceTimeToOutput(clips, speed, introSeconds, ci, w.end);
-                  return ws !== null && we !== null && we > ws
-                    ? { word: w.word, start: ws, end: we }
-                    : null;
-                })
-                .filter((w): w is NonNullable<typeof w> => w !== null),
-            });
-          }
-        });
-        if (entries.length === 0) return undefined;
-        const ass = generateShortsAss({
-          entries: entries.sort((a, b) => a.startTime - b.startTime),
-          videoWidth: referenceCanvas.width,
-          videoHeight: referenceCanvas.height,
-          fontSize: 48,
-          fontName: 'Arial Black',
-          position: 'bottom',
-          highlightColor: '&H00FFFF&',
-          maxChars: 28,
-        });
-        const p = join(workDir, 'captions.ass');
-        writeFileSync(p, ass, 'utf8');
-        return p;
-      });
-    } else if (wantCaptions && script && ttsPath) {
-      progress('timing captions');
-      assPath = await time('captions', async () => {
-        // NO transcription here. The narration is our own TTS, so the exact
-        // words and each line's measured duration are already known;
-        // running whisper over synthesised speech cost a pass per render
-        // and mis-heard the script ("Been working" came back as "I've
-        // been"). Real recorded voice is the only case that needs it.
-        captionEntries = narrationTakes.map((take, i) => {
-          const words = timeWordsInLine(take.text, take.start, take.duration);
-          return {
-            index: i + 1,
-            startTime: take.start,
-            endTime: take.start + take.duration,
-            text: take.text,
-            words,
-          };
-        });
-        const ass = generateShortsAss({
-          entries: captionEntries,
-          videoWidth: referenceCanvas.width,
-          videoHeight: referenceCanvas.height,
-          fontSize: 48,
-          fontName: 'Arial Black',
-          position: 'bottom',
-          highlightColor: '&H00FFFF&',
-          maxChars: 28,
-        });
-        const p = join(workDir, 'captions.ass');
-        writeFileSync(p, ass, 'utf8');
-        return p;
-      });
-    }
+    // ---- what it says, and what it shows as text ----
+    // Both settled before a frame is encoded, so a draft and a final
+    // render carry identical narration and identical captions.
+    const voice = await resolveVoiceAndCaptions({
+      rawScript,
+      options,
+      clips,
+      speed,
+      perClipSpeed,
+      introSeconds,
+      outputDuration,
+      leadIn,
+      tailPad,
+      mode,
+      voiced,
+      wantCaptions,
+      workDir,
+      referenceCanvas,
+      progress,
+      time,
+    });
+    const {
+      wantTts,
+      ttsPath,
+      narrationSeconds,
+      alignedStartsUsed,
+      keepSourceAudio,
+      assPath,
+      captionEntries,
+    } = voice;
 
     // ---- one render ----
     const wantRender = options.render !== false;
