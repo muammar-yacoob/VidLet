@@ -5,6 +5,7 @@
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename } from 'node:path';
+import { scoreYouTubeTitle, type TitleScore } from '@spark-apps/video-kit';
 import {
   type AbSidecar,
   type AbVerdict,
@@ -15,7 +16,6 @@ import {
 import { executeFFmpegRaw, getMediaDuration } from '../lib/ffmpeg.js';
 import { groqChatJSON } from '../lib/groq.js';
 import type { HashtagSuggestion } from '../lib/hashtags.js';
-import { type TitleScore, scoreYouTubeTitle } from '@spark-apps/video-kit';
 import { getVideoStats, setThumbnail, updateVideoMeta, uploadVideo } from '../lib/youtube.js';
 
 export interface TitleVariant {

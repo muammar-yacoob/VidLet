@@ -7,6 +7,7 @@
  * Split out of autoshort.ts to keep synthesis separate from rendering.
  */
 import { join } from 'node:path';
+import type { SectionWindow } from '../lib/autoshort-plan.js';
 import {
   allocateLinesToSections,
   fitBeatsToRuntime,
@@ -15,7 +16,6 @@ import {
   splitSentences,
   toSpokenForm,
 } from '../lib/autoshort-plan.js';
-import type { SectionWindow } from '../lib/autoshort-plan.js';
 import { executeFFmpegRaw, getMediaDuration } from '../lib/ffmpeg.js';
 import { putCached, takeCached, ttsKey } from '../lib/tts-cache.js';
 import { generateNarrationAudio } from './voiceover.js';

@@ -4,7 +4,7 @@
  * recordings. Pure ffmpeg + pngjs (already a dependency): sample frame
  * pairs, diff pixels, take the horizontal centroid of what changed.
  */
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PNG } from 'pngjs';

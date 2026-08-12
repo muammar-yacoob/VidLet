@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { centroidToCropX, diffCentroidX } from '../lib/motion.js';
 import {
-  MIN_CLIP_LENGTH,
   batchOutputName,
   dropCrossShortOverlaps,
   formatTranscript,
+  MIN_CLIP_LENGTH,
   sanitizeClips,
 } from './short.js';
 

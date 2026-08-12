@@ -28,11 +28,11 @@ import { changeExtension } from '../lib/paths.js';
 import {
   type MediaEntry,
   type OverlayClip,
-  type VideoClip,
-  type VidletProject,
   parseProject,
   projectDuration,
   resolveProjectMedia,
+  type VideoClip,
+  type VidletProject,
 } from '../lib/vidlet-project.js';
 import { hasAudioClips, mixProjectAudio } from './render-audio.js';
 import { buildSpeedupAudioFilters } from './speedup.js';

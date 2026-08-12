@@ -4,8 +4,7 @@
  */
 import { statSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { getVideoInfo } from '../lib/ffmpeg.js';
-import { checkFFmpeg } from '../lib/ffmpeg.js';
+import { checkFFmpeg, getVideoInfo } from '../lib/ffmpeg.js';
 import { changeExtension, getOutputPath } from '../lib/paths.js';
 import { extractAudio } from '../tools/audio.js';
 import { caption } from '../tools/caption.js';
@@ -15,14 +14,14 @@ import { speedup } from '../tools/speedup.js';
 import { togif } from '../tools/togif.js';
 import { trim } from '../tools/trim.js';
 import {
-  PATH_PROPERTY,
   fileResult,
-  type ToolDefinition,
-  type ToolHandler,
   jsonContent,
+  PATH_PROPERTY,
   resolveInputPath,
   runWriteTool,
   safeOutputPath,
+  type ToolDefinition,
+  type ToolHandler,
   withSilencedStdout,
 } from './shared.js';
 

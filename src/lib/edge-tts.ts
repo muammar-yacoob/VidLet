@@ -1,4 +1,4 @@
-import { MULTILINGUAL_VOICES, resolveVoice as kitResolveVoice } from '@spark-apps/video-kit';
+import { resolveVoice as kitResolveVoice, MULTILINGUAL_VOICES } from '@spark-apps/video-kit';
 
 /**
  * Edge TTS - Free Microsoft Edge neural voices via msedge-tts.

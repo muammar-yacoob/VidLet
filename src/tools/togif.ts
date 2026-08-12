@@ -1,7 +1,7 @@
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { type ToGifConfig, getToolConfig } from '../lib/config.js';
+import { getToolConfig, type ToGifConfig } from '../lib/config.js';
 import { checkFFmpeg, executeFFmpeg, executeFFmpegMultiInput } from '../lib/ffmpeg.js';
 import { fmt, header, separator, success } from '../lib/logger.js';
 import { changeExtension } from '../lib/paths.js';

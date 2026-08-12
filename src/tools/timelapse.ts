@@ -8,15 +8,14 @@
  * clock would drift further out with every cut. buildSourceTimeExpr rebuilds
  * the exact mapping as an ffmpeg expression instead.
  */
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { checkFFmpeg, executeFFmpegWithProgress, getVideoInfo } from '../lib/ffmpeg.js';
 import { fmt, header, separator, success } from '../lib/logger.js';
 import { detectIdleSpans } from '../lib/motion.js';
 import { getOutputPath } from '../lib/paths.js';
-import { type TimeSegment, invertSegments } from '../lib/segments.js';
+import { invertSegments, type TimeSegment } from '../lib/segments.js';
 
 export interface TimelapseOptions {
   input: string;

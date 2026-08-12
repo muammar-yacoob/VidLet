@@ -37,7 +37,7 @@
   </div>
 <script src="lottie_light.min.js"></script>
 <script>
-(function() {
+(() => {
   var currentAnim = null;
   var lastAnimHash = '';
   var animPct = 5;
@@ -68,7 +68,7 @@
 
   function poll() {
     if (isDone) return;
-    fetch('/api/state').then(function(r) { return r.json(); }).then(function(s) {
+    fetch('/api/state').then((r) => r.json()).then((s) => {
       // Animation preview
       if (s.animationJson) {
         loadAnim(s.animationJson);
@@ -95,15 +95,15 @@
         var res = document.getElementById('result');
         res.innerText = s.doneMessage;
         res.style.display = 'block';
-        setTimeout(function() {
+        setTimeout(() => {
           document.body.className = 'fade-out';
-          setTimeout(function() { window.close(); }, 400);
+          setTimeout(() => { window.close(); }, 400);
         }, 3500);
         return;
       }
 
       setTimeout(poll, 200);
-    }).catch(function() {
+    }).catch(() => {
       setTimeout(poll, 500);
     });
   }

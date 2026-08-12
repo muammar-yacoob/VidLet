@@ -1,4 +1,4 @@
-import { type ShrinkConfig, getToolConfig } from '../lib/config.js';
+import { getToolConfig, type ShrinkConfig } from '../lib/config.js';
 import { checkFFmpeg, executeFFmpeg, getVideoInfo } from '../lib/ffmpeg.js';
 import { fmt, header, separator, success, warn } from '../lib/logger.js';
 import { getOutputPath } from '../lib/paths.js';

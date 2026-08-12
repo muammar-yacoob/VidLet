@@ -11,7 +11,7 @@ import { logToFile } from '../lib/logger.js';
 import { setProcessStatus } from '../lib/process-status.js';
 import { analyzeVoice } from './cleanvoice.js';
 import { findAllLoopPoints, findBestLoopStart, findMatchesFromEnd } from './loop.js';
-import { type ToolOptions, runTool } from './vidlet-run.js';
+import { runTool, type ToolOptions } from './vidlet-run.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 

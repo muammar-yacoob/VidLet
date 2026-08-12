@@ -6,8 +6,8 @@
  * result into the `{ success, output, logs }` shape the pages expect. This
  * module owns that shape so each tool only declares what differs.
  */
-import { type ToolsConfig, getToolConfig } from '../lib/config.js';
-import { type VideoInfo, getVideoInfoForGui, startGuiServer } from '../lib/gui-server.js';
+import { getToolConfig, type ToolsConfig } from '../lib/config.js';
+import { getVideoInfoForGui, startGuiServer, type VideoInfo } from '../lib/gui-server.js';
 
 /** Form values posted back by a GUI page. */
 export type GuiOptions = Record<string, unknown>;

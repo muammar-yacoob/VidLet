@@ -81,8 +81,10 @@
 [data-ai-wand] {
   position: relative;
   animation: aiGlow 2.5s ease-in-out infinite;
-  cursor: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAABGdBTUEAALGPC/xhBQAAACBjSFJNAAB6JgAAgIQAAPoAAACA6AAAdTAAAOpgAAA6mAAAF3CculE8AAAABmJLR0QA/wD/AP+gvaeTAAAAB3RJTUUH6gQBCzggFpMgMwAAAX1JREFUWMPt1DFrwkAYxvGnrUjBoYQukqEYGgc7dBLBxaFjUJyke5dunf0AHZykOLZrN4fT5RbpJ1A7dKiQRDoZXKSBILQk8HYSJKDE5JIu+W8H73E/juOAtLS0PfV6vSsiotls9tvtds8SO5gxVplOp59ERLZtU+KI8Xj8TlsljmCMVcjXNkKW5dPYEf1+/2YXol6vm/+GaLVa1Ol0qFar6YkjRqMRKYpC1WpVGOIkAOBLUZQ3y7LuBoMBJEmCrutYLBZoNBrnq9Xq1nXdF8dxvDCAo6CDmqZd5nI5c7OeTCbI5/NoNpvgnBumaV5blvUj/AY2GYbxXSgUXrPZ7AMAyLIs5CYCA+JCHASIA3EwQDQiFEAkIjRAFCISQAQiMiAqQgggCuJYFAAAOOfz9XqtbtblchnL5RLD4RCaphVVVf3w7wn8FR/Svm8bgNRut+1YAbsQpVKpyDk3t+diA/gRnuc9M8bu/TNC34A/zvkcwAWAp0wm8xjnWWmh+wM1Nr64KCSlaAAAACV0RVh0ZGF0ZTpjcmVhdGUAMjAyNi0wNC0wMVQxMTo1NjozMiswMDowMBytUj0AAAAldEVYdGRhdGU6bW9kaWZ5ADIwMjYtMDQtMDFUMTE6NTY6MzIrMDA6MDBt8OqBAAAAAElFTkSuQmCC")
-    6 5, pointer;
+  cursor:
+    url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAABGdBTUEAALGPC/xhBQAAACBjSFJNAAB6JgAAgIQAAPoAAACA6AAAdTAAAOpgAAA6mAAAF3CculE8AAAABmJLR0QA/wD/AP+gvaeTAAAAB3RJTUUH6gQBCzggFpMgMwAAAX1JREFUWMPt1DFrwkAYxvGnrUjBoYQukqEYGgc7dBLBxaFjUJyke5dunf0AHZykOLZrN4fT5RbpJ1A7dKiQRDoZXKSBILQk8HYSJKDE5JIu+W8H73E/juOAtLS0PfV6vSsiotls9tvtds8SO5gxVplOp59ERLZtU+KI8Xj8TlsljmCMVcjXNkKW5dPYEf1+/2YXol6vm/+GaLVa1Ol0qFar6YkjRqMRKYpC1WpVGOIkAOBLUZQ3y7LuBoMBJEmCrutYLBZoNBrnq9Xq1nXdF8dxvDCAo6CDmqZd5nI5c7OeTCbI5/NoNpvgnBumaV5blvUj/AY2GYbxXSgUXrPZ7AMAyLIs5CYCA+JCHASIA3EwQDQiFEAkIjRAFCISQAQiMiAqQgggCuJYFAAAOOfz9XqtbtblchnL5RLD4RCaphVVVf3w7wn8FR/Svm8bgNRut+1YAbsQpVKpyDk3t+diA/gRnuc9M8bu/TNC34A/zvkcwAWAp0wm8xjnWWmh+wM1Nr64KCSlaAAAACV0RVh0ZGF0ZTpjcmVhdGUAMjAyNi0wNC0wMVQxMTo1NjozMiswMDowMBytUj0AAAAldEVYdGRhdGU6bW9kaWZ5ADIwMjYtMDQtMDFUMTE6NTY6MzIrMDA6MDBt8OqBAAAAAElFTkSuQmCC")
+    6 5,
+    pointer;
   will-change: filter;
   transform: translateZ(0);
 }
@@ -114,16 +116,16 @@
   animation: aiOrbit1 1.8s linear infinite;
 }
 [data-ai-wand]:hover::after {
-  animation: aiOrbit2 2.4s linear infinite .2s;
+  animation: aiOrbit2 2.4s linear infinite 0.2s;
 }
 
 /* ── Tooltip ──────────────────────────────────────────────────────────────── */
 
 [data-ai-tip="in"] {
-  animation: aiTipIn .13s cubic-bezier(0.2, 0, 0.2, 1) forwards;
+  animation: aiTipIn 0.13s cubic-bezier(0.2, 0, 0.2, 1) forwards;
 }
 [data-ai-tip="out"] {
-  animation: aiTipOut .25s ease-in forwards;
+  animation: aiTipOut 0.25s ease-in forwards;
 }
 
 .ai-spark-link {
@@ -173,7 +175,9 @@
   white-space: nowrap;
   min-width: 60px;
   text-align: center;
-  transition: color 0.15s, border-color 0.15s;
+  transition:
+    color 0.15s,
+    border-color 0.15s;
 }
 .comparison-copy-btn:hover {
   color: #c084fc;

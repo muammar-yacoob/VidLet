@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MIN_IDLE_SECONDS, idleRunsToSegments, pickShortSpans } from './demo.js';
+import { idleRunsToSegments, MIN_IDLE_SECONDS, pickShortSpans } from './demo.js';
 
 describe('idleRunsToSegments', () => {
   // interval 0.5s, minimum idle 2s => 4 consecutive static steps

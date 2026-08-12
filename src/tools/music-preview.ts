@@ -7,7 +7,7 @@
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { executeFFmpegRaw } from '../lib/ffmpeg.js';
-import { type ResolvedTrack, listBundledMusic } from '../lib/music.js';
+import { listBundledMusic, type ResolvedTrack } from '../lib/music.js';
 
 export interface MusicPreview {
   mood: string;

@@ -13,22 +13,21 @@ import { getMediaDuration } from '../lib/ffmpeg.js';
 import { changeExtension } from '../lib/paths.js';
 import { buildProject, detectQuickPeek, sniffSource } from '../lib/project-create.js';
 import {
-  type VidletProject,
   parseProject,
   projectDuration,
   resolveProjectMedia,
   serializeProject,
   sha256File,
   touchModified,
+  type VidletProject,
 } from '../lib/vidlet-project.js';
 import { renderProject } from '../tools/render.js';
 import {
-  MAX_SCRIPT_LENGTH,
   generateNarrationAudio,
+  MAX_SCRIPT_LENGTH,
   resolveCloneEngine,
 } from '../tools/voiceover.js';
 import {
-  type ToolHandler,
   editorBaseUrl,
   jsonContent,
   maxSafeUrlLength,
@@ -38,6 +37,7 @@ import {
   resolveInputPath,
   runWriteTool,
   safeOutputPath,
+  type ToolHandler,
   withSilencedStdout,
 } from './shared.js';
 

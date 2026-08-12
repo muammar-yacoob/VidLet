@@ -5,7 +5,7 @@ import * as vidletMain from '../tools/vidlet-main.js';
 import { type Tool, type ToolConfig, toolConfigs, tools } from './tool-defs.js';
 
 export type { Tool, ToolConfig };
-export { tools, toolConfigs };
+export { toolConfigs, tools };
 
 /**
  * Get tool by ID

@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
-  SHORTS_MAX_CHARS,
   chunkWordsToLines,
   estimateTextWidth,
   fittingMaxChars,
   generateShortsAss,
   isUrlOrEmail,
   mergePunctuationTokens,
+  SHORTS_MAX_CHARS,
   scaleToFit,
   toCaptionCase,
 } from './caption.js';

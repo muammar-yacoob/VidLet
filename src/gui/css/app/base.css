@@ -21,7 +21,10 @@
 body {
   background: var(--bg);
   color: var(--txt);
-  font: 12px / 1.4 system-ui, -apple-system, sans-serif;
+  font:
+    12px / 1.4 system-ui,
+    -apple-system,
+    sans-serif;
   overflow-x: hidden;
 }
 .app {
@@ -107,7 +110,7 @@ body {
   background: rgba(168, 85, 247, 0.1);
   border: 1px solid rgba(168, 85, 247, 0.3);
   border-radius: 4px;
-  transition: all .2s;
+  transition: all 0.2s;
   font-weight: 500;
 }
 .hd-link:hover {
@@ -126,7 +129,7 @@ body {
   background: rgba(255, 221, 0, 0.1);
   border: 1px solid rgba(255, 221, 0, 0.25);
   border-radius: 4px;
-  transition: all .2s;
+  transition: all 0.2s;
   font-weight: 500;
 }
 .hd-coffee:hover {
@@ -196,7 +199,7 @@ body {
   padding: 8px 10px;
   border-radius: 6px;
   cursor: pointer;
-  transition: all .12s;
+  transition: all 0.12s;
   margin-bottom: 2px;
 }
 .tool:hover {
@@ -237,7 +240,7 @@ body {
   color: #fbbf24;
   font-size: 12px;
   opacity: 0;
-  transition: opacity .3s ease;
+  transition: opacity 0.3s ease;
   pointer-events: none;
 }
 .feature-star.show {

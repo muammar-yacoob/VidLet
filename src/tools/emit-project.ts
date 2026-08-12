@@ -18,10 +18,10 @@ import { getMediaDuration, getVideoInfo } from '../lib/ffmpeg.js';
 import type { TimeSegment } from '../lib/segments.js';
 import {
   type MediaEntry,
-  VIDLET_FORMAT_VERSION,
-  type VidletProject,
   serializeProject,
   sha256File,
+  VIDLET_FORMAT_VERSION,
+  type VidletProject,
 } from '../lib/vidlet-project.js';
 
 export interface EmitProjectInput {

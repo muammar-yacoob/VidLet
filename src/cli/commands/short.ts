@@ -17,7 +17,7 @@ export function registerShortCommand(program: Command): void {
     .action(async (file: string, options) => {
       try {
         await short({
-          count: options.count ? Number.parseInt(options.count) : undefined,
+          count: options.count ? Number.parseInt(options.count, 10) : undefined,
           input: await resolveInputPath(file),
           output: options.o,
           maxDuration: options.d ? Math.min(60, Number.parseFloat(options.d)) : undefined,

@@ -1,4 +1,4 @@
-import { type ToolDefinition, type ToolHandler, errorContent, jsonContent } from './shared.js';
+import { errorContent, jsonContent, type ToolDefinition, type ToolHandler } from './shared.js';
 /**
  * VidLet MCP tool registry — bundled by tsup as dist/mcp-tools.js and
  * consumed by mcp.js (the stdio bootstrap at the repo root). Tool schemas
@@ -44,5 +44,5 @@ export const TOOL_HANDLERS: Record<string, ToolHandler> = {
   ...YOUTUBE_HANDLERS,
 };
 
-export { errorContent, jsonContent };
 export type { ToolDefinition, ToolHandler, ToolResult } from './shared.js';
+export { errorContent, jsonContent };

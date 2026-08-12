@@ -74,7 +74,7 @@
   font-size: 10px;
   font-weight: 500;
   cursor: pointer;
-  transition: all .15s;
+  transition: all 0.15s;
 }
 .match-btn:hover {
   filter: brightness(1.1);
@@ -91,7 +91,7 @@
   font-size: 10px;
   font-weight: 500;
   cursor: pointer;
-  transition: all .15s;
+  transition: all 0.15s;
 }
 .find-btn:hover {
   background: var(--acc);
@@ -108,10 +108,14 @@
 @keyframes btnGlow {
   0%,
   100% {
-    box-shadow: 0 0 8px rgba(168, 85, 247, 0.4), 0 0 16px rgba(168, 85, 247, 0.2);
+    box-shadow:
+      0 0 8px rgba(168, 85, 247, 0.4),
+      0 0 16px rgba(168, 85, 247, 0.2);
   }
   50% {
-    box-shadow: 0 0 16px rgba(168, 85, 247, 0.8), 0 0 32px rgba(168, 85, 247, 0.4);
+    box-shadow:
+      0 0 16px rgba(168, 85, 247, 0.8),
+      0 0 32px rgba(168, 85, 247, 0.4);
   }
 }
 .auto-zoom-btn {
@@ -123,7 +127,7 @@
   border-radius: 4px;
   color: var(--txt3);
   cursor: pointer;
-  transition: all .15s;
+  transition: all 0.15s;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -240,11 +244,13 @@
   width: 5px;
   background: linear-gradient(180deg, #52525b, #3f3f46);
   cursor: ew-resize;
-  transition: all .15s ease;
+  transition: all 0.15s ease;
   z-index: 10;
   left: 0;
   border-radius: 2px;
-  box-shadow: 0 0 0 1px rgba(168, 85, 247, 0.3), 0 2px 8px rgba(0, 0, 0, 0.5);
+  box-shadow:
+    0 0 0 1px rgba(168, 85, 247, 0.3),
+    0 2px 8px rgba(0, 0, 0, 0.5);
 }
 .timeline-handle::before,
 .timeline-handle::after {
@@ -253,7 +259,7 @@
   width: 8px;
   height: 4px;
   background: linear-gradient(180deg, #52525b, #3f3f46);
-  transition: all .15s ease;
+  transition: all 0.15s ease;
   border-radius: 2px;
 }
 .timeline-handle::before {
@@ -284,8 +290,10 @@
 .timeline-handle:hover,
 .timeline-handle.dragging {
   background: linear-gradient(180deg, #7c3aed, #6d28d9);
-  box-shadow: 0 0 0 1px rgba(168, 85, 247, 0.6), 0 0 12px rgba(139, 92, 246, 0.4), 0 2px 8px
-    rgba(0, 0, 0, 0.4);
+  box-shadow:
+    0 0 0 1px rgba(168, 85, 247, 0.6),
+    0 0 12px rgba(139, 92, 246, 0.4),
+    0 2px 8px rgba(0, 0, 0, 0.4);
 }
 .timeline-handle:hover::before,
 .timeline-handle:hover::after,
@@ -303,7 +311,10 @@
   pointer-events: none;
   z-index: 8;
   box-shadow: 0 0 4px rgba(255, 255, 255, 0.8);
-  transition: background .15s, box-shadow .15s, width .15s;
+  transition:
+    background 0.15s,
+    box-shadow 0.15s,
+    width 0.15s;
 }
 .timeline-playhead.fine-mode {
   width: 3px;
@@ -330,7 +341,7 @@
   border-radius: 0;
   pointer-events: auto;
   cursor: pointer;
-  transition: all .15s;
+  transition: all 0.15s;
 }
 .match-marker:hover {
   transform: scaleX(2);
@@ -343,7 +354,7 @@
   font-size: 8px;
   color: var(--txt3);
   opacity: 0;
-  transition: opacity .2s;
+  transition: opacity 0.2s;
   pointer-events: none;
 }
 .timeline-wrap:hover .timeline-zoom-hint {

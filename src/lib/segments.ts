@@ -11,9 +11,9 @@ import { executeFFmpegAnalysis } from './ffmpeg.js';
 
 export {
   type InvertOptions,
-  type TimeSegment,
   invertSegments,
   mergeOverlappingSegments,
+  type TimeSegment,
 } from '@spark-apps/video-kit';
 
 export interface DetectSilenceOptions {
@@ -71,5 +71,3 @@ export async function detectSilence(
 
   return segments;
 }
-
-

@@ -167,7 +167,7 @@
   color: var(--txt2);
   font-size: 10px;
   cursor: pointer;
-  transition: all .15s;
+  transition: all 0.15s;
 }
 .seg-btns button:first-child {
   border-radius: 4px 0 0 4px;
@@ -250,7 +250,7 @@
   border-radius: 3px;
   color: var(--txt3);
   cursor: pointer;
-  transition: all .15s;
+  transition: all 0.15s;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -324,7 +324,7 @@
   color: var(--txt3);
   font-size: 8px;
   cursor: pointer;
-  transition: all .15s;
+  transition: all 0.15s;
 }
 .effect-btn:hover {
   border-color: var(--txt3);
@@ -362,7 +362,7 @@
   color: var(--txt3);
   font-size: 9px;
   cursor: pointer;
-  transition: all .15s;
+  transition: all 0.15s;
 }
 .filter-preset:hover {
   border-color: var(--txt3);
@@ -431,7 +431,7 @@
   border-radius: 50%;
   border: 2px solid transparent;
   cursor: pointer;
-  transition: all .15s;
+  transition: all 0.15s;
   padding: 0;
 }
 .color-swatch:hover {

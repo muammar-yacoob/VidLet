@@ -16,7 +16,7 @@ import { groqChatJSON } from '../lib/groq.js';
 import { fmt, header, separator, success } from '../lib/logger.js';
 import { estimateCropX } from '../lib/motion.js';
 import { getOutputPath } from '../lib/paths.js';
-import { type TranscriptSegment, type WhisperModel, transcribe } from '../lib/whisper.js';
+import { type TranscriptSegment, transcribe, type WhisperModel } from '../lib/whisper.js';
 import { type CaptionStyle, caption } from './caption.js';
 import { type PortraitSegment, portraitMultiSegment } from './shorts.js';
 import { uniquePath } from './voiceover.js';

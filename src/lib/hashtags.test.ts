@@ -1,7 +1,7 @@
+import { scoreYouTubeTitle } from '@spark-apps/video-kit';
 import { describe, expect, it } from 'vitest';
 import { topicFromFilename } from '../tools/youtube-short.js';
-import { TAG_BLACKLIST, fmtViews, normalizeTag } from './hashtags.js';
-import { scoreYouTubeTitle } from '@spark-apps/video-kit';
+import { fmtViews, normalizeTag, TAG_BLACKLIST } from './hashtags.js';
 
 describe('normalizeTag', () => {
   it('lowercases, strips spaces and symbols, caps at 30 chars', () => {

@@ -20,6 +20,7 @@
 import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
+import { MASTER_CHAIN } from '@spark-apps/video-kit';
 import {
   classifyInputs,
   dedupeRetakes,
@@ -38,14 +39,13 @@ import {
   getVideoInfo,
   videoEncoderArgs,
 } from '../lib/ffmpeg.js';
-import { type LumaStats, averageStats, matchGrade } from '../lib/grade.js';
+import { averageStats, type LumaStats, matchGrade } from '../lib/grade.js';
 import { fmt, header, separator, success } from '../lib/logger.js';
 import { type ResolvedTrack, resolveMusicChoice } from '../lib/music.js';
 import { planKey, readPlan, stableWorkPath, writePlan } from '../lib/plan-cache.js';
-import { MASTER_CHAIN } from '@spark-apps/video-kit';
-import { type TimeSegment, detectSilence, invertSegments } from '../lib/segments.js';
+import { detectSilence, invertSegments, type TimeSegment } from '../lib/segments.js';
 import { type TranscriptSegment, transcribe } from '../lib/whisper.js';
-import { type SrtEntry, generateShortsAss } from './caption.js';
+import { generateShortsAss, type SrtEntry } from './caption.js';
 import { cleanVoice } from './cleanvoice.js';
 import { renderCtaPng } from './cta-overlay.js';
 import { emitVidletProject, projectPathFor } from './emit-project.js';
@@ -55,44 +55,44 @@ import { buildSelectExpr, escapeFilterPath } from './timelapse.js';
 
 export {
   type ClassifiedInputs,
-  type SpokenSpan,
   classifyInputs,
   dedupeRetakes,
-  scriptToSrt,
+  fitBeatsToRuntime,
   planNarrationBeats,
+  type SpokenSpan,
+  scriptToSrt,
   spansWithText,
   speedFor,
   speedPerSection,
   splitScriptSections,
   splitSentences,
   subtitleToText,
-  windowsFromSpeeds,
-  fitBeatsToRuntime,
   timeWordsInLine,
   toSpokenForm,
+  windowsFromSpeeds,
 } from '../lib/autoshort-plan.js';
+
 import {
   type SectionWindow,
   sourceTimeToOutput,
   startsFromAssignment,
 } from '../lib/autoshort-plan.js';
-import { assignLinesToFrames, describeTimeline } from './narration-align.js';
-
 import {
-  DRAFT_H,
-  DRAFT_W,
-  SHORT_H,
-  SHORT_W,
   analyzeClip,
   chooseCanvas,
+  DRAFT_H,
+  DRAFT_W,
   detectVoicedAudio,
+  SHORT_H,
+  SHORT_W,
   sniffSpeech,
 } from './autoshort-analysis.js';
 import { type PlacedTake, synthesizeNarration } from './autoshort-narration.js';
+import { assignLinesToFrames, describeTimeline } from './narration-align.js';
 
 export {
-  type ClipAnalysis,
   analyzeClip,
+  type ClipAnalysis,
   chooseCanvas,
   detectVoicedAudio,
   measureLuma,

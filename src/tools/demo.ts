@@ -19,7 +19,7 @@ import { GROQ_MODELS, groqChatJSON, visionMessage } from '../lib/groq.js';
 import { fmt, header, separator, success } from '../lib/logger.js';
 import { detectIdleSpans, estimateCropX } from '../lib/motion.js';
 import { getOutputPath } from '../lib/paths.js';
-import { type TimeSegment, invertSegments } from '../lib/segments.js';
+import { invertSegments, type TimeSegment } from '../lib/segments.js';
 import { type CaptionStyle, caption } from './caption.js';
 import { generatePostCopy } from './short.js';
 import { portraitMultiSegment } from './shorts.js';
@@ -51,7 +51,7 @@ export const SHORT_MAX_SECONDS = 55;
 // Idle detection now lives in lib/motion.ts, next to the pixel diff it uses,
 // so the timelapse pipeline can reach it without importing this module (and
 // with it Groq, TTS and captioning). Re-exported for existing callers.
-export { MIN_IDLE_SECONDS, idleRunsToSegments } from '../lib/motion.js';
+export { idleRunsToSegments, MIN_IDLE_SECONDS } from '../lib/motion.js';
 
 /** Pick chronological spans totaling at most maxTotal seconds, longest-first preference. */
 export function pickShortSpans(spans: TimeSegment[], maxTotal: number): TimeSegment[] {

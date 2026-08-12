@@ -74,7 +74,7 @@ export function createProgram(): Command {
   return program;
 }
 
+export * from './registry.js';
 // Re-export tools and utilities
 export * from './tools.js';
-export * from './registry.js';
 export * from './utils.js';

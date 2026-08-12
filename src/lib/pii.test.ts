@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
-  type OcrWord,
   classifyText,
   luhnValid,
+  type OcrWord,
   regionsForFrame,
   unionRegions,
   withinAreaLimit,

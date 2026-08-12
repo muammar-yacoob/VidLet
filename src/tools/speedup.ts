@@ -1,4 +1,4 @@
-import { type SpeedupConfig, getToolConfig } from '../lib/config.js';
+import { getToolConfig, type SpeedupConfig } from '../lib/config.js';
 import { checkFFmpeg, checkNvenc, executeFFmpegWithProgress, getVideoInfo } from '../lib/ffmpeg.js';
 import { fmt, header, separator, success, warn } from '../lib/logger.js';
 import { getOutputPath } from '../lib/paths.js';

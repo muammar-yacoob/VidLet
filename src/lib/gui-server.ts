@@ -8,7 +8,7 @@ import * as os from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
-import { type GuiServerOptions, type VideoInfo, registerApiRoutes } from './gui-api.js';
+import { type GuiServerOptions, registerApiRoutes, type VideoInfo } from './gui-api.js';
 import { cleanupSignalFiles, signalLoadingComplete } from './loading-window.js';
 import { logToFile } from './logger.js';
 

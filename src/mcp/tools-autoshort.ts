@@ -27,14 +27,14 @@ import {
 import { maskSensitive } from '../tools/mask.js';
 import { previewMusic } from '../tools/music-preview.js';
 import {
-  type ToolDefinition,
-  type ToolHandler,
   fileResult,
   fileUrl,
   jsonContent,
   resolveInputPath,
   runWriteTool,
   safeOutputPath,
+  type ToolDefinition,
+  type ToolHandler,
   withSilencedStdout,
   writeThumbnail,
 } from './shared.js';

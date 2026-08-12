@@ -10,8 +10,8 @@ import { execa } from 'execa';
 import { getMediaDuration, getVideoInfo } from './ffmpeg.js';
 import {
   type MediaEntry,
-  type VidletProject,
   sha256File,
+  type VidletProject,
   vidletProjectSchema,
 } from './vidlet-project.js';
 

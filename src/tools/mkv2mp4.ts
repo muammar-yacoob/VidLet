@@ -1,4 +1,4 @@
-import { type Mkv2Mp4Config, getToolConfig } from '../lib/config.js';
+import { getToolConfig, type Mkv2Mp4Config } from '../lib/config.js';
 import { buildH264Args, checkFFmpeg, executeFFmpeg, getVideoInfo } from '../lib/ffmpeg.js';
 import { fmt, header, separator, success } from '../lib/logger.js';
 import { changeExtension } from '../lib/paths.js';

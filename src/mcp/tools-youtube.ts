@@ -11,8 +11,7 @@
  * loose phrasing.
  */
 import { existsSync } from 'node:fs';
-import { fmtViews } from '../lib/hashtags.js';
-import { suggestHashtags } from '../lib/hashtags.js';
+import { fmtViews, suggestHashtags } from '../lib/hashtags.js';
 import {
   connectYouTube,
   getChannel,
@@ -29,11 +28,11 @@ import {
   topicFromFilename,
 } from '../tools/youtube-short.js';
 import {
-  type ToolDefinition,
-  type ToolHandler,
   fileUrl,
   jsonContent,
   resolveInputPath,
+  type ToolDefinition,
+  type ToolHandler,
   withSilencedStdout,
 } from './shared.js';
 

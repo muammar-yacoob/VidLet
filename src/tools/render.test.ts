@@ -4,8 +4,7 @@ import { join } from 'node:path';
 import { execa } from 'execa';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { checkFFmpeg, getVideoInfo } from '../lib/ffmpeg.js';
-import { sha256File } from '../lib/vidlet-project.js';
-import { parseProject } from '../lib/vidlet-project.js';
+import { parseProject, sha256File } from '../lib/vidlet-project.js';
 import { buildSubtitleAss, parseResolution, renderProject } from './render.js';
 
 const hasFFmpeg = await checkFFmpeg();

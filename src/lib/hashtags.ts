@@ -10,24 +10,23 @@
  * quota units) and ONE Groq chat per invocation.
  */
 import {
-  type HashtagSuggestion,
-  type TagHit,
-  TAG_BLACKLIST,
   fmtViews,
+  type HashtagSuggestion,
   normalizeTag,
+  TAG_BLACKLIST,
+  type TagHit,
 } from '@spark-apps/video-kit';
 import { groqChatJSON } from './groq.js';
 
 // Vocabulary and normalisation come from the kit: the same video must
 // get the same tags whichever Spark tool posts it.
 export {
-  type HashtagSuggestion,
-  type TagHit,
-  TAG_BLACKLIST,
   fmtViews,
+  type HashtagSuggestion,
   normalizeTag,
+  TAG_BLACKLIST,
+  type TagHit,
 } from '@spark-apps/video-kit';
-
 
 /**
  * Search YouTube for `query`, pull hashtags from the top videos, and pair

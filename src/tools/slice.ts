@@ -9,7 +9,7 @@ import {
 } from '../lib/ffmpeg.js';
 import { fmt, header, separator, success } from '../lib/logger.js';
 import { getOutputPath } from '../lib/paths.js';
-import { type TimeSegment, invertSegments } from '../lib/segments.js';
+import { invertSegments, type TimeSegment } from '../lib/segments.js';
 
 export type SliceRegion = TimeSegment;
 

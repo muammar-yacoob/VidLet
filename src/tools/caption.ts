@@ -3,23 +3,21 @@
  * Supports auto-transcription via whisper.cpp and multiple style presets.
  * Uses ASS subtitle format for word-by-word highlighting.
  */
+
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import {
-  type CaptionWord,
-  type SrtEntry,
   chunkWordsToLines,
   colorNameToAss,
-  estimateTextWidth,
   fittingMaxChars,
-  isUrlOrEmail,
   mergePunctuationTokens,
   parseSrt,
+  type SrtEntry,
   scaleToFit,
   assTime as toAssTime,
   toCaptionCase,
 } from '@spark-apps/video-kit';
-import * as fs from 'node:fs';
-import * as os from 'node:os';
-import * as path from 'node:path';
 import { executeFFmpeg, getVideoInfo } from '../lib/ffmpeg.js';
 import { logToFile } from '../lib/logger.js';
 import { getOutputPath } from '../lib/paths.js';
@@ -51,12 +49,12 @@ export interface CaptionOptions {
 // here is VidLet's LOOK: the five style presets below.
 export {
   type CaptionWord,
-  type SrtEntry,
   chunkWordsToLines,
   estimateTextWidth,
   fittingMaxChars,
   isUrlOrEmail,
   mergePunctuationTokens,
+  type SrtEntry,
   scaleToFit,
   toCaptionCase,
 } from '@spark-apps/video-kit';

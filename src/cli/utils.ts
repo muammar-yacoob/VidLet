@@ -1,7 +1,7 @@
 import { resolve } from 'node:path';
 import { fmt } from '../lib/logger.js';
 import { toWSLPath } from '../lib/paths.js';
-import { type Tool, getToolById } from './tools.js';
+import { getToolById, type Tool } from './tools.js';
 
 /**
  * Resolve input path - converts Windows path to WSL if needed, and makes relative paths absolute

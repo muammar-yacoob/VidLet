@@ -15,14 +15,16 @@ import {
   titleFromScript,
   windowsFromSpeeds,
 } from '../lib/autoshort-plan.js';
-import { buildRenderGraph, clipWindows, ydifToIdleSpans } from './autoshort.js';
 import {
+  buildRenderGraph,
   classifyInputs,
+  clipWindows,
   dedupeRetakes,
   scriptToSrt,
   spansWithText,
   speedFor,
   subtitleToText,
+  ydifToIdleSpans,
 } from './autoshort.js';
 
 describe('classifyInputs', () => {

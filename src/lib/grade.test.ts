@@ -64,8 +64,11 @@ describe('matchGrade', () => {
     const modelling = { avg: 75, low: 38, high: 132 };
     const rigging = { avg: 65, low: 37, high: 90 };
     const target = averageStats([modelling, rigging]);
-    const after = (s: typeof modelling) => (s.high - s.low) * matchGrade(s, target, 1.12).contrast;
-    expect(Math.abs(after(modelling) - after(rigging))).toBeLessThan(2);
+    // Not named `after`: biome reads a local of that name as a duplicate
+    // test hook and errors on it.
+    const gradedSpread = (s: typeof modelling) =>
+      (s.high - s.low) * matchGrade(s, target, 1.12).contrast;
+    expect(Math.abs(gradedSpread(modelling) - gradedSpread(rigging))).toBeLessThan(2);
   });
 
   it('gives up matching rather than exceeding the clamp on an extreme clip', () => {

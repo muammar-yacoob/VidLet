@@ -9,7 +9,7 @@
  */
 
 import { exec, execFileSync, execSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getOutputPath } from '../lib/paths.js';
@@ -231,7 +231,7 @@ function writeProgress(current: number, total: number, fileName: string): void {
 }
 
 /** Tiny preview server that serves lottie-web + animation data via HTTP */
-import { type Server, createServer } from 'node:http';
+import { createServer, type Server } from 'node:http';
 
 let _previewServer: Server | null = null;
 let _currentAnimJson = '{}';
@@ -246,7 +246,7 @@ function startPreviewServer(): void {
 <style>*{margin:0;padding:0}html,body{width:100%;height:100%;overflow:hidden;background:#18181b}
 #a{width:100%;height:100%;display:flex;align-items:center;justify-content:center}</style>
 </head><body><div id="a"></div>
-<script>${lottieJs}<\/script>
+<script>${lottieJs}</script>
 <script>
 var anim=null,lastLen=0;
 function load(){
@@ -260,7 +260,7 @@ function load(){
   }).catch(function(){});
 }
 load();setInterval(load,1200);
-<\/script></body></html>`;
+</script></body></html>`;
 
   const server = createServer((req, res) => {
     const url = req.url?.split('?')[0] || '/';

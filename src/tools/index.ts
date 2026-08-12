@@ -1,43 +1,42 @@
 // Re-export tool configurations from CLI module
 export {
-  toolConfigs,
   getToolConfigById,
   getToolsForExtension,
   type ToolConfig,
+  toolConfigs,
 } from '../cli/tools.js';
-
-// Re-export all tools
-export { compress, type CompressOptions } from './compress.js';
-export { loop, type LoopOptions } from './loop.js';
-export { mkv2mp4, type Mkv2Mp4Options } from './mkv2mp4.js';
-export { shrink, type ShrinkOptions } from './shrink.js';
-export { thumb, type ThumbOptions } from './thumb.js';
-export { togif, type ToGifOptions } from './togif.js';
-export { filter, type FilterOptions } from './filter.js';
+export { type ExtractAudioOptions, extractAudio } from './audio.js';
+export { type AutoCleanupOptions, autoCleanup } from './autocleanup.js';
 export {
-  caption,
   type CaptionOptions,
-  type CaptionStyle,
   type CaptionPosition,
+  type CaptionStyle,
+  caption,
   DEFAULT_SRT,
 } from './caption.js';
-export { extractAudio, type ExtractAudioOptions } from './audio.js';
 export {
-  cleanVoice,
   analyzeVoice,
-  ensureDeepFilter,
   type CleanVoiceOptions,
+  cleanVoice,
+  ensureDeepFilter,
   type VoiceAnalysis,
 } from './cleanvoice.js';
-export { optimize, type OptimizeOptions } from './optimize.js';
-export { removeSilence, type RemoveSilenceOptions } from './removesilence.js';
-export { autoCleanup, type AutoCleanupOptions } from './autocleanup.js';
-export { trim, trimAccurate, type TrimOptions } from './trim.js';
-export { jumpcut, type JumpcutOptions, type JumpcutPace } from './jumpcut.js';
-export { portrait, type PortraitOptions } from './shorts.js';
-export { slice, type SliceOptions, type SliceRegion } from './slice.js';
-export { demo, type DemoOptions } from './demo.js';
-export { short, type ShortOptions } from './short.js';
-export { speedup, type SpeedupOptions } from './speedup.js';
-export { voiceover, type VoiceoverOptions } from './voiceover.js';
-export { overlay, type OverlayOptions, type OverlayLayer } from './overlay.js';
+// Re-export all tools
+export { type CompressOptions, compress } from './compress.js';
+export { type DemoOptions, demo } from './demo.js';
+export { type FilterOptions, filter } from './filter.js';
+export { type JumpcutOptions, type JumpcutPace, jumpcut } from './jumpcut.js';
+export { type LoopOptions, loop } from './loop.js';
+export { type Mkv2Mp4Options, mkv2mp4 } from './mkv2mp4.js';
+export { type OptimizeOptions, optimize } from './optimize.js';
+export { type OverlayLayer, type OverlayOptions, overlay } from './overlay.js';
+export { type RemoveSilenceOptions, removeSilence } from './removesilence.js';
+export { type ShortOptions, short } from './short.js';
+export { type PortraitOptions, portrait } from './shorts.js';
+export { type ShrinkOptions, shrink } from './shrink.js';
+export { type SliceOptions, type SliceRegion, slice } from './slice.js';
+export { type SpeedupOptions, speedup } from './speedup.js';
+export { type ThumbOptions, thumb } from './thumb.js';
+export { type ToGifOptions, togif } from './togif.js';
+export { type TrimOptions, trim, trimAccurate } from './trim.js';
+export { type VoiceoverOptions, voiceover } from './voiceover.js';

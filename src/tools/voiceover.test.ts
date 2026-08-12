@@ -4,8 +4,8 @@ import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { DEFAULT_VOICE, resolveVoice } from '../lib/edge-tts.js';
 import {
-  MAX_SCRIPT_LENGTH,
   buildDuckFilter,
+  MAX_SCRIPT_LENGTH,
   resolveCloneEngine,
   resolveScriptText,
   uniquePath,
