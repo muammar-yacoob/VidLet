@@ -11,14 +11,8 @@
  * loose phrasing.
  */
 import { existsSync } from 'node:fs';
-import { fmtViews, suggestHashtags } from '../lib/hashtags.js';
-import {
-  connectYouTube,
-  getChannel,
-  loadTokens,
-  resolveClientCreds,
-  tokenFilePath,
-} from '../lib/youtube.js';
+import { fetchSharedTrends, fmtViews, suggestHashtags } from '../lib/hashtags.js';
+import { connectYouTube, getChannel, loadTokens, tokenFilePath } from '../lib/youtube.js';
 import {
   buildDescription,
   extractThumbnailCandidates,
@@ -41,22 +35,17 @@ export const YOUTUBE_TOOLS: ToolDefinition[] = [
     name: 'connect_youtube',
     description:
       'Connect VidLet to a YouTube channel (first-time setup or reconnect). Opens the Google ' +
-      'consent page in the browser, catches the loopback redirect, and stores the refresh ' +
-      'token in ~/.config/vidlet/youtube.json (owner-only permissions). Requires ' +
-      'GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in the server env, with the redirect URI ' +
-      'registered on that OAuth client (default http://localhost:3000/auth/youtube/callback). ' +
-      'Pass check_only to report connection state without opening a browser.',
+      'consent page via the vidlet.app OAuth broker - no Google client or API keys needed on ' +
+      'this machine - and stores the refresh token in ~/.config/vidlet/youtube.json ' +
+      '(owner-only permissions). Publishing is a VidLet Pro feature: a free account gets an ' +
+      'upgrade link instead of a connection. Pass check_only to report connection state ' +
+      'without opening a browser.',
     inputSchema: {
       type: 'object',
       properties: {
         check_only: {
           type: 'boolean',
           description: 'Just report whether a working connection exists.',
-        },
-        redirect_uri: {
-          type: 'string',
-          description:
-            'Override the OAuth redirect URI (must exactly match one registered on the client).',
         },
       },
     },
@@ -132,22 +121,16 @@ export const YOUTUBE_TOOLS: ToolDefinition[] = [
   },
 ];
 
-async function handleConnectYouTube({
-  check_only,
-  redirect_uri,
-}: {
-  check_only?: boolean;
-  redirect_uri?: string;
-}) {
+async function handleConnectYouTube({ check_only }: { check_only?: boolean }) {
   return withSilencedStdout(async () => {
     const tokens = loadTokens();
     if (check_only) {
       if (!tokens?.refresh_token) {
         return jsonContent({
           connected: false,
-          reason: resolveClientCreds()
-            ? 'No stored tokens. Call connect_youtube (no args) to open the consent flow.'
-            : 'No OAuth client configured: set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in the MCP server env.',
+          reason:
+            'No stored tokens. Call connect_youtube (no args) to open the consent flow - ' +
+            'no keys or Google client setup needed.',
         });
       }
       try {
@@ -161,7 +144,7 @@ async function handleConnectYouTube({
       }
     }
 
-    const channel = await connectYouTube({ redirectUri: redirect_uri });
+    const channel = await connectYouTube();
     return jsonContent({
       connected: true,
       channel,
@@ -226,14 +209,19 @@ async function handleUploadToYouTube(args: {
         });
       }
 
+      // Shared trend cache first: one server-side YouTube+Groq fetch per
+      // genre serves everyone, so this machine needs no keys of its own.
+      const shared = await fetchSharedTrends(topic);
       const [titles, thumbs, hashtags] = await Promise.all([
         generateTitleVariants(topic, args.narration),
         extractThumbnailCandidates(input),
-        suggestHashtags({
-          topic,
-          description: args.narration,
-          youtubeApiKey: process.env.YOUTUBE_API_KEY?.trim(),
-        }),
+        shared
+          ? Promise.resolve(shared.hashtags)
+          : suggestHashtags({
+              topic,
+              description: args.narration,
+              youtubeApiKey: process.env.YOUTUBE_API_KEY?.trim(),
+            }),
       ]);
       const description = buildDescription({
         narration: args.narration,
@@ -264,6 +252,14 @@ async function handleUploadToYouTube(args: {
                 tag: h.tag,
                 views: h.viewCount > 0 ? fmtViews(h.viewCount) : null,
                 kind: h.kind,
+              })),
+              // Real titles from the genre's top/recent videos. YOU are a
+              // language model - compose stronger A/B title variants from
+              // these patterns and offer them alongside the graded three.
+              trending_titles: (shared?.titles ?? []).map((t) => ({
+                title: t.title,
+                views: fmtViews(t.views),
+                recent: t.recent,
               })),
               description,
             },

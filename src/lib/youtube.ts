@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import {
   chmodSync,
   createReadStream,
@@ -8,47 +9,36 @@ import {
   writeFileSync,
 } from 'node:fs';
 /**
- * YouTube connection and upload client. Zero new dependencies: OAuth and
- * every API call go through fetch, and the loopback redirect is a one-shot
- * node http server.
+ * YouTube connection and upload client, now speaking to the vidlet.app OAuth
+ * broker (docs/youtube-broker.md in the vidlet-website repo) instead of
+ * running its own Google OAuth client.
  *
- * Credentials model: the user supplies their OWN Google OAuth client
- * (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET in the server env, or saved in
- * the token file). VidLet ships no client secret - it is an open-source
- * package, and a bundled secret would be everyone's secret.
+ * Credentials model: VidLet ships no client secret - it is an open-source
+ * package, and a bundled secret would be everyone's secret. vidlet.app owns
+ * the Google OAuth client; this CLI holds only a refresh token, and every
+ * access-token mint goes back through the broker, which is also where the
+ * SparkPay plan gate lives (publishing is a Pro feature - editing the CLI
+ * cannot skip a server-side check).
  *
- * The redirect URI must EXACTLY match one registered on that OAuth client.
- * Default is http://localhost:3000/auth/youtube/callback (the ViralCat
- * pattern, already registered on this user's client); override with
- * YOUTUBE_REDIRECT_URI or the connect tool's redirect_uri argument.
- *
- * Endpoints and flows verified against current docs (Context7,
- * developers.google.com/youtube/v3): resumable upload is the recommended
- * video path; thumbnails.set takes jpeg/png up to 2MB (~50 quota units);
- * Studio's native "Test & compare" has NO public API, so A/B testing is
- * implemented as variant rotation via videos.update + thumbnails.set.
+ * Connect flow: listen on an ephemeral loopback port, open
+ * https://vidlet.app/auth/google/start?port=<port>&nonce=<nonce> in the
+ * browser, and receive the tokens as a POST from the broker's success page.
+ * A POST, not a redirect - a redirect would put the refresh token in the URL
+ * bar and browser history.
  */
 import { createServer } from 'node:http';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { openInBrowser } from '../mcp/shared.js';
 
-const AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
-const TOKEN_URL = 'https://oauth2.googleapis.com/token';
-const SCOPES = [
-  'https://www.googleapis.com/auth/youtube.upload',
-  // Needed for channels.list (connection check) and videos.list (A/B stats).
-  'https://www.googleapis.com/auth/youtube.readonly',
-  // videos.update for title rotation during an A/B test.
-  'https://www.googleapis.com/auth/youtube',
-];
+/** Overridable for local broker testing (VIDLET_BROKER_URL=http://localhost:3000). */
+function brokerBase(): string {
+  return process.env.VIDLET_BROKER_URL?.trim().replace(/\/$/, '') || 'https://vidlet.app';
+}
 
 const TOKEN_FILE = join(homedir(), '.config', 'vidlet', 'youtube.json');
-const DEFAULT_REDIRECT = 'http://localhost:3000/auth/youtube/callback';
 
 export interface YouTubeTokens {
-  client_id: string;
-  client_secret: string;
   refresh_token: string;
   access_token?: string;
   /** Epoch ms when access_token dies. */
@@ -75,40 +65,53 @@ function saveTokens(tokens: YouTubeTokens): void {
   chmodSync(TOKEN_FILE, 0o600); // refresh token = channel access; owner-only
 }
 
-/** OAuth client credentials from env, falling back to the saved file. */
-export function resolveClientCreds(): { clientId: string; clientSecret: string } | null {
-  const saved = loadTokens();
-  const clientId = process.env.GOOGLE_CLIENT_ID?.trim() || saved?.client_id;
-  const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim() || saved?.client_secret;
-  return clientId && clientSecret ? { clientId, clientSecret } : null;
+interface BrokerDelivery {
+  nonce: string;
+  refresh_token?: string;
+  access_token?: string;
+  expires_in?: number;
+  channel?: { id: string; title: string; url: string | null } | null;
+  error?: string;
+  upgradeUrl?: string;
 }
 
 /**
- * One-shot loopback: listen on the redirect URI's own port and path, catch
- * the ?code, answer with a "you can close this tab" page, and shut down.
+ * One-shot loopback: an ephemeral port, one POST /callback from the broker's
+ * success page, nonce verified so a stray local process cannot hand us a
+ * token. Returns the delivered payload.
  */
-function waitForOAuthCode(redirectUri: string, timeoutMs: number): Promise<string> {
-  const url = new URL(redirectUri);
-  const port = Number(url.port || 80);
-  return new Promise((resolve, reject) => {
+function waitForBrokerDelivery(
+  nonce: string,
+  timeoutMs: number
+): { port: Promise<number>; delivery: Promise<BrokerDelivery> } {
+  let resolvePort: (p: number) => void = () => {};
+  const port = new Promise<number>((r) => {
+    resolvePort = r;
+  });
+  const delivery = new Promise<BrokerDelivery>((resolve, reject) => {
     const server = createServer((req, res) => {
-      const reqUrl = new URL(req.url ?? '/', redirectUri);
-      if (reqUrl.pathname !== url.pathname) {
+      // The page can read the reply and confirm delivery to the user.
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      if (req.method !== 'POST' || req.url !== '/callback') {
         res.writeHead(404).end();
         return;
       }
-      const code = reqUrl.searchParams.get('code');
-      const err = reqUrl.searchParams.get('error');
-      res.writeHead(200, { 'Content-Type': 'text/html' });
-      res.end(
-        `<html><body style="font-family:sans-serif;padding:3em;text-align:center">
-         <h2>${code ? 'VidLet is connected to YouTube.' : 'Connection failed.'}</h2>
-         <p>You can close this tab.</p></body></html>`
-      );
-      server.close();
-      clearTimeout(timer);
-      if (code) resolve(code);
-      else reject(new Error(`OAuth denied: ${err ?? 'no code returned'}`));
+      let body = '';
+      req.on('data', (c) => {
+        body += c;
+      });
+      req.on('end', () => {
+        res.writeHead(200, { 'Content-Type': 'text/plain' }).end('ok');
+        try {
+          const parsed = JSON.parse(body) as BrokerDelivery;
+          if (parsed.nonce !== nonce) return; // not ours; keep listening
+          server.close();
+          clearTimeout(timer);
+          resolve(parsed);
+        } catch {
+          // Malformed post from something else on this port - ignore.
+        }
+      });
     });
     const timer = setTimeout(() => {
       server.close();
@@ -119,31 +122,17 @@ function waitForOAuthCode(redirectUri: string, timeoutMs: number): Promise<strin
       );
     }, timeoutMs);
     server.on('error', (e) =>
-      reject(
-        new Error(
-          `Cannot listen on ${redirectUri} (${(e as Error).message}). Is a dev server using that port? Stop it or pass a different registered redirect_uri.`
-        )
-      )
+      reject(new Error(`Loopback listener failed: ${(e as Error).message}`))
     );
-    server.listen(port);
+    server.listen(0, '127.0.0.1', () => {
+      const addr = server.address();
+      if (addr && typeof addr === 'object') resolvePort(addr.port);
+    });
   });
+  return { port, delivery };
 }
 
-async function tokenRequest(body: Record<string, string>): Promise<{
-  access_token: string;
-  refresh_token?: string;
-  expires_in: number;
-}> {
-  const res = await fetch(TOKEN_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams(body).toString(),
-  });
-  if (!res.ok) throw new Error(`Google token endpoint ${res.status}: ${await res.text()}`);
-  return (await res.json()) as never;
-}
-
-/** Valid access token, refreshing (and persisting) when within 60s of expiry. */
+/** Valid access token, refreshing via the broker when within 60s of expiry. */
 export async function getAccessToken(): Promise<string> {
   const tokens = loadTokens();
   if (!tokens?.refresh_token) {
@@ -152,16 +141,35 @@ export async function getAccessToken(): Promise<string> {
   if (tokens.access_token && tokens.expires_at && tokens.expires_at - Date.now() > 60_000) {
     return tokens.access_token;
   }
-  const refreshed = await tokenRequest({
-    client_id: tokens.client_id,
-    client_secret: tokens.client_secret,
-    refresh_token: tokens.refresh_token,
-    grant_type: 'refresh_token',
+  const res = await fetch(`${brokerBase()}/api/auth/youtube/token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refresh_token: tokens.refresh_token }),
   });
-  tokens.access_token = refreshed.access_token;
-  tokens.expires_at = Date.now() + refreshed.expires_in * 1000;
+  const body = (await res.json().catch(() => ({}))) as {
+    access_token?: string;
+    expires_in?: number;
+    error?: string;
+    code?: string;
+    upgradeUrl?: string;
+  };
+  if (!res.ok || !body.access_token) {
+    if (body.code === 'subscription_required') {
+      throw new Error(
+        `YouTube publishing needs an active VidLet Pro plan. Upgrade at ${body.upgradeUrl ?? 'https://sparkpay.dev/spark/vidlet'}.`
+      );
+    }
+    if (body.code === 'reconnect_required') {
+      throw new Error(
+        'This YouTube connection is no longer valid. Run connect_youtube to reconnect.'
+      );
+    }
+    throw new Error(`Token refresh failed (${res.status}): ${body.error ?? 'unknown error'}`);
+  }
+  tokens.access_token = body.access_token;
+  tokens.expires_at = Date.now() + (body.expires_in ?? 3600) * 1000;
   saveTokens(tokens);
-  return refreshed.access_token;
+  return body.access_token;
 }
 
 async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -205,58 +213,31 @@ export async function getChannel(): Promise<ChannelInfo> {
 }
 
 /**
- * Full browser consent flow. Opens the consent page, catches the loopback
- * redirect, exchanges the code, verifies the channel, and persists tokens.
+ * Full browser consent flow through the broker. No Google client needed on
+ * this machine; the broker delivers {refresh_token, access_token, channel}
+ * to our loopback listener and we persist it.
  */
-export async function connectYouTube(options?: {
-  redirectUri?: string;
-  timeoutMs?: number;
-}): Promise<ChannelInfo> {
-  const creds = resolveClientCreds();
-  if (!creds) {
+export async function connectYouTube(options?: { timeoutMs?: number }): Promise<ChannelInfo> {
+  const nonce = randomBytes(16).toString('base64url');
+  const { port, delivery } = waitForBrokerDelivery(nonce, options?.timeoutMs ?? 180_000);
+  const p = await port;
+  openInBrowser(`${brokerBase()}/auth/google/start?port=${p}&nonce=${nonce}`);
+  const granted = await delivery;
+
+  if (granted.error === 'subscription_required') {
     throw new Error(
-      'No Google OAuth client configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in the ' +
-        'MCP server env (create one at console.cloud.google.com > APIs & Services > Credentials, ' +
-        'type "Web application", with your redirect URI registered).'
+      `YouTube publishing needs an active VidLet Pro plan. Upgrade at ${granted.upgradeUrl ?? 'https://sparkpay.dev/spark/vidlet'}, then connect again.`
     );
   }
-  const redirectUri =
-    options?.redirectUri ?? process.env.YOUTUBE_REDIRECT_URI?.trim() ?? DEFAULT_REDIRECT;
-
-  const params = new URLSearchParams({
-    client_id: creds.clientId,
-    redirect_uri: redirectUri,
-    response_type: 'code',
-    scope: SCOPES.join(' '),
-    access_type: 'offline',
-    // Forces a refresh_token even on reconnect; without it Google only
-    // issues one on the very first consent.
-    prompt: 'consent',
-  });
-
-  const codePromise = waitForOAuthCode(redirectUri, options?.timeoutMs ?? 180_000);
-  openInBrowser(`${AUTH_URL}?${params.toString()}`);
-  const code = await codePromise;
-
-  const granted = await tokenRequest({
-    client_id: creds.clientId,
-    client_secret: creds.clientSecret,
-    code,
-    grant_type: 'authorization_code',
-    redirect_uri: redirectUri,
-  });
-  if (!granted.refresh_token) {
-    throw new Error(
-      'Google returned no refresh token; revoke access at myaccount.google.com/permissions and reconnect.'
-    );
+  if (granted.error || !granted.refresh_token) {
+    throw new Error(`OAuth denied: ${granted.error ?? 'no refresh token returned'}`);
   }
 
   saveTokens({
-    client_id: creds.clientId,
-    client_secret: creds.clientSecret,
     refresh_token: granted.refresh_token,
     access_token: granted.access_token,
-    expires_at: Date.now() + granted.expires_in * 1000,
+    expires_at: granted.expires_in ? Date.now() + granted.expires_in * 1000 : undefined,
+    channel: granted.channel ?? undefined,
   });
 
   const channel = await getChannel();

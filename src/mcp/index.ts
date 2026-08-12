@@ -1,3 +1,4 @@
+import { gateHandlers } from './gate.js';
 import { errorContent, jsonContent, type ToolDefinition, type ToolHandler } from './shared.js';
 /**
  * VidLet MCP tool registry — bundled by tsup as dist/mcp-tools.js and
@@ -35,14 +36,17 @@ async function handleListCapabilities() {
   });
 }
 
-export const TOOL_HANDLERS: Record<string, ToolHandler> = {
+// Every handler goes through gateHandlers: plan gating is applied once here
+// rather than remembered inside each tool, so a new tool cannot ship ungated
+// by omission.
+export const TOOL_HANDLERS: Record<string, ToolHandler> = gateHandlers({
   list_capabilities: handleListCapabilities,
   ...CORE_HANDLERS,
   ...STUDIO_HANDLERS,
   ...AUTOSHORT_HANDLERS,
   ...PROJECT_HANDLERS,
   ...YOUTUBE_HANDLERS,
-};
+});
 
 export type { ToolDefinition, ToolHandler, ToolResult } from './shared.js';
 export { errorContent, jsonContent };

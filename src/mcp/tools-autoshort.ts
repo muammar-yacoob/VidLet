@@ -370,6 +370,15 @@ async function handleGenerateShort(args: {
                     views: h.viewCount > 0 ? fmtViews(h.viewCount) : null,
                     kind: h.kind,
                   })),
+                  // Top real titles in this genre (shared trend cache). YOU
+                  // are a language model: write the A/B title pair yourself
+                  // from these patterns instead of settling for the graded
+                  // fallbacks above.
+                  trending_titles: publish.trendingTitles.map((t) => ({
+                    title: t.title,
+                    views: fmtViews(t.views),
+                    recent: t.recent,
+                  })),
                 },
               }
             : {}),

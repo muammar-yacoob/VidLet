@@ -15,7 +15,7 @@ import {
 } from '../lib/ab-test.js';
 import { executeFFmpegRaw, getMediaDuration } from '../lib/ffmpeg.js';
 import { groqChatJSON } from '../lib/groq.js';
-import { type HashtagSuggestion, suggestHashtags } from '../lib/hashtags.js';
+import { fetchSharedTrends, type HashtagSuggestion, suggestHashtags } from '../lib/hashtags.js';
 import { getVideoStats, setThumbnail, updateVideoMeta, uploadVideo } from '../lib/youtube.js';
 
 export interface TitleVariant {
@@ -104,6 +104,13 @@ export interface PublishSuggestions {
   titles: [TitleVariant, TitleVariant, TitleVariant];
   thumbnails: [string, string, string];
   hashtags: HashtagSuggestion[];
+  /**
+   * Real titles from the genre's top/recent videos (shared vidlet.app trend
+   * cache). Raw material for the CALLING model to write its own variants -
+   * an MCP caller is already an LLM, so no local Groq key is needed for
+   * title writing.
+   */
+  trendingTitles: Array<{ title: string; views: number; recent: boolean }>;
 }
 
 /**
@@ -118,16 +125,21 @@ export async function suggestPublish(
   narration?: string
 ): Promise<PublishSuggestions | null> {
   try {
+    // One shared-cache round trip covers hashtags AND trending titles;
+    // suggestHashtags would otherwise fetch the same entry again.
+    const shared = await fetchSharedTrends(topic);
     const [titles, thumbnails, hashtags] = await Promise.all([
       generateTitleVariants(topic, narration),
       extractThumbnailCandidates(videoPath),
-      suggestHashtags({
-        topic,
-        description: narration,
-        youtubeApiKey: process.env.YOUTUBE_API_KEY?.trim(),
-      }),
+      shared
+        ? Promise.resolve(shared.hashtags)
+        : suggestHashtags({
+            topic,
+            description: narration,
+            youtubeApiKey: process.env.YOUTUBE_API_KEY?.trim(),
+          }),
     ]);
-    return { titles, thumbnails, hashtags };
+    return { titles, thumbnails, hashtags, trendingTitles: shared?.titles ?? [] };
   } catch {
     return null;
   }
