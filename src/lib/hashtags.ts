@@ -9,63 +9,25 @@
  * round: at most TWO YouTube Data API requests (search + videos, ~101
  * quota units) and ONE Groq chat per invocation.
  */
+import {
+  type HashtagSuggestion,
+  type TagHit,
+  TAG_BLACKLIST,
+  fmtViews,
+  normalizeTag,
+} from '@spark-apps/video-kit';
 import { groqChatJSON } from './groq.js';
 
-/** Ultra-generic tags that dominate viral videos but carry no niche relevance. */
-export const TAG_BLACKLIST = new Set([
-  '#shorts',
-  '#short',
-  '#viral',
-  '#trending',
-  '#fyp',
-  '#foryou',
-  '#foryoupage',
-  '#youtube',
-  '#youtubeshorts',
-  '#video',
-  '#new',
-  '#love',
-  '#life',
-  '#india',
-  '#telugu',
-  '#hindi',
-  '#english',
-  '#funny',
-  '#comedy',
-  '#music',
-  '#song',
-  '#status',
-  '#reels',
-  '#tiktok',
-  '#instagram',
-]);
+// Vocabulary and normalisation come from the kit: the same video must
+// get the same tags whichever Spark tool posts it.
+export {
+  type HashtagSuggestion,
+  type TagHit,
+  TAG_BLACKLIST,
+  fmtViews,
+  normalizeTag,
+} from '@spark-apps/video-kit';
 
-export interface HashtagSuggestion {
-  tag: string;
-  viewCount: number;
-  label: string | null;
-  kind: 'popular' | 'trending';
-}
-
-export function fmtViews(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${Math.round(n / 1_000)}K`;
-  return String(n);
-}
-
-export function normalizeTag(raw: string): string {
-  return `#${raw
-    .toLowerCase()
-    .replace(/^#/, '')
-    .replace(/\s+/g, '')
-    .replace(/[^a-z0-9_]/g, '')
-    .slice(0, 30)}`;
-}
-
-export interface TagHit {
-  tag: string;
-  viewCount: number;
-}
 
 /**
  * Search YouTube for `query`, pull hashtags from the top videos, and pair

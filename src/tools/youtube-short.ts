@@ -15,7 +15,7 @@ import {
 import { executeFFmpegRaw, getMediaDuration } from '../lib/ffmpeg.js';
 import { groqChatJSON } from '../lib/groq.js';
 import type { HashtagSuggestion } from '../lib/hashtags.js';
-import { type TitleScore, scoreYouTubeTitle } from '../lib/title-score.js';
+import { type TitleScore, scoreYouTubeTitle } from '@spark-apps/video-kit';
 import { getVideoStats, setThumbnail, updateVideoMeta, uploadVideo } from '../lib/youtube.js';
 
 export interface TitleVariant {

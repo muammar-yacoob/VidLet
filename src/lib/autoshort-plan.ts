@@ -520,30 +520,7 @@ export function sourceTimeToOutput(
  * split ViralCat uses, and it is the only way to get both right from a
  * single script.
  */
-export function toSpokenForm(text: string): string {
-  return (
-    text
-      // Strip a protocol and any www, which nobody says aloud.
-      .replace(/\bhttps?:\/\//gi, '')
-      .replace(/\bwww\./gi, '')
-      // Emails first: the @ has to become a word before the dots do.
-      .replace(/\b([\w.+-]+)@([\w-]+(?:\.[\w-]+)+)/g, (_m, user, host) => `${user} at ${host}`)
-      // Multi-part TLDs before single ones, so .co.uk does not become
-      // "dot co dot uk" via two passes with a stray pause between them.
-      .replace(/\.co\.uk\b/gi, ' dot co dot U K')
-      .replace(/\.com\b/gi, ' dot com')
-      .replace(/\.org\b/gi, ' dot org')
-      .replace(/\.net\b/gi, ' dot net')
-      .replace(/\.io\b/gi, ' dot I O')
-      .replace(/\.dev\b/gi, ' dot dev')
-      .replace(/\.app\b/gi, ' dot app')
-      .replace(/\.ai\b/gi, ' dot A I')
-      // A slash path is read as a word too.
-      .replace(/\/(\w)/g, ' slash $1')
-      .replace(/\s{2,}/g, ' ')
-      .trim()
-  );
-}
+export { toSpokenForm } from '@spark-apps/video-kit';
 
 /**
  * Pull a narration back inside the runtime when it overruns.

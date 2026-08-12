@@ -42,6 +42,7 @@ import { type LumaStats, averageStats, matchGrade } from '../lib/grade.js';
 import { fmt, header, separator, success } from '../lib/logger.js';
 import { type ResolvedTrack, resolveMusicChoice } from '../lib/music.js';
 import { planKey, readPlan, stableWorkPath, writePlan } from '../lib/plan-cache.js';
+import { MASTER_CHAIN } from '@spark-apps/video-kit';
 import { type TimeSegment, detectSilence, invertSegments } from '../lib/segments.js';
 import { type TranscriptSegment, transcribe } from '../lib/whisper.js';
 import { type SrtEntry, generateShortsAss } from './caption.js';
@@ -580,7 +581,7 @@ export function buildRenderGraph(opts: {
     // and the output peaked at +0.9 dBTP, past digital clipping. alimiter
     // afterward is a hard, lookahead-based ceiling that catches whatever
     // loudnorm's estimate missed, at -1 dBTP (YouTube's own ceiling).
-    chains.push('[mixed]loudnorm=I=-14:TP=-1.5:LRA=11,alimiter=limit=0.891:level=disabled[a]');
+    chains.push(`[mixed]${MASTER_CHAIN}[a]`);
   }
 
   return chains.join(';');

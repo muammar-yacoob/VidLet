@@ -1,55 +1,24 @@
+import { MULTILINGUAL_VOICES, resolveVoice as kitResolveVoice } from '@spark-apps/video-kit';
+
 /**
  * Edge TTS - Free Microsoft Edge neural voices via msedge-tts.
  * No API key, no cost. Ported from vidlet-web's portable edge-tts package.
  */
 
-/** Female (default) voice per language. */
-export const LANGUAGE_VOICES: Record<string, string> = {
-  en: 'en-US-AvaMultilingualNeural',
-  ar: 'ar-LB-LaylaNeural',
-  es: 'es-ES-ElviraNeural',
-  fr: 'fr-FR-VivienneMultilingualNeural',
-  de: 'de-DE-SeraphinaMultilingualNeural',
-  it: 'it-IT-ElsaNeural',
-  pt: 'pt-BR-FranciscaNeural',
-  ru: 'ru-RU-SvetlanaNeural',
-  zh: 'zh-CN-XiaoxiaoMultilingualNeural',
-  ja: 'ja-JP-NanamiNeural',
-  ko: 'ko-KR-SunHiNeural',
-  hi: 'hi-IN-SwaraNeural',
-  tr: 'tr-TR-EmelNeural',
-  nl: 'nl-NL-ColetteNeural',
-};
-
-/** Male voice alternatives per language. */
-const LANGUAGE_VOICES_MALE: Record<string, string> = {
-  en: 'en-US-AndrewMultilingualNeural',
-  ar: 'ar-LB-RamiNeural',
-  es: 'es-ES-AlvaroNeural',
-  fr: 'fr-FR-RemyMultilingualNeural',
-  de: 'de-DE-FlorianMultilingualNeural',
-  it: 'it-IT-DiegoNeural',
-  pt: 'pt-BR-AntonioNeural',
-  ru: 'ru-RU-DmitryNeural',
-  zh: 'zh-CN-YunxiMultilingualNeural',
-  ja: 'ja-JP-KeitaNeural',
-  ko: 'ko-KR-InJoonNeural',
-  hi: 'hi-IN-MadhurNeural',
-  tr: 'tr-TR-AhmetNeural',
-  nl: 'nl-NL-MaartenNeural',
-};
-
-export const DEFAULT_VOICE = LANGUAGE_VOICES.en as string;
+// Voice tables and resolution live in the kit; the two social-video
+// generators must narrate in the same voice as each other.
+export const LANGUAGE_VOICES = MULTILINGUAL_VOICES;
+export const DEFAULT_VOICE = MULTILINGUAL_VOICES.en as string;
 
 /**
- * Resolve the TTS voice for a given language and gender.
- * Falls back to English female when unknown.
+ * Resolve the TTS voice for a language and gender.
+ *
+ * Positional gender is kept as VidLet's own signature: it is what every
+ * call site and the CLI flag already use, and the kit's options object
+ * would be churn for no gain.
  */
 export function resolveVoice(lang?: string, gender?: 'female' | 'male'): string {
-  if (!lang && !gender) return DEFAULT_VOICE;
-  const key = (lang ?? 'en').trim().toLowerCase().slice(0, 2);
-  const voices = gender === 'male' ? LANGUAGE_VOICES_MALE : LANGUAGE_VOICES;
-  return voices[key] ?? LANGUAGE_VOICES[key] ?? DEFAULT_VOICE;
+  return kitResolveVoice(lang, { gender });
 }
 
 const MAX_RETRIES = 2;

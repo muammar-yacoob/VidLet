@@ -2,12 +2,19 @@
  * Shared time-segment utilities used by the cut/silence-based tools
  * (removesilence, jumpcut, slice, cleanvoice).
  */
+// The pure span maths lives in the kit so trimming, jump-cutting and
+// timelapse selection agree across every Spark tool. Imported as well as
+// re-exported, because `export ... from` does not bind the name locally
+// and detectSilence below builds TimeSegments of its own.
+import type { TimeSegment } from '@spark-apps/video-kit';
 import { executeFFmpegAnalysis } from './ffmpeg.js';
 
-export interface TimeSegment {
-  start: number;
-  end: number;
-}
+export {
+  type InvertOptions,
+  type TimeSegment,
+  invertSegments,
+  mergeOverlappingSegments,
+} from '@spark-apps/video-kit';
 
 export interface DetectSilenceOptions {
   /** Minimum silence duration to register, in seconds. */
@@ -65,56 +72,4 @@ export async function detectSilence(
   return segments;
 }
 
-/**
- * Sort segments by start time and merge any that overlap or touch.
- */
-export function mergeOverlappingSegments(segments: TimeSegment[]): TimeSegment[] {
-  const sorted = [...segments].sort((a, b) => a.start - b.start);
 
-  const merged: TimeSegment[] = [];
-  for (const seg of sorted) {
-    const last = merged[merged.length - 1];
-    if (last && seg.start <= last.end) {
-      last.end = Math.max(last.end, seg.end);
-    } else {
-      merged.push({ ...seg });
-    }
-  }
-  return merged;
-}
-
-export interface InvertOptions {
-  /** Seconds of padding to keep around each retained segment (default 0). */
-  padding?: number;
-  /** A retained segment is dropped unless its length exceeds this (default 0). */
-  minLength?: number;
-}
-
-/**
- * Given a set of cut/silent segments, return the complementary segments to KEEP.
- * Overlapping cuts are merged first. With padding > 0 the kept segments are
- * widened (clamped to [0, duration]) to leave breathing room around speech.
- */
-export function invertSegments(
-  duration: number,
-  cuts: TimeSegment[],
-  options: InvertOptions = {}
-): TimeSegment[] {
-  const { padding = 0, minLength = 0 } = options;
-  const merged = mergeOverlappingSegments(cuts);
-
-  const kept: TimeSegment[] = [];
-  let pos = 0;
-  for (const cut of merged) {
-    const start = Math.max(0, pos - padding);
-    const end = Math.min(duration, cut.start + padding);
-    if (end > start + minLength) {
-      kept.push({ start, end });
-    }
-    pos = cut.end;
-  }
-  if (pos < duration) {
-    kept.push({ start: Math.max(0, pos - padding), end: duration });
-  }
-  return kept;
-}

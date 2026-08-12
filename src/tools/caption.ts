@@ -3,6 +3,20 @@
  * Supports auto-transcription via whisper.cpp and multiple style presets.
  * Uses ASS subtitle format for word-by-word highlighting.
  */
+import {
+  type CaptionWord,
+  type SrtEntry,
+  chunkWordsToLines,
+  colorNameToAss,
+  estimateTextWidth,
+  fittingMaxChars,
+  isUrlOrEmail,
+  mergePunctuationTokens,
+  parseSrt,
+  scaleToFit,
+  assTime as toAssTime,
+  toCaptionCase,
+} from '@spark-apps/video-kit';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -33,86 +47,21 @@ export interface CaptionOptions {
   onProgress?: (stage: string) => void;
 }
 
-export interface SrtEntry {
-  index: number;
-  startTime: number;
-  endTime: number;
-  text: string;
-  words?: Array<{ word: string; start: number; end: number }>;
-}
+// ASS syntax, timing, colour and layout maths live in the kit. What stays
+// here is VidLet's LOOK: the five style presets below.
+export {
+  type CaptionWord,
+  type SrtEntry,
+  chunkWordsToLines,
+  estimateTextWidth,
+  fittingMaxChars,
+  isUrlOrEmail,
+  mergePunctuationTokens,
+  scaleToFit,
+  toCaptionCase,
+} from '@spark-apps/video-kit';
 
-// ============ COLOR MAPPING ============
-
-// ASS uses BGR hex: &HBBGGRR& (with optional alpha prefix &HAABBGGRR&)
-const COLOR_MAP: Record<string, string> = {
-  yellow: '&H00FFFF&',
-  cyan: '&HFFFF00&',
-  red: '&H0000FF&',
-  green: '&H00FF00&',
-  white: '&HFFFFFF&',
-  orange: '&H0080FF&',
-  pink: '&HFF00FF&',
-};
-
-function colorNameToAss(name: string): string {
-  return COLOR_MAP[name.toLowerCase()] ?? COLOR_MAP.yellow;
-}
-
-// ============ SRT PARSING ============
-
-/**
- * Parse time string "00:00:00,000" to seconds
- */
-function parseSrtTime(timeStr: string): number {
-  const [time, ms] = timeStr.split(',');
-  const [hours, minutes, seconds] = time.split(':').map(Number);
-  return hours * 3600 + minutes * 60 + seconds + Number.parseInt(ms) / 1000;
-}
-
-/**
- * Format seconds to ASS time format "H:MM:SS.cc"
- */
-function toAssTime(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.floor(seconds % 60);
-  const cs = Math.floor((seconds % 1) * 100);
-  return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${cs.toString().padStart(2, '0')}`;
-}
-
-/**
- * Parse SRT content into structured entries
- */
-function parseSrt(content: string): SrtEntry[] {
-  const entries: SrtEntry[] = [];
-  const blocks = content.trim().split(/\n\n+/);
-
-  for (const block of blocks) {
-    const lines = block.split('\n').map((l) => l.trim());
-    if (lines.length < 3) continue;
-
-    const index = Number.parseInt(lines[0]);
-    if (Number.isNaN(index)) continue;
-
-    const timeParts = lines[1].split(' --> ');
-    if (timeParts.length !== 2) continue;
-
-    const startTime = parseSrtTime(timeParts[0].trim());
-    const endTime = parseSrtTime(timeParts[1].trim());
-    const text = lines
-      .slice(2)
-      .join(' ')
-      .replace(/<[^>]+>/g, ''); // Strip HTML tags
-
-    entries.push({ index, startTime, endTime, text });
-  }
-
-  return entries;
-}
-
-/**
- * Convert whisper transcript segments to SrtEntry format
- */
+/** Convert whisper transcript segments to the kit's SrtEntry shape. */
 export function segmentsToEntries(segments: TranscriptSegment[]): SrtEntry[] {
   return segments.map((seg, i) => ({
     index: i + 1,
@@ -123,13 +72,10 @@ export function segmentsToEntries(segments: TranscriptSegment[]): SrtEntry[] {
   }));
 }
 
-// ============ ASS GENERATION ============
+/** Requested line budget for 'shorts'; narrowed to whatever actually fits. */
+export const SHORTS_MAX_CHARS = 28;
 
-/** Uppercase reads as the current Shorts/Reels/TikTok convention. */
-export function toCaptionCase(text: string, upper: boolean): string {
-  return upper ? text.toUpperCase() : text;
-}
-
+/** Everything a style preset needs to lay itself out on the canvas. */
 export interface AssContext {
   entries: SrtEntry[];
   videoWidth: number;
@@ -137,135 +83,11 @@ export interface AssContext {
   fontSize: number;
   fontName: string;
   position: CaptionPosition;
-  highlightColor: string; // ASS BGR format
+  /** ASS BGR format. */
+  highlightColor: string;
   maxChars: number;
   /** Uppercase the burned text. Default true for the shorts style. */
   uppercase?: boolean;
-}
-
-/** Requested line budget for 'shorts'; narrowed to whatever actually fits. */
-export const SHORTS_MAX_CHARS = 28;
-
-/**
- * Average glyph advance as a fraction of font size for a heavy display face
- * (Arial Black / DejaVu Bold). Measured from rendered output rather than
- * font metrics - close enough to keep a line inside the frame.
- */
-const GLYPH_WIDTH_RATIO = 0.62;
-/** Caps have no descender-narrow letters, so they run wider per character. */
-const UPPERCASE_WIDTH_FACTOR = 1.12;
-
-/** Estimated on-screen pixel width of a line at this font size. */
-export function estimateTextWidth(text: string, fontSize: number, uppercase = false): number {
-  const ratio = GLYPH_WIDTH_RATIO * (uppercase ? UPPERCASE_WIDTH_FACTOR : 1);
-  return text.length * fontSize * ratio;
-}
-
-/**
- * Uniform scale (as an ASS \\fscx/\\fscy percentage) that shrinks a line
- * just enough to fit `usableWidth`, or 100 when it already fits.
- *
- * This is the "flex to fit" half of keeping a URL or email on one line:
- * chunkWordsToLines never splits a single whitespace-delimited token, so a
- * long domain is already guaranteed to land whole on one Dialogue line -
- * but a domain wider than the frame would otherwise render clipped or push
- * past the edge. Shrinking beats wrapping: a URL split across two lines
- * reads as broken, a slightly smaller URL still reads as one thing.
- */
-export function scaleToFit(
-  text: string,
-  fontSize: number,
-  usableWidth: number,
-  uppercase = false
-): number {
-  const width = estimateTextWidth(text, fontSize, uppercase);
-  if (width <= usableWidth) return 100;
-  const pct = Math.floor((usableWidth / width) * 100);
-  return Math.max(40, Math.min(100, pct));
-}
-
-/**
- * Matches a bare URL or email, the way a narration script or subtitle
- * would actually contain one. Not used to gate any rendering behaviour -
- * chunkWordsToLines already treats every whitespace-delimited token as
- * atomic, URLs and ordinary words alike - it exists so a test can pin the
- * exact class of token this guarantee is about, and prove the render path
- * (uppercasing, chunking, scaling) never rewrites the '@' or '.' inside it.
- */
-const URL_OR_EMAIL_RE =
-  /^(?:[\w.+-]+@[\w-]+\.[\w.-]+|(?:https?:\/\/)?(?:www\.)?[\w-]+(?:\.[\w-]+)+(?:\/\S*)?)$/i;
-
-export function isUrlOrEmail(word: string): boolean {
-  const bare = word.replace(/[.,!?;:]+$/, '');
-  return /\.[a-z]{2,}/i.test(bare) && URL_OR_EMAIL_RE.test(bare);
-}
-
-/**
- * Characters that actually fit one line at this width and size. Without
- * this a nominally "28 char" line renders wider than the frame and gets
- * clipped at both edges.
- */
-export function fittingMaxChars(
-  videoWidth: number,
-  fontSize: number,
-  sideMargin: number,
-  requested: number,
-  uppercase = false
-): number {
-  const usable = Math.max(1, videoWidth - sideMargin * 2);
-  const ratio = GLYPH_WIDTH_RATIO * (uppercase ? UPPERCASE_WIDTH_FACTOR : 1);
-  const fits = Math.floor(usable / (fontSize * ratio));
-  return Math.max(8, Math.min(requested, fits));
-}
-
-export interface CaptionWord {
-  word: string;
-  start: number;
-  end: number;
-}
-
-/**
- * whisper emits punctuation, and contraction tails like "'s", as their own
- * timed tokens - which render as a lone comma in its own highlight, or
- * "it 's". Glue both onto the previous word, extending its timing.
- */
-export function mergePunctuationTokens(words: CaptionWord[]): CaptionWord[] {
-  const out: CaptionWord[] = [];
-  for (const w of words) {
-    const isPunctOnly = /^[\p{P}\p{S}]+$/u.test(w.word);
-    const isContractionTail = /^['\u2019]\p{L}{1,2}$/u.test(w.word);
-    if ((isPunctOnly || isContractionTail) && out.length > 0) {
-      const prev = out[out.length - 1];
-      out[out.length - 1] = { word: prev.word + w.word, start: prev.start, end: w.end };
-    } else {
-      out.push(w);
-    }
-  }
-  return out;
-}
-
-/**
- * Pack words into single lines of at most maxChars, so only ONE short line
- * is ever on screen. A word longer than the budget gets its own line rather
- * than being dropped or split.
- */
-export function chunkWordsToLines(words: CaptionWord[], maxChars: number): CaptionWord[][] {
-  const lines: CaptionWord[][] = [];
-  let current: CaptionWord[] = [];
-  let width = 0;
-  for (const w of words) {
-    const added = current.length === 0 ? w.word.length : width + 1 + w.word.length;
-    if (current.length > 0 && added > maxChars) {
-      lines.push(current);
-      current = [w];
-      width = w.word.length;
-    } else {
-      current.push(w);
-      width = added;
-    }
-  }
-  if (current.length > 0) lines.push(current);
-  return lines;
 }
 
 /**
