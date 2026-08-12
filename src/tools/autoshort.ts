@@ -379,6 +379,21 @@ export async function autoShort(options: AutoShortOptions): Promise<AutoShortRes
         if (scan.regions.length === 0) {
           return { scanned: true, regionsMasked: 0, note: 'Nothing sensitive found.' };
         }
+        // Detection is a guess: OCR reads a window title or a file path as an
+        // address often enough that covering it unasked ruins more edits than
+        // it protects. Report and let the caller decide, unless they already
+        // have.
+        if (!options.maskApply) {
+          return {
+            scanned: true,
+            regionsMasked: 0,
+            pending: scan.regions,
+            note:
+              `Found ${scan.regions.length} region(s) that look sensitive, and covered ` +
+              'nothing. Confirm before masking - detection on a screen recording has ' +
+              'false positives.',
+          };
+        }
         // Mask into a temp file, then replace the output in place so the
         // caller only ever sees one finished video at the promised path.
         const masked = join(workDir, 'masked.mp4');
