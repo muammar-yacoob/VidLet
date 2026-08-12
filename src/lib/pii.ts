@@ -57,8 +57,18 @@ const US_ZIP = /\b\d{5}(?:-\d{4})?\b/;
 const SSN = /\b\d{3}-\d{2}-\d{4}\b/;
 // API keys and tokens: long opaque strings with a recognisable prefix.
 const KEY = /\b(?:sk|pk|gsk|ghp|xox[abps]|AKIA)[-_][A-Za-z0-9]{16,}\b/;
+/**
+ * Street address. Deliberately strict, and case-SENSITIVE on the name.
+ *
+ * The loose version matched OCR garbage: a digit, any token, then a common
+ * English word. "= owe & 4 HT way)" scanned off a Blender panel was read as
+ * an address and pixelated a quarter of the frame. Requiring capitalised
+ * name words of real length, at most three of them, and either a full
+ * street type or an abbreviation WITH its period, makes noise very unlikely
+ * to qualify while "42 Elm Street" still does.
+ */
 const STREET =
-  /\b\d{1,5}\s+[A-Za-z][A-Za-z.'-]*(?:\s+[A-Za-z][A-Za-z.'-]*)*\s+(?:street|st|road|rd|avenue|ave|lane|ln|drive|dr|close|court|ct|way|place|pl|boulevard|blvd|terrace|crescent)\b/i;
+  /\b\d{1,5}\s+(?:[A-Z][A-Za-z'-]{2,}\s+){1,3}(?:(?:Street|Road|Avenue|Lane|Drive|Close|Court|Way|Place|Boulevard|Terrace|Crescent)\b|(?:St|Rd|Ave|Ln|Dr|Ct|Pl|Blvd)\.)/;
 
 /** Digits-only run long enough to be a card, ignoring spaces and dashes. */
 function cardCandidate(text: string): string | null {
@@ -99,6 +109,14 @@ export function classifyText(text: string): PiiMatch[] {
 
   return found;
 }
+
+/**
+ * A single mask may not cover more than this fraction of the frame. No card
+ * number, address or key occupies a fifth of a screen; a region that large
+ * is a merge that ran away or a rule that fired on noise, and covering it
+ * ruins the video more surely than the thing it was hiding.
+ */
+export const MAX_REGION_AREA_FRACTION = 0.2;
 
 export interface MaskRegion {
   x: number;
@@ -198,7 +216,17 @@ export function regionsForFrame(
     hit.y = y;
     for (const k of region.kinds) if (!hit.kinds.includes(k)) hit.kinds.push(k);
   }
-  return merged;
+  return merged.filter((r) => withinAreaLimit(r, frameW, frameH));
+}
+
+/** True when a region is small enough to be a plausible piece of data. */
+export function withinAreaLimit(
+  region: { width: number; height: number },
+  frameW: number,
+  frameH: number
+): boolean {
+  const frame = Math.max(1, frameW * frameH);
+  return (region.width * region.height) / frame <= MAX_REGION_AREA_FRACTION;
 }
 
 /**

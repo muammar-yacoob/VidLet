@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { type OcrWord, classifyText, luhnValid, regionsForFrame, unionRegions } from './pii.js';
+import {
+  type OcrWord,
+  classifyText,
+  luhnValid,
+  regionsForFrame,
+  unionRegions,
+  withinAreaLimit,
+} from './pii.js';
 
 const w = (text: string, x: number, y = 100, width = 40, height = 12): OcrWord => ({
   text,
@@ -124,5 +131,53 @@ describe('unionRegions', () => {
     const [merged] = unionRegions([a, b]);
     expect(merged.x).toBe(10);
     expect(merged.width).toBe(150);
+  });
+});
+
+describe('address rule against OCR noise', () => {
+  it('does NOT match the garbage that pixelated a quarter of a frame', () => {
+    // Real capture: a Blender panel OCR'd as this, and the loose rule read
+    // "4 HT way" as a street address.
+    for (const junk of ['= owe & 4 HT way)', '4 HT way) v 7', '& 4 HT way) v', '1B tees at Ci']) {
+      expect(
+        classifyText(junk).map((m) => m.kind),
+        junk
+      ).not.toContain('address');
+    }
+  });
+
+  it('still matches genuine addresses', () => {
+    for (const real of ['42 Elm Street', '7 Abbey Road', '221 Baker Street', '10 Kings Ave.']) {
+      expect(
+        classifyText(real).map((m) => m.kind),
+        real
+      ).toContain('address');
+    }
+  });
+
+  it('requires a real name, not a single stray token', () => {
+    expect(classifyText('4 x Way').map((m) => m.kind)).not.toContain('address');
+  });
+});
+
+describe('withinAreaLimit', () => {
+  it('rejects a region covering a fifth of the frame or more', () => {
+    // The false positive was 560x411 on a 720x1280 frame: 25%.
+    expect(withinAreaLimit({ width: 560, height: 411 }, 720, 1280)).toBe(false);
+  });
+
+  it('accepts a plausibly sized field', () => {
+    expect(withinAreaLimit({ width: 300, height: 40 }, 720, 1280)).toBe(true);
+  });
+});
+
+describe('regionsForFrame area guard', () => {
+  it('drops an oversized merged region rather than covering the video', () => {
+    // Two far-apart emails that merge into a box spanning the frame.
+    const wide = [
+      { text: 'a@b.com', x: 0, y: 0, width: 700, height: 600 },
+      { text: 'c@d.com', x: 10, y: 10, width: 700, height: 600 },
+    ];
+    expect(regionsForFrame(wide, 720, 1280)).toEqual([]);
   });
 });
