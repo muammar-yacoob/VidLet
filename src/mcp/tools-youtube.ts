@@ -293,14 +293,17 @@ async function handleUploadToYouTube(args: {
     if (!args.title_a || !args.title_b) {
       throw new Error('confirm: true requires title_a and title_b from the approved proposal.');
     }
-    const thumbA =
-      args.thumbnail_a && existsSync(args.thumbnail_a)
-        ? args.thumbnail_a
-        : (await extractThumbnailCandidates(input))[0];
-    const thumbB =
-      args.thumbnail_b && existsSync(args.thumbnail_b)
-        ? args.thumbnail_b
-        : (await extractThumbnailCandidates(input))[1];
+    // Falling back costs three ffmpeg seek-and-encode runs, so do it at most
+    // once: asking per-slot ran the whole extraction twice whenever both
+    // approved thumbnails were missing.
+    let candidates: [string, string, string] | null = null;
+    const pickThumb = async (approved: string | undefined, slot: 0 | 1): Promise<string> => {
+      if (approved && existsSync(approved)) return approved;
+      candidates ??= await extractThumbnailCandidates(input);
+      return candidates[slot];
+    };
+    const thumbA = await pickThumb(args.thumbnail_a, 0);
+    const thumbB = await pickThumb(args.thumbnail_b, 1);
 
     const result = await publishShort({
       videoPath: input,
