@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import { showHelp } from '../lib/help.js';
+import { getVersion } from '../lib/version.js';
 import {
   registerAutoCleanupCommand,
   registerCaptionCommand,
@@ -39,7 +40,7 @@ export function createProgram(): Command {
   program
     .name('vidlet')
     .description('Video utility toolkit with Windows shell integration')
-    .version('1.0.0')
+    .version(getVersion())
     .action(() => {
       showHelp();
     });
