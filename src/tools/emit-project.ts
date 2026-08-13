@@ -44,7 +44,13 @@ export interface EmitProjectInput {
   narration?: { path: string; start: number } | null;
   music?: { path: string; volume: number } | null;
   /** Caption lines, already on output time. */
-  subtitles: Array<{ start: number; end: number; text: string }>;
+  subtitles: Array<{
+    start: number;
+    end: number;
+    text: string;
+    /** Measured per-word timing, when the pipeline burned word-lit captions. */
+    words?: Array<{ word: string; start: number; end: number }>;
+  }>;
 }
 
 /**
@@ -175,12 +181,26 @@ export async function emitVidletProject(input: EmitProjectInput): Promise<string
         color: '#FFFFFF',
         position: 'bottom',
         outline: true,
+        // Record HOW the captions were burned, so re-rendering this project
+        // reproduces the Short instead of degrading it to plain blocks.
+        ...(input.subtitles.some((s) => s.words?.length)
+          ? { captionStyle: 'shorts' as const, highlightColor: '&H00FFFF&' }
+          : {}),
       },
       entries: input.subtitles.map((s, i) => ({
         id: `s${i + 1}`,
         start: Number(s.start.toFixed(3)),
         end: Number(s.end.toFixed(3)),
         text: s.text,
+        ...(s.words?.length
+          ? {
+              words: s.words.map((w) => ({
+                word: w.word,
+                start: Number(w.start.toFixed(3)),
+                end: Number(w.end.toFixed(3)),
+              })),
+            }
+          : {}),
       })),
     },
   };

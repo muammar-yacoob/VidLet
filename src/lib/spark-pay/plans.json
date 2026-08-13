@@ -1,0 +1,122 @@
+{
+  "free": {
+    "name": "Free",
+    "payment_type": "free",
+    "features": [
+      "Local editing, trimming, compression and GIF export — unlimited",
+      "Full MCP server access from any agent",
+      "720p exports",
+      "10 AI transcription minutes a month"
+    ],
+    "limits": {
+      "watermark": 1,
+      "export_max_height": 720,
+      "ai_minutes_monthly": 10,
+      "ai_generations_daily": 3,
+      "shorts_monthly": 1,
+      "mcp_calls_daily": 10,
+      "youtube_publish": 0,
+      "ai_hashtags": 0,
+      "brand_kit": 0,
+      "batch_queue": 0,
+      "seats": 1
+    },
+    "compare": {
+      "local_editing": "Unlimited",
+      "watermark": "On exports",
+      "export_quality": "720p",
+      "ai_minutes": "10 / month",
+      "ai_generations": "3 / day",
+      "shorts": "1 / month",
+      "mcp_calls": "10 / day",
+      "youtube_publishing": "-",
+      "ai_hashtags": "-",
+      "brand_kit": "-",
+      "batch_queue": "-",
+      "seats": "1"
+    }
+  },
+  "pro": {
+    "name": "Pro",
+    "monthly_price": 9,
+    "yearly_price": 69.95,
+    "trial_days": 14,
+    "features": [
+      "No watermark",
+      "1080p and 4K exports",
+      "300 AI transcription minutes a month",
+      "Unlimited MCP calls",
+      "One-call Shorts with narration and karaoke captions"
+    ],
+    "limits": {
+      "watermark": 0,
+      "export_max_height": 2160,
+      "ai_minutes_monthly": 300,
+      "ai_generations_daily": 100,
+      "shorts_monthly": 30,
+      "mcp_calls_daily": -1,
+      "youtube_publish": 0,
+      "ai_hashtags": 0,
+      "brand_kit": 0,
+      "batch_queue": 0,
+      "seats": 1
+    },
+    "compare": {
+      "local_editing": "Unlimited",
+      "watermark": "Removed",
+      "export_quality": "1080p / 4K",
+      "ai_minutes": "300 / month",
+      "ai_generations": "100 / day",
+      "shorts": "30 / month",
+      "mcp_calls": "Unlimited",
+      "youtube_publishing": "-",
+      "ai_hashtags": "-",
+      "brand_kit": "-",
+      "batch_queue": "-",
+      "seats": "1"
+    }
+  },
+  "studio": {
+    "name": "Studio",
+    "monthly_price": 29,
+    "yearly_price": 290,
+    "trial_days": 14,
+    "is_elite": true,
+    "features": [
+      "Everything in Pro",
+      "Publish straight to YouTube from the CLI, MCP or editor",
+      "AI hashtag and caption generation",
+      "Unlimited AI transcription and generations",
+      "Batch queue: a folder of recordings in, a Short per recording out",
+      "Brand kit: custom watermark, fonts, caption colours and CTA",
+      "5 seats"
+    ],
+    "limits": {
+      "watermark": 0,
+      "export_max_height": 2160,
+      "ai_minutes_monthly": -1,
+      "ai_generations_daily": -1,
+      "shorts_monthly": -1,
+      "mcp_calls_daily": -1,
+      "youtube_publish": 1,
+      "ai_hashtags": 1,
+      "brand_kit": 1,
+      "batch_queue": 1,
+      "seats": 5
+    },
+    "compare": {
+      "local_editing": "Unlimited",
+      "watermark": "Removed",
+      "export_quality": "1080p / 4K",
+      "ai_minutes": "Unlimited",
+      "ai_generations": "Unlimited",
+      "shorts": "Unlimited",
+      "mcp_calls": "Unlimited",
+      "youtube_publishing": "Included",
+      "ai_hashtags": "Included",
+      "brand_kit": "Included",
+      "batch_queue": "Included",
+      "seats": "5"
+    }
+  }
+}

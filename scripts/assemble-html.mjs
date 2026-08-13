@@ -12,7 +12,9 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-const INCLUDE = /^<!--#include (\S+) -->\n/gm;
+// The GUI pages are edited on Windows as often as not, so a marker line can
+// end either way; matching only \n silently leaves the marker in the output.
+const INCLUDE = /^<!--#include (\S+) -->\r?\n/gm;
 
 /**
  * Read an HTML file and expand its includes, recursively.

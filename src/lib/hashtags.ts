@@ -174,10 +174,46 @@ Rules:
   }
 }
 
+export interface SharedTrends {
+  hashtags: HashtagSuggestion[];
+  titles: Array<{ title: string; views: number; recent: boolean }>;
+}
+
 /**
- * The whole pipeline: real tags with view counts when a YouTube API key is
- * available, AI-only otherwise. Best tag wins its view count; results are
- * sorted popular-first by views.
+ * The vidlet.app shared trend cache (ViralCat's niche-pool pattern, hosted
+ * server-side): one YouTube+Groq fetch per genre serves every user, so this
+ * machine needs no YOUTUBE_API_KEY and no GROQ_API_KEY for publish material.
+ * Null on any failure - callers fall back to the local paths.
+ */
+export async function fetchSharedTrends(topic: string): Promise<SharedTrends | null> {
+  const base =
+    process.env.VIDLET_TRENDS_URL?.trim().replace(/\/$/, '') ||
+    'https://vidlet.app/api/youtube/trends';
+  try {
+    const res = await fetch(`${base}?topic=${encodeURIComponent(topic)}`, {
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      tags?: Array<{ tag: string; viewCount: number; label: string | null; kind: string }>;
+      titles?: Array<{ title: string; views: number; recent: boolean }>;
+    };
+    const hashtags = (data.tags ?? []).map((t) => ({
+      tag: t.tag,
+      viewCount: t.viewCount,
+      label: t.label,
+      kind: t.kind === 'trending' ? ('trending' as const) : ('popular' as const),
+    }));
+    if (hashtags.length === 0) return null;
+    return { hashtags, titles: data.titles ?? [] };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The whole pipeline, cheapest first: the shared vidlet.app cache (no local
+ * keys needed), then real tags via a local YouTube API key, then AI-only.
  */
 export async function suggestHashtags(input: {
   topic: string;
@@ -185,6 +221,9 @@ export async function suggestHashtags(input: {
   youtubeApiKey?: string;
 }): Promise<HashtagSuggestion[]> {
   const { topic, description, youtubeApiKey } = input;
+
+  const shared = await fetchSharedTrends(topic);
+  if (shared) return shared.hashtags;
 
   if (youtubeApiKey) {
     const hits = await fetchYouTubeTags(youtubeApiKey, topic);

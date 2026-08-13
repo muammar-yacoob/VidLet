@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <title>VidLet — Spark</title>
+  <rect width="512" height="512" rx="116" fill="#14141C"/>
+  <path d="M164 136 L376 264 L164 392 Z" fill="#FFF6E5" stroke="#FFF6E5" stroke-width="26" stroke-linejoin="round"/>
+  <path d="M382 86 Q396 130 440 144 Q396 158 382 202 Q368 158 324 144 Q368 130 382 86 Z" fill="#FFC53D" stroke="#14141C" stroke-width="22" stroke-linejoin="round"/>
+</svg>

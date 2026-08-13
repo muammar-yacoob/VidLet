@@ -57,6 +57,73 @@ describe('buildSubtitleAss', () => {
     project.subtitles.entries = [];
     expect(buildSubtitleAss(project, { width: 640, height: 360 })).toBeNull();
   });
+
+  const wordLitProject = (style?: Record<string, unknown>, words?: unknown) =>
+    parseProject(
+      JSON.stringify({
+        vidlet: 1,
+        meta: { title: 't', createdAt: 'x', modifiedAt: 'x', generator: 'g' },
+        settings: { width: 720, height: 1280, fps: 30, background: '#000000' },
+        media: [],
+        tracks: { video: [], overlay: [], voice: [], music: [], sfx: [] },
+        subtitles: {
+          style: {
+            fontFamily: 'DejaVu Sans',
+            fontSize: 64,
+            color: '#FFFFFF',
+            position: 'bottom',
+            outline: true,
+            ...style,
+          },
+          entries: [{ id: 's1', start: 0, end: 2, text: 'one two', ...(words ? { words } : {}) }],
+        },
+      })
+    );
+
+  const canvas = { width: 720, height: 1280 };
+
+  it('stays plain when the project records no caption style', () => {
+    // The old behaviour, and the reason a Short round-tripped to flat blocks.
+    const ass = buildSubtitleAss(wordLitProject(), canvas);
+    expect(ass).toContain('Dialogue: 0,0:00:00.00,0:00:02.00,Default,,0,0,0,,one two');
+  });
+
+  it('renders word-lit captions when the project records the shorts style', () => {
+    const ass = buildSubtitleAss(wordLitProject({ captionStyle: 'shorts' }), canvas) ?? '';
+    // One Dialogue event per word, so exactly one word is lit at a time.
+    expect(ass.match(/^Dialogue:/gm)?.length).toBe(2);
+    expect(ass).toContain('Style: Shorts');
+  });
+
+  it('honours an override for projects written before the style was stored', () => {
+    const ass = buildSubtitleAss(wordLitProject(), canvas, 'shorts') ?? '';
+    expect(ass).toContain('Style: Shorts');
+    expect(ass.match(/^Dialogue:/gm)?.length).toBe(2);
+  });
+
+  it('uses stored word timings rather than interpolating', () => {
+    const stored = buildSubtitleAss(
+      wordLitProject({ captionStyle: 'shorts' }, [
+        { word: 'one', start: 0, end: 1.6 },
+        { word: 'two', start: 1.6, end: 2 },
+      ]),
+      canvas
+    );
+    // Even distribution would split at 1.0; the stored timing splits at 1.6.
+    expect(stored).toContain('0:00:01.60');
+    expect(buildSubtitleAss(wordLitProject({ captionStyle: 'shorts' }), canvas)).toContain(
+      '0:00:01.00'
+    );
+  });
+
+  it('carries the project highlight colour into the lit word', () => {
+    const ass =
+      buildSubtitleAss(
+        wordLitProject({ captionStyle: 'shorts', highlightColor: '&H0000FF&' }),
+        canvas
+      ) ?? '';
+    expect(ass).toContain('&H0000FF&');
+  });
 });
 
 // Integration: only when a system ffmpeg exists. Fixtures are generated at

@@ -8,6 +8,7 @@
  */
 import { assTime, buildAssHeader, type CaptionWord, hexToAss } from '@spark-apps/video-kit';
 import type { VidletProject } from '../lib/vidlet-project.js';
+import { generateShortsAss } from './caption.js';
 
 export interface Canvas {
   width: number;
@@ -25,10 +26,31 @@ function projectColorToAss(hex: string): string {
   return hexToAss(hex);
 }
 
-/** Build ASS for the project's subtitles block, or null when there are none. */
-export function buildSubtitleAss(project: VidletProject, canvas: Canvas): string | null {
+/**
+ * Word-lit caption styles, which need a per-word generator rather than one
+ * Dialogue line per sentence.
+ */
+const WORD_LIT = new Set(['shorts', 'karaoke', 'hormozi']);
+
+/**
+ * Build ASS for the project's subtitles block, or null when there are none.
+ *
+ * `override` forces a caption style regardless of what the project records -
+ * the escape hatch for projects written before the style was persisted, whose
+ * captions would otherwise render as plain blocks.
+ */
+export function buildSubtitleAss(
+  project: VidletProject,
+  canvas: Canvas,
+  override?: string
+): string | null {
   const { style, entries } = project.subtitles;
   if (entries.length === 0) return null;
+
+  const captionStyle = override ?? style.captionStyle ?? 'plain';
+  if (WORD_LIT.has(captionStyle)) {
+    return buildWordLitAss(project, canvas, captionStyle);
+  }
 
   const fontSize = Math.max(
     8,
@@ -59,6 +81,41 @@ export function buildSubtitleAss(project: VidletProject, canvas: Canvas): string
     });
 
   return header + lines.join('\n');
+}
+
+/**
+ * The Shorts caption: one line at a time, only the spoken word lit. Matches
+ * what the short pipeline burns (autoshort-voice.ts), so a project rendered
+ * this way looks like the Short it came from.
+ *
+ * Entries without `words` fall through to generateShortsAss's own even
+ * distribution across the entry span. That is interpolation, not the original
+ * measured timing - close enough to read as karaoke, but a project that
+ * recorded its words will always be truer.
+ */
+function buildWordLitAss(project: VidletProject, canvas: Canvas, captionStyle: string): string {
+  const { style, entries } = project.subtitles;
+  const scale = canvas.height / project.settings.height;
+  return generateShortsAss({
+    entries: [...entries]
+      .sort((a, b) => a.start - b.start)
+      .map((entry, i) => ({
+        index: i + 1,
+        startTime: entry.start,
+        endTime: entry.end,
+        text: entry.text,
+        words: entry.words?.map((w) => ({ word: w.word, start: w.start, end: w.end })),
+      })),
+    videoWidth: canvas.width,
+    videoHeight: canvas.height,
+    fontSize: Math.max(8, Math.round(style.fontSize * scale)),
+    fontName: style.fontFamily,
+    position: style.position,
+    highlightColor: style.highlightColor ?? '&H00FFFF&',
+    maxChars: 28,
+    // 'karaoke' is the progressive-fill variant; the others light one word.
+    uppercase: captionStyle !== 'karaoke',
+  });
 }
 
 export type { CaptionWord };

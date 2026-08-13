@@ -105,6 +105,13 @@ function audioClipSchema(duckingDefault: boolean) {
 
 const voiceClipSchema = audioClipSchema(true);
 
+/**
+ * `captionStyle` and `highlightColor` are VidLet extensions, not spec fields.
+ * The v1 schema constrains neither `additionalProperties` here nor on entries,
+ * so carrying them is legal and other tools ignore them - which is the point:
+ * without a record of HOW captions were burned, a project round-trip silently
+ * downgrades a Short's karaoke to plain sentence blocks.
+ */
 const subtitleStyleSchema = z
   .object({
     fontFamily: z.string(),
@@ -112,6 +119,16 @@ const subtitleStyleSchema = z
     color: hexColorSchema,
     position: z.enum(['top', 'center', 'bottom']),
     outline: z.boolean(),
+    captionStyle: z.enum(['plain', 'shorts', 'karaoke', 'hormozi', 'classic']).optional(),
+    highlightColor: z.string().optional(),
+  })
+  .passthrough();
+
+const subtitleWordSchema = z
+  .object({
+    word: z.string(),
+    start: z.number().min(0),
+    end: z.number().min(0),
   })
   .passthrough();
 
@@ -121,6 +138,8 @@ const subtitleEntrySchema = z
     start: z.number().min(0),
     end: z.number().min(0),
     text: z.string(),
+    /** Per-word timings. Absent on hand-written projects; interpolated then. */
+    words: z.array(subtitleWordSchema).optional(),
   })
   .passthrough();
 

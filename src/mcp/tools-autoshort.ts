@@ -8,15 +8,25 @@
  * question is answered, so approving a script costs seconds, not a render.
  *
  * Question rounds, in order:
- *   1. music     - with audible previews, chosen by ear not by label
- *   2. narration - a description, when the footage has no voice
- *   3. script    - the written narration, approved before it is spoken
+ *   1. music        - with audible previews, chosen by ear not by label
+ *   2. narration    - a description, when the footage has no voice
+ *   3. voice+script - the TTS voice, and the written narration approved
+ *                     before it is spoken and burned in
+ *
+ * One question comes AFTER the render rather than instead of it: the
+ * sensitive-data scan reads the finished Short, so it cannot run in the
+ * rounds above without OCRing the full-length sources. It returns the video
+ * AND a `masking` question; answering it costs a mask pass, not a re-render.
+ *
+ * A real render also returns a `youtube` block - three graded title
+ * variants, three thumbnail frames, hashtags with real view counts - so the
+ * natural next question ("publish it?") arrives already carrying material.
  */
 import { dirname, join, resolve } from 'node:path';
 import { slugifyTitle, titleFromScript } from '../lib/autoshort-plan.js';
+import { fmtViews } from '../lib/hashtags.js';
 import { MUSIC_MOODS } from '../lib/music.js';
-import { getOutputPath } from '../lib/paths.js';
-import { addMusic } from '../tools/add-music.js';
+import { loadTokens } from '../lib/youtube.js';
 import {
   autoShort,
   classifyInputs,
@@ -24,8 +34,8 @@ import {
   rephraseScript,
   resolveScriptSource,
 } from '../tools/autoshort.js';
-import { maskSensitive } from '../tools/mask.js';
 import { previewMusic } from '../tools/music-preview.js';
+import { suggestPublish } from '../tools/youtube-short.js';
 import {
   fileResult,
   fileUrl,
@@ -37,6 +47,7 @@ import {
   withSilencedStdout,
   writeThumbnail,
 } from './shared.js';
+import { buildMaskQuestion, handleAddMusic, handleMaskSensitive } from './tools-autoshort-aux.js';
 
 export { AUTOSHORT_TOOLS } from './tools-autoshort-schema.js';
 
@@ -156,6 +167,7 @@ async function handleGenerateShort(args: {
   fill?: 'pad' | 'crop';
   render?: boolean;
   mask_sensitive?: boolean;
+  mask_apply?: boolean;
   title?: string;
   language?: string;
   gender?: 'female' | 'male';
@@ -234,11 +246,22 @@ async function handleGenerateShort(args: {
       });
     }
 
-    // --- 3. approve the script BEFORE it is spoken and burned in ---
-    if (questions.length === 0 && hasScriptSource && !final_script) {
-      const raw = resolveScriptSource(files, narration);
+    // --- 3. voice + script, together, BEFORE anything is spoken ---
+    // One round, two questions: both must be settled before TTS, and asking
+    // them separately would cost an extra round trip.
+    if (questions.length === 0 && hasScriptSource) {
       const wantsVoice = voiceover !== 'keep' && (voiceover === 'tts' || !plan.voiced);
-      if (wantsVoice) {
+      if (wantsVoice && !args.gender) {
+        questions.push({
+          id: 'voice',
+          ask: 'Which voice should read the narration?',
+          options: ['Female - re-call with gender: "female"', 'Male - re-call with gender: "male"'],
+          maps_to: 'gender',
+          hint: 'Non-English narration also takes language: "<code>", e.g. "es".',
+        });
+      }
+      if (wantsVoice && !final_script) {
+        const raw = resolveScriptSource(files, narration);
         const draft = (await rephraseScript(raw, plan.outputDuration)) ?? raw;
         questions.push({
           id: 'script',
@@ -298,11 +321,20 @@ async function handleGenerateShort(args: {
         fill: args.fill,
         render: args.render,
         maskSensitive: args.mask_sensitive,
+        maskApply: args.mask_apply,
         language: args.language,
         gender: args.gender,
         output,
       });
       const thumbnail = result.rendered ? await writeThumbnail(result.output) : null;
+      const maskQuestion = buildMaskQuestion(result);
+      // Publish material rides along with the finished video: the user's
+      // next decision is "upload it?", and that question deserves titles,
+      // thumbs and hashtags in hand rather than another tool round.
+      const topic = (args.title ?? titleFromScript(script)) || slug.replace(/-/g, ' ');
+      const publish = result.rendered
+        ? await suggestPublish(result.output, topic, script || undefined)
+        : null;
       return fileResult(
         result.output,
         {
@@ -319,123 +351,67 @@ async function handleGenerateShort(args: {
                 source: result.music.source,
               }
             : null,
+          ...(publish
+            ? {
+                youtube: {
+                  connected: Boolean(loadTokens()?.refresh_token),
+                  titles: publish.titles.map((t) => ({
+                    text: t.title,
+                    grade: t.score.grade,
+                    score: t.score.total,
+                  })),
+                  thumbnails: {
+                    a: fileUrl(publish.thumbnails[0]),
+                    b: fileUrl(publish.thumbnails[1]),
+                    c: fileUrl(publish.thumbnails[2]),
+                  },
+                  hashtags: publish.hashtags.map((h) => ({
+                    tag: h.tag,
+                    views: h.viewCount > 0 ? fmtViews(h.viewCount) : null,
+                    kind: h.kind,
+                  })),
+                  // Top real titles in this genre (shared trend cache). YOU
+                  // are a language model: write the A/B title pair yourself
+                  // from these patterns instead of settling for the graded
+                  // fallbacks above.
+                  trending_titles: publish.trendingTitles.map((t) => ({
+                    title: t.title,
+                    views: fmtViews(t.views),
+                    recent: t.recent,
+                  })),
+                },
+              }
+            : {}),
+          ...(maskQuestion ? { questions: [maskQuestion] } : {}),
           next_steps: [
             'Show the user the video `name`, its `url`, `elapsedSeconds`, and the ' +
               '`thumbnailUrl` as a preview. Mention `projectUrl`: the same edit as a .vidlet ' +
               'project they can open with open_in_editor to tweak cuts, narration timing or ' +
               'captions, then re-render with render_project.',
+            ...(publish
+              ? [
+                  'Then show the `youtube` block IN FULL: all three graded titles, all three ' +
+                    'thumbnail urls, and the hashtags (kind marks popular vs trending, views ' +
+                    'are real when present). Ask whether to publish to YouTube. If yes and ' +
+                    '`youtube.connected` is false, call connect_youtube first; then ' +
+                    'upload_to_youtube with this video - it runs its own approval round, with ' +
+                    'A/B testing across the two titles and thumbs the user picks, before ' +
+                    'anything goes live.',
+                ]
+              : []),
+            ...(maskQuestion
+              ? [
+                  'The video is finished and NOTHING was covered. Relay the `masking` question ' +
+                    'verbatim before treating it as final - the regions are a guess, and on a ' +
+                    'screen recording they are often window titles rather than real data.',
+                ]
+              : []),
           ],
         },
         result.project ? [result.project] : []
       );
     });
   });
-}
-
-async function handleMaskSensitive({
-  path,
-  sample_fps,
-  regions,
-  blockiness,
-  dry_run,
-  output_path,
-}: {
-  path?: string;
-  sample_fps?: number;
-  regions?: Array<{ x: number; y: number; width: number; height: number }>;
-  blockiness?: number;
-  dry_run?: boolean;
-  output_path?: string;
-}) {
-  const input = resolveInputPath(path);
-  return withSilencedStdout(async () => {
-    const supplied = regions?.map((r) => ({ ...r, kinds: [] as never[] }));
-    // Dry runs and no-op scans must not reserve an output path; they write
-    // nothing, and a reserved placeholder would litter the folder.
-    if (dry_run || supplied === undefined) {
-      const probe = await maskSensitive({
-        input,
-        output: '',
-        sampleFps: sample_fps,
-        regions: supplied,
-        blockiness,
-        dryRun: true,
-      });
-      if (dry_run || probe.regions.length === 0) {
-        return jsonContent({ ...probe, masked: false });
-      }
-      const desired = output_path ? resolve(output_path) : getOutputPath(input, '_masked');
-      const output = safeOutputPath(input, desired);
-      return runWriteTool(output, async () => {
-        const result = await maskSensitive({
-          input,
-          output,
-          regions: probe.regions,
-          blockiness,
-        });
-        const thumbnail = await writeThumbnail(output);
-        return fileResult(output, {
-          ...result,
-          masked: true,
-          thumbnail,
-          thumbnailUrl: thumbnail ? fileUrl(thumbnail) : null,
-        });
-      });
-    }
-
-    const desired = output_path ? resolve(output_path) : getOutputPath(input, '_masked');
-    const output = safeOutputPath(input, desired);
-    return runWriteTool(output, async () => {
-      const result = await maskSensitive({ input, output, regions: supplied, blockiness });
-      const thumbnail = await writeThumbnail(output);
-      return fileResult(output, {
-        ...result,
-        masked: true,
-        thumbnail,
-        thumbnailUrl: thumbnail ? fileUrl(thumbnail) : null,
-      });
-    });
-  });
-}
-
-async function handleAddMusic({
-  path,
-  music,
-  volume,
-  duck,
-  output_path,
-}: {
-  path?: string;
-  music?: string;
-  volume?: number;
-  duck?: boolean;
-  output_path?: string;
-}) {
-  const input = resolveInputPath(path);
-  if (!music) throw new Error('`music` is required - a bundled mood or a path to audio.');
-  const desired = output_path ? resolve(output_path) : getOutputPath(input, '_scored');
-  const output = safeOutputPath(input, desired);
-  return runWriteTool(output, () =>
-    withSilencedStdout(async () => {
-      const startedAt = Date.now();
-      const result = await addMusic({ input, output, music, volume, duck });
-      const thumbnail = await writeThumbnail(result.output);
-      return fileResult(result.output, {
-        elapsedSeconds: Number(((Date.now() - startedAt) / 1000).toFixed(1)),
-        thumbnail,
-        thumbnailUrl: thumbnail ? fileUrl(thumbnail) : null,
-        duration: result.duration,
-        ducked: result.ducked,
-        music: {
-          title: result.track.title,
-          artist: result.track.artist,
-          license: result.track.license,
-          source: result.track.source,
-        },
-        next_steps: ['Show the user the `url`.'],
-      });
-    })
-  );
 }
 
 export const AUTOSHORT_HANDLERS: Record<string, ToolHandler> = {

@@ -229,6 +229,37 @@ export function withinAreaLimit(
   return (region.width * region.height) / frame <= MAX_REGION_AREA_FRACTION;
 }
 
+const KIND_LABELS: Record<PiiKind, string> = {
+  card: 'a card number',
+  email: 'an email address',
+  phone: 'a phone number',
+  iban: 'an IBAN',
+  postcode: 'a postcode',
+  address: 'a street address',
+  ssn: 'a national ID number',
+  key: 'an API key',
+};
+
+/**
+ * Describe a region in words, for asking a human whether to cover it.
+ *
+ * The position matters as much as the kind: "a street address, top-left" is
+ * usually a window title bar and a false positive, while the same match in
+ * the middle of the frame is usually real. Saying where it is lets the
+ * person answer without opening the video.
+ */
+export function describeRegion(region: MaskRegion, frameW: number, frameH: number): string {
+  const kinds = region.kinds.map((k) => KIND_LABELS[k]);
+  const what = kinds.length > 0 ? kinds.join(' and ') : 'something';
+  const cx = region.x + region.width / 2;
+  const cy = region.y + region.height / 2;
+  const vertical = cy < frameH / 3 ? 'top' : cy > (frameH * 2) / 3 ? 'bottom' : 'middle';
+  const horizontal = cx < frameW / 3 ? 'left' : cx > (frameW * 2) / 3 ? 'right' : 'centre';
+  const where =
+    vertical === 'middle' && horizontal === 'centre' ? 'centre' : `${vertical}-${horizontal}`;
+  return `${what}, ${where}`;
+}
+
 /**
  * Union every frame's regions into one static set.
  *

@@ -50,6 +50,12 @@ export interface RenderProjectOptions {
   draft?: boolean;
   /** "1920x1080" or "720p"-style override of the project canvas. */
   resolution?: string;
+  /**
+   * Force a caption style, ignoring what the project records. Needed for
+   * projects written before the style was persisted, whose Shorts captions
+   * would otherwise come back as plain sentence blocks.
+   */
+  captionStyle?: string;
   onProgress?: (stage: string) => void;
 }
 
@@ -422,7 +428,7 @@ export async function renderProject(options: RenderProjectOptions): Promise<Rend
     progress('cutting main track');
     const base = await renderMainTrack(project, files, mediaById, audioByPath, totalDuration, ctx);
 
-    const ass = buildSubtitleAss(project, canvas);
+    const ass = buildSubtitleAss(project, canvas, options.captionStyle);
     let assPath: string | null = null;
     if (ass) {
       assPath = join(tmp, 'subtitles.ass');

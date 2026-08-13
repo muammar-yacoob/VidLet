@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <title>VidLet — Filmstrip Grin</title>
+  <rect width="512" height="512" rx="116" fill="#FFF6E5"/>
+  <g fill="#14141C">
+    <path fill-rule="evenodd" d="M184 168 a56 56 0 1 1 -0.1 0 Z M184 206 a18 18 0 1 0 0.1 0 Z"/>
+    <path fill-rule="evenodd" d="M328 168 a56 56 0 1 1 -0.1 0 Z M328 206 a18 18 0 1 0 0.1 0 Z"/>
+  </g>
+  <path id="grin" d="M148 318 q108 96 216 0" fill="none" stroke="#FFC53D" stroke-width="52" stroke-linecap="round"/>
+  <path d="M148 318 q108 96 216 0" fill="none" stroke="#14141C" stroke-width="16"
+        stroke-linecap="round" stroke-dasharray="4 34" stroke-dashoffset="18"/>
+</svg>

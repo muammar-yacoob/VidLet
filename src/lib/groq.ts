@@ -4,6 +4,8 @@
  * requirement model as QuickPeek. No SDK dependency.
  */
 
+import { CACHEABLE_TEMP_MAX, cacheKey, withResponseCache } from './ai-cache.js';
+
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
 
 /**
@@ -58,33 +60,51 @@ export function visionMessage(text: string, jpegsBase64: string[]): GroqMessage 
   };
 }
 
-/** Call Groq chat completions in JSON mode and parse the response object. */
+const TEMPERATURE = 0.3;
+
+/**
+ * Call Groq chat completions in JSON mode and parse the response object.
+ *
+ * Every call goes through the response cache, so the same prompt is paid for
+ * once per video project rather than once per render. Iterating on a Short
+ * means re-running this over identical material - draft, final, then the
+ * publish material again at upload time.
+ */
 export async function groqChatJSON<T>(
   messages: GroqMessage[],
   model: string = DEFAULT_MODEL
 ): Promise<T> {
-  const res = await fetch(GROQ_URL, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${getGroqKey()}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model,
-      messages,
-      response_format: { type: 'json_object' },
-      temperature: 0.3,
-    }),
-  });
+  const content = await withResponseCache(
+    cacheKey({ model, messages, temperature: TEMPERATURE }),
+    TEMPERATURE <= CACHEABLE_TEMP_MAX,
+    async () => {
+      const res = await fetch(GROQ_URL, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${getGroqKey()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model,
+          messages,
+          response_format: { type: 'json_object' },
+          temperature: TEMPERATURE,
+        }),
+      });
 
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new Error(`Groq API error ${res.status}: ${body.slice(0, 300)}`);
-  }
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        throw new Error(`Groq API error ${res.status}: ${body.slice(0, 300)}`);
+      }
 
-  const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
-  const content = data.choices?.[0]?.message?.content;
-  if (!content) throw new Error('Groq returned an empty response.');
+      const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+      const text = data.choices?.[0]?.message?.content;
+      // Thrown, not cached: an empty completion is a transient failure, and
+      // storing it would poison this prompt for the whole TTL.
+      if (!text) throw new Error('Groq returned an empty response.');
+      return text;
+    }
+  );
 
   try {
     return JSON.parse(content) as T;

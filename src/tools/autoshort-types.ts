@@ -6,6 +6,7 @@
  * having them in one small file makes a mismatch obvious.
  */
 import type { ResolvedTrack } from '../lib/music.js';
+import type { MaskRegion } from '../lib/pii.js';
 
 export interface AutoShortOptions {
   inputs: string[];
@@ -79,12 +80,23 @@ export interface AutoShortOptions {
   render?: boolean;
   /**
    * Scan the FINISHED Short for on-screen card numbers, emails, keys and
-   * addresses and pixelate them. Default true. Deliberately run on the
-   * output rather than the sources: only the frames that survived the cut
-   * can leak anything, and there are a few dozen of them instead of tens of
-   * thousands.
+   * addresses. Default true. Deliberately run on the output rather than the
+   * sources: only the frames that survived the cut can leak anything, and
+   * there are a few dozen of them instead of tens of thousands.
+   *
+   * Finding something REPORTS it in `masking.pending` - it does not cover
+   * it. OCR on a screen recording mistakes window titles and file paths for
+   * addresses often enough that blurring on a guess damages more edits than
+   * it saves; the caller asks, then applies with `maskApply` or the
+   * standalone mask tool.
    */
   maskSensitive?: boolean;
+  /**
+   * Cover what the scan finds instead of reporting it. Default false. For
+   * callers who have already decided - an unattended pipeline, or a second
+   * pass after the user said yes.
+   */
+  maskApply?: boolean;
   output?: string;
   language?: string;
   gender?: 'female' | 'male';
@@ -119,7 +131,16 @@ export interface AutoShortResult {
   /** Whether narration was placed by looking at the footage. */
   contentAligned: boolean;
   /** What the sensitive-data scan did, and why, so it is never silent. */
-  masking: { scanned: boolean; regionsMasked: number; note?: string };
+  masking: {
+    scanned: boolean;
+    regionsMasked: number;
+    /**
+     * Found but left alone, awaiting a decision. Coordinates are in output
+     * pixels, so they can be handed straight to the mask tool.
+     */
+    pending?: MaskRegion[];
+    note?: string;
+  };
   music: ResolvedTrack | null;
   /** Wall-clock per stage, so a slow render can be attributed. */
   stageSeconds: Record<string, number>;

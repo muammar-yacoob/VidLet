@@ -11,14 +11,8 @@
  * loose phrasing.
  */
 import { existsSync } from 'node:fs';
-import { fmtViews, suggestHashtags } from '../lib/hashtags.js';
-import {
-  connectYouTube,
-  getChannel,
-  loadTokens,
-  resolveClientCreds,
-  tokenFilePath,
-} from '../lib/youtube.js';
+import { fetchSharedTrends, fmtViews, suggestHashtags } from '../lib/hashtags.js';
+import { connectYouTube, getChannel, loadTokens, tokenFilePath } from '../lib/youtube.js';
 import {
   buildDescription,
   extractThumbnailCandidates,
@@ -41,22 +35,17 @@ export const YOUTUBE_TOOLS: ToolDefinition[] = [
     name: 'connect_youtube',
     description:
       'Connect VidLet to a YouTube channel (first-time setup or reconnect). Opens the Google ' +
-      'consent page in the browser, catches the loopback redirect, and stores the refresh ' +
-      'token in ~/.config/vidlet/youtube.json (owner-only permissions). Requires ' +
-      'GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in the server env, with the redirect URI ' +
-      'registered on that OAuth client (default http://localhost:3000/auth/youtube/callback). ' +
-      'Pass check_only to report connection state without opening a browser.',
+      'consent page via the vidlet.app OAuth broker - no Google client or API keys needed on ' +
+      'this machine - and stores the refresh token in ~/.config/vidlet/youtube.json ' +
+      '(owner-only permissions). Publishing is a VidLet Pro feature: a free account gets an ' +
+      'upgrade link instead of a connection. Pass check_only to report connection state ' +
+      'without opening a browser.',
     inputSchema: {
       type: 'object',
       properties: {
         check_only: {
           type: 'boolean',
           description: 'Just report whether a working connection exists.',
-        },
-        redirect_uri: {
-          type: 'string',
-          description:
-            'Override the OAuth redirect URI (must exactly match one registered on the client).',
         },
       },
     },
@@ -66,12 +55,13 @@ export const YOUTUBE_TOOLS: ToolDefinition[] = [
     description:
       'Publish a finished Short to the connected YouTube channel - with a human approval ' +
       'gate. First call: verifies the connection (returns a connect question if there is ' +
-      'none), then generates two title variants (graded by a virality scorer), hashtags with ' +
-      'real view counts from trending videos, and two thumbnail candidates from the video, ' +
-      'and returns it all as a `questions` round WITHOUT uploading. Relay the proposal ' +
-      'verbatim for approval. Only a re-call with confirm: true and the approved fields ' +
-      'uploads (resumable), sets the thumbnail, and starts an A/B test (variant A live, ' +
-      'variant B stored in a sidecar for rotate_youtube_test). Result carries the YouTube url.',
+      'none), then generates three title variants (graded by a virality scorer), hashtags ' +
+      'with real view counts from trending videos, and three thumbnail candidates from the ' +
+      'video, and returns it all as a `questions` round WITHOUT uploading. Relay the ' +
+      'proposal verbatim for approval; the user picks two of the three titles and thumbs as ' +
+      'the A/B pair. Only a re-call with confirm: true and the approved fields uploads ' +
+      '(resumable), sets the thumbnail, and starts an A/B test (variant A live, variant B ' +
+      'stored in a sidecar for rotate_youtube_test). Result carries the YouTube url.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -131,22 +121,16 @@ export const YOUTUBE_TOOLS: ToolDefinition[] = [
   },
 ];
 
-async function handleConnectYouTube({
-  check_only,
-  redirect_uri,
-}: {
-  check_only?: boolean;
-  redirect_uri?: string;
-}) {
+async function handleConnectYouTube({ check_only }: { check_only?: boolean }) {
   return withSilencedStdout(async () => {
     const tokens = loadTokens();
     if (check_only) {
       if (!tokens?.refresh_token) {
         return jsonContent({
           connected: false,
-          reason: resolveClientCreds()
-            ? 'No stored tokens. Call connect_youtube (no args) to open the consent flow.'
-            : 'No OAuth client configured: set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in the MCP server env.',
+          reason:
+            'No stored tokens. Call connect_youtube (no args) to open the consent flow - ' +
+            'no keys or Google client setup needed.',
         });
       }
       try {
@@ -160,7 +144,7 @@ async function handleConnectYouTube({
       }
     }
 
-    const channel = await connectYouTube({ redirectUri: redirect_uri });
+    const channel = await connectYouTube();
     return jsonContent({
       connected: true,
       channel,
@@ -225,14 +209,19 @@ async function handleUploadToYouTube(args: {
         });
       }
 
+      // Shared trend cache first: one server-side YouTube+Groq fetch per
+      // genre serves everyone, so this machine needs no keys of its own.
+      const shared = await fetchSharedTrends(topic);
       const [titles, thumbs, hashtags] = await Promise.all([
         generateTitleVariants(topic, args.narration),
         extractThumbnailCandidates(input),
-        suggestHashtags({
-          topic,
-          description: args.narration,
-          youtubeApiKey: process.env.YOUTUBE_API_KEY?.trim(),
-        }),
+        shared
+          ? Promise.resolve(shared.hashtags)
+          : suggestHashtags({
+              topic,
+              description: args.narration,
+              youtubeApiKey: process.env.YOUTUBE_API_KEY?.trim(),
+            }),
       ]);
       const description = buildDescription({
         narration: args.narration,
@@ -248,29 +237,34 @@ async function handleUploadToYouTube(args: {
             proposal: {
               channel: channel.title,
               privacy: args.privacy ?? 'public',
-              title_a: {
-                text: titles[0].title,
-                grade: titles[0].score.grade,
-                score: titles[0].score.total,
-              },
-              title_b: {
-                text: titles[1].title,
-                grade: titles[1].score.grade,
-                score: titles[1].score.total,
-              },
+              // Three of each; the user picks two as the A/B pair.
+              titles: titles.map((t) => ({
+                text: t.title,
+                grade: t.score.grade,
+                score: t.score.total,
+              })),
               thumbnails: {
                 a: fileUrl(thumbs[0]),
                 b: fileUrl(thumbs[1]),
+                c: fileUrl(thumbs[2]),
               },
               hashtags: hashtags.map((h) => ({
                 tag: h.tag,
                 views: h.viewCount > 0 ? fmtViews(h.viewCount) : null,
                 kind: h.kind,
               })),
+              // Real titles from the genre's top/recent videos. YOU are a
+              // language model - compose stronger A/B title variants from
+              // these patterns and offer them alongside the graded three.
+              trending_titles: (shared?.titles ?? []).map((t) => ({
+                title: t.title,
+                views: fmtViews(t.views),
+                recent: t.recent,
+              })),
               description,
             },
             options: [
-              'Approve - re-call with confirm: true plus title_a, title_b, tags, thumbnail_a, thumbnail_b and description from this proposal',
+              'Approve - re-call with confirm: true plus title_a, title_b (any two of the three titles), thumbnail_a, thumbnail_b (any two of the three thumbs), tags and description',
               'Edit - re-call with confirm: true and your edited versions of those fields',
               'Cancel - do not call again',
             ],
@@ -287,8 +281,10 @@ async function handleUploadToYouTube(args: {
           description,
         },
         next_steps: [
-          'Show the user the proposal, including both thumbnail urls and both graded titles. ' +
-            'Only after they approve, call again with confirm: true and the approved fields.',
+          'Show the user the proposal: all three thumbnail urls, all three graded titles, ' +
+            'and the hashtags. They pick two of each as the A/B pair (prepared defaults to ' +
+            'the first two). Only after they approve, call again with confirm: true and the ' +
+            'approved fields.',
         ],
       });
     }

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <title>VidLet — Clapper</title>
+  <defs>
+    <clipPath id="bar">
+      <rect x="72" y="128" width="368" height="80" rx="24" transform="rotate(-9 256 168)"/>
+    </clipPath>
+  </defs>
+  <rect width="512" height="512" rx="116" fill="#14141C"/>
+  <rect x="72" y="128" width="368" height="80" rx="24" transform="rotate(-9 256 168)" fill="#FFC53D"/>
+  <g clip-path="url(#bar)" fill="#14141C">
+    <path d="M118 100 l40 0 -56 120 -40 0 Z"/>
+    <path d="M238 100 l40 0 -56 120 -40 0 Z"/>
+    <path d="M358 100 l40 0 -56 120 -40 0 Z"/>
+  </g>
+  <rect x="76" y="224" width="360" height="188" rx="34" fill="#FFF6E5"/>
+  <path d="M226 274 L322 318 L226 362 Z" fill="#14141C" stroke="#14141C" stroke-width="18" stroke-linejoin="round"/>
+</svg>

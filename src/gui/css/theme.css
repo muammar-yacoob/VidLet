@@ -289,19 +289,6 @@ select:focus {
 .ld.on {
   display: flex;
 }
-.sp {
-  width: 20px;
-  height: 20px;
-  border: 2px solid var(--bg3);
-  border-top-color: var(--acc);
-  border-radius: 50%;
-  animation: s 0.5s linear infinite;
-}
-@keyframes s {
-  to {
-    transform: rotate(360deg);
-  }
-}
 .ld span {
   font-size: 12px;
   color: var(--txt3);

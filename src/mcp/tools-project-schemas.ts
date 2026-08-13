@@ -88,6 +88,17 @@ export const PROJECT_TOOLS: ToolDefinition[] = [
           type: 'boolean',
           description: 'Fast preview render: x264 ultrafast, capped at 720p.',
         },
+        caption_style: {
+          type: 'string',
+          enum: ['plain', 'shorts', 'karaoke', 'hormozi', 'classic'],
+          description:
+            'Force a caption style instead of the one the project records. Projects written ' +
+            'by generate_short now store "shorts" (one line at a time, only the spoken word ' +
+            'lit) and their per-word timing, so a re-render matches the original Short. Pass ' +
+            '"shorts" explicitly for projects made before that was recorded - without it their ' +
+            'captions render as plain sentence blocks. Word timings are interpolated when the ' +
+            'project has none.',
+        },
       },
       required: ['path'],
     },

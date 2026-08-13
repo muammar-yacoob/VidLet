@@ -97,6 +97,9 @@ export const AppSettingsSchema = z.object({
   hotkeyPreset: HotkeyPresetSchema.default('premiere'),
   frameSkip: z.number().min(2).max(6).default(3),
   sparkAiKey: z.string().default(''),
+  // The account plan limits are resolved against (see lib/spark-pay).
+  // VIDLET_EMAIL overrides it for CI and scripted runs.
+  accountEmail: z.string().default(''),
 });
 
 // Combined config schema
@@ -152,7 +155,7 @@ const DEFAULT_CONFIG: ToolsConfig = {
     position: 'bottom',
     whisperModel: 'base.en',
   },
-  app: { hotkeyPreset: 'premiere', frameSkip: 3, sparkAiKey: '' },
+  app: { hotkeyPreset: 'premiere', frameSkip: 3, sparkAiKey: '', accountEmail: '' },
 };
 
 /**

@@ -15,7 +15,7 @@ import {
 } from '../lib/ab-test.js';
 import { executeFFmpegRaw, getMediaDuration } from '../lib/ffmpeg.js';
 import { groqChatJSON } from '../lib/groq.js';
-import type { HashtagSuggestion } from '../lib/hashtags.js';
+import { fetchSharedTrends, type HashtagSuggestion, suggestHashtags } from '../lib/hashtags.js';
 import { getVideoStats, setThumbnail, updateVideoMeta, uploadVideo } from '../lib/youtube.js';
 
 export interface TitleVariant {
@@ -24,23 +24,27 @@ export interface TitleVariant {
 }
 
 /**
- * Two title candidates in different registers, scored with the ported
- * ViralCat model. One Groq call for both.
+ * Three title candidates in different registers, scored with the ported
+ * ViralCat model. One Groq call for all three.
  */
 export async function generateTitleVariants(
   topic: string,
   narration?: string
-): Promise<[TitleVariant, TitleVariant]> {
-  const fallbackA = topic.slice(0, 65);
-  const fallbackB = `How I ${topic}`.slice(0, 65);
-  if (!process.env.GROQ_API_KEY?.trim()) {
-    return [
-      { title: fallbackA, score: scoreYouTubeTitle(fallbackA) },
-      { title: fallbackB, score: scoreYouTubeTitle(fallbackB) },
+): Promise<[TitleVariant, TitleVariant, TitleVariant]> {
+  const fallbacks = [
+    topic.slice(0, 65),
+    `How I ${topic}`.slice(0, 65),
+    `${topic} in Under a Minute`.slice(0, 65),
+  ];
+  const scored = (titles: string[]): [TitleVariant, TitleVariant, TitleVariant] =>
+    titles.map((t) => ({ title: t, score: scoreYouTubeTitle(t) })) as [
+      TitleVariant,
+      TitleVariant,
+      TitleVariant,
     ];
-  }
+  if (!process.env.GROQ_API_KEY?.trim()) return scored(fallbacks);
   try {
-    const result = await groqChatJSON<{ a?: string; b?: string }>([
+    const result = await groqChatJSON<{ a?: string; b?: string; c?: string }>([
       {
         role: 'system',
         content:
@@ -48,39 +52,35 @@ export async function generateTitleVariants(
           'characters; strong opener ("How to...", "This tool...", "Why..."); at most ONE ' +
           'ALL-CAPS power word; include a number when honest; a parenthetical hook like ' +
           '"(Here\'s How)" works well; no emojis, no exclamation marks, never an em dash. ' +
-          'Return JSON {"a": "<curiosity-driven title>", "b": "<benefit-driven title>"} - two ' +
-          'genuinely different angles, not rephrasings.',
+          'Return JSON {"a": "<curiosity-driven title>", "b": "<benefit-driven title>", ' +
+          '"c": "<process/transformation-driven title>"} - three genuinely different ' +
+          'angles, not rephrasings.',
       },
       {
         role: 'user',
         content: `Topic: ${topic}\n${narration ? `Narration: ${narration.slice(0, 600)}` : ''}`,
       },
     ]);
-    const a = (result.a ?? fallbackA).slice(0, 100);
-    const b = (result.b ?? fallbackB).slice(0, 100);
-    return [
-      { title: a, score: scoreYouTubeTitle(a) },
-      { title: b, score: scoreYouTubeTitle(b) },
-    ];
+    return scored([result.a, result.b, result.c].map((t, i) => (t ?? fallbacks[i]).slice(0, 100)));
   } catch {
-    return [
-      { title: fallbackA, score: scoreYouTubeTitle(fallbackA) },
-      { title: fallbackB, score: scoreYouTubeTitle(fallbackB) },
-    ];
+    return scored(fallbacks);
   }
 }
 
 /**
- * Two thumbnail candidates pulled from the video itself, at 30% and 70% -
- * past the intro, before the outro. JPEG q4 keeps them far under the 2MB
- * thumbnails.set cap.
+ * Three thumbnail candidates pulled from the video itself, at 25%, 50% and
+ * 75% - past the intro, before the outro. JPEG q4 keeps them far under the
+ * 2MB thumbnails.set cap.
  */
-export async function extractThumbnailCandidates(videoPath: string): Promise<[string, string]> {
+export async function extractThumbnailCandidates(
+  videoPath: string
+): Promise<[string, string, string]> {
   const duration = await getMediaDuration(videoPath);
   const outs: string[] = [];
   for (const [label, frac] of [
-    ['a', 0.3],
-    ['b', 0.7],
+    ['a', 0.25],
+    ['b', 0.5],
+    ['c', 0.75],
   ] as const) {
     const out = `${videoPath.replace(/\.[^.]+$/, '')}-yt-thumb-${label}.jpg`;
     await executeFFmpegRaw([
@@ -97,7 +97,52 @@ export async function extractThumbnailCandidates(videoPath: string): Promise<[st
     ]);
     outs.push(out);
   }
-  return [outs[0], outs[1]];
+  return [outs[0], outs[1], outs[2]];
+}
+
+export interface PublishSuggestions {
+  titles: [TitleVariant, TitleVariant, TitleVariant];
+  thumbnails: [string, string, string];
+  hashtags: HashtagSuggestion[];
+  /**
+   * Real titles from the genre's top/recent videos (shared vidlet.app trend
+   * cache). Raw material for the CALLING model to write its own variants -
+   * an MCP caller is already an LLM, so no local Groq key is needed for
+   * title writing.
+   */
+  trendingTitles: Array<{ title: string; views: number; recent: boolean }>;
+}
+
+/**
+ * Everything worth showing right after a render, before any upload: three
+ * graded titles, three thumbnail frames, and hashtags with real view counts
+ * when a YouTube API key is configured. Failures degrade to null - a
+ * suggestion block must never fail the render that produced the video.
+ */
+export async function suggestPublish(
+  videoPath: string,
+  topic: string,
+  narration?: string
+): Promise<PublishSuggestions | null> {
+  try {
+    // One shared-cache round trip covers hashtags AND trending titles;
+    // suggestHashtags would otherwise fetch the same entry again.
+    const shared = await fetchSharedTrends(topic);
+    const [titles, thumbnails, hashtags] = await Promise.all([
+      generateTitleVariants(topic, narration),
+      extractThumbnailCandidates(videoPath),
+      shared
+        ? Promise.resolve(shared.hashtags)
+        : suggestHashtags({
+            topic,
+            description: narration,
+            youtubeApiKey: process.env.YOUTUBE_API_KEY?.trim(),
+          }),
+    ]);
+    return { titles, thumbnails, hashtags, trendingTitles: shared?.titles ?? [] };
+  } catch {
+    return null;
+  }
 }
 
 /** Description: narration first, hashtag block last - the YouTube idiom. */

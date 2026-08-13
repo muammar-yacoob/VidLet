@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <title>VidLet — Slide</title>
+  <rect width="512" height="512" rx="116" fill="#14141C"/>
+  <g stroke-linejoin="round" stroke-width="20">
+    <path d="M164 112 L310 197 L310 314 L164 400 Z" fill="#FFF6E5" stroke="#FFF6E5"/>
+    <path d="M320 257 L420 316 L320 374 Z" fill="#FFC53D" stroke="#FFC53D"/>
+  </g>
+</svg>

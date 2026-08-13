@@ -16,7 +16,13 @@
     </div>
 
     <div class="ld" id="loading">
-      <dotlottie-player class="lottie-loader" src="/bouncing-fruits.lottie" background="transparent" speed="1" loop autoplay></dotlottie-player>
+      <svg class="vidlet-loader" viewBox="0 0 512 512" aria-hidden="true">
+        <g stroke-linejoin="round" stroke-width="20">
+          <g class="vl-ghost"><path class="vl-tip" d="M318 246 L410 302 L318 358 Z"/></g>
+          <path class="vl-body" d="M176 124 L300 200 L300 312 L176 388 Z"/>
+          <path class="vl-tip" d="M318 246 L410 302 L318 358 Z"/>
+        </g>
+      </svg>
       <span id="processing-label">Processing...</span>
       <div class="process-progress" id="process-progress">
         <div class="process-progress-fill" id="process-progress-fill"></div>

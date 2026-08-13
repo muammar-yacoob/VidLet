@@ -35,7 +35,13 @@
               <div class="timeline-zoom-hint">Scroll to zoom · Drag to pan</div>
             </div>
             <div class="trim-loading hidden" id="trim-loading">
-              <dotlottie-player src="/bouncing-fruits.lottie" background="transparent" speed="1" style="width:80px;height:80px" loop autoplay></dotlottie-player>
+              <svg class="vidlet-loader" viewBox="0 0 512 512" style="width:80px;height:80px" aria-hidden="true">
+                <g stroke-linejoin="round" stroke-width="20">
+                  <g class="vl-ghost"><path class="vl-tip" d="M318 246 L410 302 L318 358 Z"/></g>
+                  <path class="vl-body" d="M176 124 L300 200 L300 312 L176 388 Z"/>
+                  <path class="vl-tip" d="M318 246 L410 302 L318 358 Z"/>
+                </g>
+              </svg>
               <span>Finding loops...</span>
             </div>
             <input type="hidden" id="trim-start" value="0">
