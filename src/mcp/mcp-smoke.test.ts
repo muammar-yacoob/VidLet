@@ -89,12 +89,21 @@ describe.runIf(built)('mcp.js smoke (stdio JSON-RPC)', () => {
           method: 'tools/call',
           params: { name: 'list_capabilities', arguments: {} },
         },
+        { jsonrpc: '2.0', id: 4, method: 'resources/list' },
       ],
-      [1, 2, 3]
+      [1, 2, 3, 4]
     );
 
     const init = responses.find((r) => r.id === 1);
     expect(init?.result?.serverInfo?.name).toBe('vidlet');
+    // Every write tool returns a resource_link; without this capability and a
+    // live resources/list handler those links are dangling and clients render
+    // them as text instead of a file card.
+    expect(init?.result?.capabilities?.resources).toBeTruthy();
+
+    const resources = responses.find((r) => r.id === 4);
+    expect(resources?.error).toBeUndefined();
+    expect(Array.isArray(resources?.result?.resources)).toBe(true);
 
     const list = responses.find((r) => r.id === 2);
     const toolNames = list?.result?.tools?.map((t: { name: string }) => t.name) ?? [];
