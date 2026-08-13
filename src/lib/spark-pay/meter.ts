@@ -19,6 +19,12 @@ interface UsageFile {
   /** UTC date the counts belong to, YYYY-MM-DD. */
   day: string;
   counts: Record<string, number>;
+  /**
+   * Counters that do NOT reset at midnight. A trial allowance is spent over
+   * the whole trial window, so bucketing it by day would hand the caller a
+   * fresh five uploads every morning.
+   */
+  totals?: Record<string, number>;
 }
 
 function usagePath(): string {
@@ -34,6 +40,8 @@ function read(day: string): UsageFile {
   try {
     const parsed = JSON.parse(readFileSync(usagePath(), 'utf-8')) as UsageFile;
     if (parsed?.day === day && parsed.counts) return parsed;
+    // Day rolled over: the daily counts go, the lifetime totals stay.
+    if (parsed?.totals) return { day, counts: {}, totals: parsed.totals };
   } catch {
     // Missing or corrupt: start the day fresh rather than failing the call.
   }
@@ -71,6 +79,22 @@ export function record(key: string, now: Date = new Date()): number {
   const next = (state.counts[key] ?? 0) + 1;
   state.counts[key] = next;
   write(state);
+  return next;
+}
+
+/** Lifetime count for `key` - never reset by the day rollover. */
+export function usedTotal(key: string, now: Date = new Date()): number {
+  return read(utcDay(now)).totals?.[key] ?? 0;
+}
+
+/** Record one lifetime use of `key` and return the new count. */
+export function recordTotal(key: string, now: Date = new Date()): number {
+  const day = utcDay(now);
+  const state = read(day);
+  const totals = state.totals ?? {};
+  const next = (totals[key] ?? 0) + 1;
+  totals[key] = next;
+  write({ ...state, totals });
   return next;
 }
 

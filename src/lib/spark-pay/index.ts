@@ -45,7 +45,13 @@ const BASE = process.env.SPARK_PAY_URL || 'https://sparkpay.dev';
 interface SparkStatus {
   registered: boolean;
   verified: boolean;
-  access: { tier: string | null; is_paid: boolean; show_paywall: boolean };
+  access: {
+    tier: string | null;
+    is_paid: boolean;
+    show_paywall: boolean;
+    has_trial_remaining?: boolean;
+  };
+  trial: { is_expired: boolean } | null;
   plan: { limits?: Record<string, number> } | null;
   subscription: { status: string; current_period_end: string | null } | null;
 }
@@ -91,6 +97,8 @@ const STALE_MS = 14 * 24 * 60 * 60 * 1000; // trust offline for this long
 interface CachedStatus {
   email: string;
   tier: Tier;
+  /** Unexpired trial on a tier that has not paid yet. */
+  onTrial?: boolean;
   at: number;
 }
 
@@ -135,25 +143,45 @@ async function fetchStatus(email: string): Promise<SparkStatus | null> {
  * cached answer is discarded and the user is treated as free.
  */
 export async function getTier(): Promise<Tier> {
+  return (await getEntitlement()).tier;
+}
+
+export interface Entitlement {
+  tier: Tier;
+  /**
+   * An unexpired trial. Both SparkPay fields have to agree: the plan catalog
+   * and the status endpoint have disagreed about trial length before, so a
+   * single flag is not enough to hand out a paid feature on.
+   */
+  onTrial: boolean;
+}
+
+/** {@link getTier}, plus whether a trial is currently covering the caller. */
+export async function getEntitlement(): Promise<Entitlement> {
   const email = accountEmail();
-  if (!email) return 'free';
+  if (!email) return { tier: 'free', onTrial: false };
   const key = email.toLowerCase();
 
   const cached = readCache(key);
-  if (cached && Date.now() - cached.at < FRESH_MS) return cached.tier;
+  if (cached && Date.now() - cached.at < FRESH_MS) {
+    return { tier: cached.tier, onTrial: cached.onTrial === true };
+  }
 
   const status = await fetchStatus(email);
   if (!status) {
-    if (cached && Date.now() - cached.at < STALE_MS) return cached.tier;
-    return 'free';
+    if (cached && Date.now() - cached.at < STALE_MS) {
+      return { tier: cached.tier, onTrial: cached.onTrial === true };
+    }
+    return { tier: 'free', onTrial: false };
   }
 
   const raw = status.access?.tier;
   // Only ever return a tier the catalog defines: a tier retired on SparkPay
   // would otherwise flow through and blow up on PLANS[tier].name.
   const tier: Tier = raw && raw !== 'free' && PLANS[raw as Tier] ? (raw as Tier) : 'free';
-  writeCache({ email: key, tier, at: Date.now() });
-  return tier;
+  const onTrial = status.access?.has_trial_remaining === true && status.trial?.is_expired === false;
+  writeCache({ email: key, tier, onTrial, at: Date.now() });
+  return { tier, onTrial };
 }
 
 // ============ LIMITS ============
