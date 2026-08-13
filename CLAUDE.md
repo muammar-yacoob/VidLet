@@ -113,8 +113,9 @@ npm link && vidlet --help
 ## MCP Server
 
 `mcp.js` (repo root, bin `vidlet-mcp`) is a thin stdio bootstrap (transport, protocol-stdout proxy,
-dispatch); the 17 tool schemas/handlers live in `src/mcp/` — `shared.ts` (plumbing: silenced stdout,
-never-overwrite reservation, URL-length guard), `tools-core.ts` (probe/caption/jumpcut/trim/
+dispatch, `resources/list` + `resources/read`); the 27 tool schemas/handlers live in `src/mcp/` —
+`shared.ts` (plumbing: silenced stdout, never-overwrite reservation, URL-length guard),
+`tools-core.ts` (probe/caption/jumpcut/trim/
 compress/audio/gif), `tools-studio.ts` (setup_recording, voiceover, short, demo), `tools-project.ts`
 (.vidlet suite: create_project, validate_project, render_project, open_in_editor,
 add_voiceover_to_project), assembled by `src/mcp/index.ts` and bundled as `dist/mcp-tools.js` (a
@@ -124,6 +125,14 @@ hashes, auto-opening the browser only when the URL fits the platform launcher (c
 chars on Windows/WSL). No delete/move tools by design; every write defaults to the `VidLet/`
 subdirectory and never overwrites an existing file (numbered `-1`, `-2`, ... via an atomic
 reserve-then-write, since a plain existsSync check races under concurrent tool calls).
+
+Every write tool returns through `fileResult`, which emits a `resource_link` for the output (plus
+any extra artifact, e.g. the `.vidlet`). That link is only renderable as a file card if the client
+can fetch it, so the server declares the `resources` capability and `src/mcp/resources.ts` serves
+those bytes on demand — a session registry of paths the server itself produced, never an arbitrary
+path, since `resources/read` over any file:// URI would be an arbitrary-file-read primitive.
+Text-ish outputs (`.vidlet`, `.srt`, `.txt`) come back as text, everything else as a base64 blob
+capped at 32 MB (stdio carries it in one JSON-RPC line, inflated 4/3).
 
 ## Plan Gating
 

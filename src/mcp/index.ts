@@ -48,5 +48,10 @@ export const TOOL_HANDLERS: Record<string, ToolHandler> = gateHandlers({
   ...YOUTUBE_HANDLERS,
 });
 
+export {
+  listServedResources,
+  readServedResource,
+  setResourceListChangedNotifier,
+} from './resources.js';
 export type { ToolDefinition, ToolHandler, ToolResult } from './shared.js';
 export { errorContent, jsonContent };

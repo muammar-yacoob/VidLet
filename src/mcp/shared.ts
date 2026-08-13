@@ -6,6 +6,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { mimeFor, registerServedFile } from './resources.js';
 
 export interface ToolDefinition {
   name: string;
@@ -28,6 +29,8 @@ export type ToolContent =
       uri: string;
       name: string;
       mimeType?: string;
+      size?: number;
+      annotations?: { audience?: ('user' | 'assistant')[]; priority?: number };
       description?: string;
     };
 
@@ -187,17 +190,23 @@ export function fileResult(
   }
 
   // resource_link, not an embedded resource: an embedded one has to carry
-  // the bytes inline, which for a video is absurd. A link renders as a file
-  // card the user can click, which is the whole point - a bare path in JSON
-  // is something they have to go and find.
+  // the bytes inline on EVERY call, which for a video is absurd. The link is
+  // registered with resources.ts so `resources/read` can serve those bytes
+  // on demand instead - a link the server cannot read back is one a client
+  // has no way to render as a file card.
   for (const path of [output, ...alsoLink]) {
     if (!existsSync(path)) continue;
+    const bytes = statSync(path).size;
     result.content.push({
       type: 'resource_link',
-      uri: fileUrl(path),
+      uri: registerServedFile(path),
       name: basename(path),
       mimeType: mimeFor(path),
-      description: `${(statSync(path).size / 1048576).toFixed(1)} MB`,
+      size: bytes,
+      // The finished file is for the person, not for the model's reasoning;
+      // clients use this to decide what to surface in the transcript.
+      annotations: { audience: ['user'] },
+      description: humanSize(bytes),
     });
   }
   return result;
@@ -206,15 +215,11 @@ export function fileResult(
 /** Above this an inline poster frame costs more than it informs. */
 const MAX_INLINE_IMAGE_BYTES = 400_000;
 
-function mimeFor(path: string): string {
-  if (path.endsWith('.mp4')) return 'video/mp4';
-  if (path.endsWith('.mp3')) return 'audio/mpeg';
-  if (path.endsWith('.m4a')) return 'audio/mp4';
-  if (path.endsWith('.gif')) return 'image/gif';
-  if (path.endsWith('.vidlet')) return 'application/json';
-  if (path.endsWith('.jpg') || path.endsWith('.jpeg')) return 'image/jpeg';
-  if (path.endsWith('.png')) return 'image/png';
-  return 'application/octet-stream';
+/** Sub-megabyte outputs (subtitles, projects, post copy) are not "0.0 MB". */
+function humanSize(bytes: number): string {
+  return bytes < 1048576
+    ? `${Math.max(1, Math.round(bytes / 1024))} KB`
+    : `${(bytes / 1048576).toFixed(1)} MB`;
 }
 
 /**

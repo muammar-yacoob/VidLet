@@ -13,8 +13,20 @@
 import { readFileSync } from 'node:fs';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
-import { TOOL_HANDLERS, TOOLS, errorContent } from './dist/mcp-tools.js';
+import {
+  CallToolRequestSchema,
+  ListResourcesRequestSchema,
+  ListToolsRequestSchema,
+  ReadResourceRequestSchema,
+} from '@modelcontextprotocol/sdk/types.js';
+import {
+  TOOL_HANDLERS,
+  TOOLS,
+  errorContent,
+  listServedResources,
+  readServedResource,
+  setResourceListChangedNotifier,
+} from './dist/mcp-tools.js';
 
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
 
@@ -38,9 +50,30 @@ const protocolStdout = new Proxy(process.stdout, {
   },
 });
 
-const server = new Server({ name: 'vidlet', version: pkg.version }, { capabilities: { tools: {} } });
+// `resources` is declared because every write-tool result carries a
+// resource_link to what it rendered. Without the capability and the two
+// handlers below, that link points at nothing the client can fetch, so file
+// cards degrade to inert text. Only files this server produced are served —
+// see src/mcp/resources.ts.
+const server = new Server(
+  { name: 'vidlet', version: pkg.version },
+  { capabilities: { tools: {}, resources: { listChanged: true } } }
+);
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }));
+
+server.setRequestHandler(ListResourcesRequestSchema, async () => listServedResources());
+
+server.setRequestHandler(ReadResourceRequestSchema, async (request) =>
+  readServedResource(request.params.uri)
+);
+
+// A render finishing mid-session adds a resource; tell the client its list is
+// stale. Fire-and-forget: a notification that fails (client gone, or one that
+// never subscribed) must not take down a server that is working fine.
+setResourceListChangedNotifier(() => {
+  server.sendResourceListChanged().catch(() => {});
+});
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
