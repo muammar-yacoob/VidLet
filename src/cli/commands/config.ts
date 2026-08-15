@@ -47,6 +47,25 @@ export function registerConfigCommand(program: Command): void {
       }
     });
 
+  // The account every plan gate resolves against. Without it the GUI was the
+  // only way to set an email, so a CLI/MCP-only machine silently ran as free
+  // - and paid features answered "not available on the free plan".
+  configCmd
+    .command('set-email <email>')
+    .description('Set the account email plan entitlements resolve against')
+    .action(async (email: string) => {
+      try {
+        const config = await loadToolsConfig();
+        config.app.accountEmail = email.trim();
+        await saveToolsConfig(config);
+        console.log(fmt.green(`Account email saved: ${config.app.accountEmail}`));
+        console.log(fmt.dim(`Stored in ${getConfigPath()}`));
+      } catch (error) {
+        console.error(fmt.red(`Error: ${(error as Error).message}`));
+        process.exit(1);
+      }
+    });
+
   configCmd
     .command('set-key <key>')
     .description('Set Spark AI API key (get yours at sparkbrain.app)')

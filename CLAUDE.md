@@ -93,8 +93,9 @@ All processed videos are saved to a `VidLet` subdirectory next to the input file
 Config location: `~/.config/vidlet/config.json`
 
 ```bash
-vidlet config show   # View current config
-vidlet config reset  # Reset to defaults
+vidlet config                  # View current config
+vidlet config reset            # Reset to defaults
+vidlet config set-email <you>  # Account plan gates resolve against (else: free tier)
 ```
 
 ## Development

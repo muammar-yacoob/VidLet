@@ -37,3 +37,4 @@ coverage/
 # Local tooling artifacts
 .taskmaster/
 .playwright-mcp/
+/.claude

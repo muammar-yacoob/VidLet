@@ -17,7 +17,7 @@ import {
  * package, and a bundled secret would be everyone's secret. vidlet.app owns
  * the Google OAuth client; this CLI holds only a refresh token, and every
  * access-token mint goes back through the broker, which is also where the
- * SparkPay plan gate lives (publishing is a Pro feature - editing the CLI
+ * SparkPay plan gate lives (publishing is a paid feature - editing the CLI
  * cannot skip a server-side check).
  *
  * Connect flow: listen on an ephemeral loopback port, open
@@ -30,6 +30,19 @@ import { createServer } from 'node:http';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { openInBrowser } from '../mcp/shared.js';
+import { accountEmail, pricingUrl, tierUnlocking } from './spark-pay/index.js';
+
+/**
+ * "Publishing needs plan X" - named from the catalog, never hardcoded. The
+ * tier that owns `youtube_publish` has moved before, and a message naming the
+ * wrong one tells a subscriber to upgrade to the plan they already pay for.
+ */
+function upgradeLine(fallbackUrl?: string): string {
+  const plan = tierUnlocking('youtube_publish')?.name ?? 'a paid';
+  return `YouTube publishing needs an active VidLet ${plan} plan. Upgrade at ${
+    fallbackUrl ?? pricingUrl(accountEmail() ?? undefined)
+  }.`;
+}
 
 /** Overridable for local broker testing (VIDLET_BROKER_URL=http://localhost:3000). */
 function brokerBase(): string {
@@ -155,9 +168,7 @@ export async function getAccessToken(): Promise<string> {
   };
   if (!res.ok || !body.access_token) {
     if (body.code === 'subscription_required') {
-      throw new Error(
-        `YouTube publishing needs an active VidLet Pro plan. Upgrade at ${body.upgradeUrl ?? 'https://sparkpay.dev/spark/vidlet'}.`
-      );
+      throw new Error(upgradeLine(body.upgradeUrl));
     }
     if (body.code === 'reconnect_required') {
       throw new Error(
@@ -225,9 +236,7 @@ export async function connectYouTube(options?: { timeoutMs?: number }): Promise<
   const granted = await delivery;
 
   if (granted.error === 'subscription_required') {
-    throw new Error(
-      `YouTube publishing needs an active VidLet Pro plan. Upgrade at ${granted.upgradeUrl ?? 'https://sparkpay.dev/spark/vidlet'}, then connect again.`
-    );
+    throw new Error(`${upgradeLine(granted.upgradeUrl)} Then connect again.`);
   }
   if (granted.error || !granted.refresh_token) {
     throw new Error(`OAuth denied: ${granted.error ?? 'no refresh token returned'}`);
