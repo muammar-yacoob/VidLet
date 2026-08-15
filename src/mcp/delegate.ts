@@ -25,6 +25,10 @@ import type { ToolContent, ToolResult } from './shared.js';
  */
 const STEPS: Record<GenerationStep, { field: string; shape: string }> = {
   narration: { field: 'narration', shape: '"<the finished narration text>"' },
+  demo_script: {
+    field: 'demo_script',
+    shape: '{"narration": "<full script>", "short_narration": "<hook-first version>"}',
+  },
   frame_descriptions: {
     field: 'frame_descriptions',
     shape: '["<one short description per frame, in order>"]',
@@ -33,13 +37,26 @@ const STEPS: Record<GenerationStep, { field: string; shape: string }> = {
     field: 'frame_assignment',
     shape: '[<one frame index per narration line, never decreasing>]',
   },
-  highlights: { field: 'highlights', shape: '[{"start": <s>, "end": <s>}]' },
+  highlights: {
+    field: 'highlights',
+    shape: '[{"start": <sec>, "end": <sec>, "reason": "<short why>"}]',
+  },
+  batch_highlights: {
+    field: 'batch_highlights',
+    shape:
+      '{"shorts": [{"score": <0-100>, "angle": "<label>", "clips": [{"start": <sec>, ' +
+      '"end": <sec>, "reason": "<short why>"}]}]}',
+  },
   post_copy: {
     field: 'post_copy',
     shape: '{"title": "...", "description": "...", "tags": ["..."]}',
   },
   titles: { field: 'titles', shape: '{"a": "<variant A>", "b": "<variant B>"}' },
   hashtags: { field: 'hashtags', shape: '["#tag", ...]' },
+  hashtag_sets: {
+    field: 'hashtag_sets',
+    shape: '{"popular": ["<6 established tags>"], "trending": ["<6 rising tags>"]}',
+  },
 };
 
 /** One step's section of the brief. */

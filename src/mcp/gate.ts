@@ -110,7 +110,15 @@ function quotaMessage(usedToday: number, limit: number, tier: Tier): string {
  * free. "Calls admitted today" is the honest meaning of the limit.
  */
 function gateOne(name: string, handler: ToolHandler): ToolHandler {
-  const run: ToolHandler = (args) => runInMcpTool(name, () => withDelegation(() => handler(args)));
+  // `ai` carries the caller's answers from a previous brief; it is consumed
+  // by the context rather than by the handler, so no tool has to thread it
+  // down to the module that actually wanted the writing.
+  const run: ToolHandler = (args) =>
+    runInMcpTool(
+      name,
+      () => withDelegation(() => handler(args)),
+      (args.ai ?? {}) as Record<string, unknown>
+    );
   return async (args) => {
     const { tier, onTrial } = await getEntitlement();
 

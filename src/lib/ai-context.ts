@@ -31,13 +31,33 @@ interface McpCall {
   tool: string;
   /** Every generation refused during this tool call, in the order reached. */
   pending: DelegatedGenerationError[];
+  /** Answers the caller supplied in `ai`, keyed by step. */
+  answers: Record<string, unknown>;
 }
 
 const mcpCall = new AsyncLocalStorage<McpCall>();
 
-/** Run a tool handler inside the MCP context. Applied once, in mcp/gate.ts. */
-export function runInMcpTool<T>(tool: string, fn: () => Promise<T>): Promise<T> {
-  return mcpCall.run({ tool, pending: [] }, fn);
+/**
+ * Run a tool handler inside the MCP context. Applied once, in mcp/gate.ts.
+ *
+ * `answers` is the tool's `ai` argument - the second leg of the handshake.
+ * Reading it here rather than in each handler is what keeps the eleven Groq
+ * call sites unchanged: they still ask for generation, and groqChatJSON hands
+ * back what the caller already wrote.
+ */
+export function runInMcpTool<T>(
+  tool: string,
+  fn: () => Promise<T>,
+  answers: Record<string, unknown> = {}
+): Promise<T> {
+  return mcpCall.run({ tool, pending: [], answers }, fn);
+}
+
+/** The caller's answer for a step, or undefined if they did not supply one. */
+export function suppliedAnswer(step: string): unknown {
+  const value = mcpCall.getStore()?.answers?.[step];
+  // null is a real "nothing to say here" from a model; only absence delegates.
+  return value === undefined ? undefined : value;
 }
 
 /** The tool currently executing, or null when running from the CLI or GUI. */

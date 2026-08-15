@@ -5,7 +5,7 @@
  */
 
 import { CACHEABLE_TEMP_MAX, cacheKey, withResponseCache } from './ai-cache.js';
-import { currentMcpTool, recordDelegation } from './ai-context.js';
+import { currentMcpTool, recordDelegation, suppliedAnswer } from './ai-context.js';
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
 
@@ -73,12 +73,44 @@ const TEMPERATURE = 0.3;
  */
 export type GenerationStep =
   | 'narration'
+  | 'demo_script'
   | 'frame_descriptions'
   | 'frame_assignment'
   | 'highlights'
+  | 'batch_highlights'
   | 'post_copy'
   | 'titles'
-  | 'hashtags';
+  | 'hashtags'
+  | 'hashtag_sets';
+
+/**
+ * Wrap a supplied answer in the JSON shape its call site expects.
+ *
+ * The `ai` parameter takes plain values - a string of narration, an array of
+ * descriptions - because that is what is natural to write. The call sites
+ * destructure the JSON envelope Groq would have returned, so the envelope is
+ * rebuilt here rather than at eleven call sites.
+ */
+export function shapeAnswer(step: GenerationStep, value: unknown): unknown {
+  switch (step) {
+    case 'narration':
+      return { script: value };
+    case 'frame_descriptions':
+      return { descriptions: value };
+    case 'frame_assignment':
+      return { assignment: value };
+    case 'hashtags':
+      return { tags: value };
+    case 'highlights':
+      // Tolerated both ways: the brief asks for the array, but a model that
+      // echoes the documented {"clips": [...]} envelope is not wrong either.
+      return Array.isArray(value) ? { clips: value } : value;
+    default:
+      // demo_script, batch_highlights, post_copy, titles and hashtag_sets are
+      // already objects with the keys their call sites read.
+      return value;
+  }
+}
 
 /**
  * Thrown instead of calling Groq when a request originates from an MCP tool.
@@ -149,6 +181,10 @@ export async function groqChatJSON<T>(
   // and serving one to an MCP caller would hide the delegation entirely.
   const mcpTool = currentMcpTool();
   if (mcpTool) {
+    // The caller answered this step on a previous round; use it verbatim.
+    const answered = step ? suppliedAnswer(step) : undefined;
+    if (answered !== undefined) return shapeAnswer(step as GenerationStep, answered) as T;
+
     const refusal = new DelegatedGenerationError(mcpTool, messages, step);
     // Recorded as well as thrown: callers that swallow AI failures would
     // otherwise turn this into silent degradation. See ai-context.ts.

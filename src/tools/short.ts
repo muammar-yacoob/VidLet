@@ -137,22 +137,26 @@ async function pickHighlights(
   videoDuration: number,
   maxTotal: number
 ): Promise<ShortClip[]> {
-  const raw = await groqChatJSON<unknown>([
-    {
-      role: 'system',
-      content:
-        'You are a short-form video editor. Given a timestamped transcript, pick the moments ' +
-        'that make the best YouTube Short: the hook, key insights, punchlines, demos, results. ' +
-        'Rules: 2-6 clips, chronological, non-overlapping, each 3-20 seconds, total at most ' +
-        `${maxTotal} seconds. Cut on sentence boundaries using ONLY the given timestamps. ` +
-        'Prefer starting with the strongest hook. Respond with JSON: ' +
-        '{"clips":[{"start":<sec>,"end":<sec>,"reason":"<short why>"}]}',
-    },
-    {
-      role: 'user',
-      content: `Video duration: ${videoDuration.toFixed(1)}s\n\nTranscript:\n${formatTranscript(segments)}`,
-    },
-  ]);
+  const raw = await groqChatJSON<unknown>(
+    [
+      {
+        role: 'system',
+        content:
+          'You are a short-form video editor. Given a timestamped transcript, pick the moments ' +
+          'that make the best YouTube Short: the hook, key insights, punchlines, demos, results. ' +
+          'Rules: 2-6 clips, chronological, non-overlapping, each 3-20 seconds, total at most ' +
+          `${maxTotal} seconds. Cut on sentence boundaries using ONLY the given timestamps. ` +
+          'Prefer starting with the strongest hook. Respond with JSON: ' +
+          '{"clips":[{"start":<sec>,"end":<sec>,"reason":"<short why>"}]}',
+      },
+      {
+        role: 'user',
+        content: `Video duration: ${videoDuration.toFixed(1)}s\n\nTranscript:\n${formatTranscript(segments)}`,
+      },
+    ],
+    undefined,
+    'highlights'
+  );
 
   const parsed = clipsSchema.safeParse(raw);
   if (!parsed.success) {
@@ -220,24 +224,28 @@ async function pickBatchHighlights(
   maxTotal: number,
   count: number
 ): Promise<ShortPlan[]> {
-  const raw = await groqChatJSON<unknown>([
-    {
-      role: 'system',
-      content:
-        `You are a short-form video editor. Cut up to ${count} DISTINCT YouTube Shorts from one ` +
-        'timestamped transcript - each short covers a different angle (different hook, insight, ' +
-        'demo or payoff) and shares NO clips with the others. Per short: 2-6 chronological ' +
-        `non-overlapping clips, each 3-20 seconds, total at most ${maxTotal} seconds, cut on ` +
-        'sentence boundaries using ONLY the given timestamps, strongest hook first. Score each ' +
-        'short 0-100 for hook strength / virality potential (be honest, spread the scores). ' +
-        'Respond with JSON: {"shorts":[{"score":<0-100>,"angle":"<3-6 word label>",' +
-        '"clips":[{"start":<sec>,"end":<sec>,"reason":"<short why>"}]}]}',
-    },
-    {
-      role: 'user',
-      content: `Video duration: ${videoDuration.toFixed(1)}s\n\nTranscript:\n${formatTranscript(segments)}`,
-    },
-  ]);
+  const raw = await groqChatJSON<unknown>(
+    [
+      {
+        role: 'system',
+        content:
+          `You are a short-form video editor. Cut up to ${count} DISTINCT YouTube Shorts from one ` +
+          'timestamped transcript - each short covers a different angle (different hook, insight, ' +
+          'demo or payoff) and shares NO clips with the others. Per short: 2-6 chronological ' +
+          `non-overlapping clips, each 3-20 seconds, total at most ${maxTotal} seconds, cut on ` +
+          'sentence boundaries using ONLY the given timestamps, strongest hook first. Score each ' +
+          'short 0-100 for hook strength / virality potential (be honest, spread the scores). ' +
+          'Respond with JSON: {"shorts":[{"score":<0-100>,"angle":"<3-6 word label>",' +
+          '"clips":[{"start":<sec>,"end":<sec>,"reason":"<short why>"}]}]}',
+      },
+      {
+        role: 'user',
+        content: `Video duration: ${videoDuration.toFixed(1)}s\n\nTranscript:\n${formatTranscript(segments)}`,
+      },
+    ],
+    undefined,
+    'batch_highlights'
+  );
 
   const parsed = batchSchema.safeParse(raw);
   if (!parsed.success) {
@@ -283,16 +291,20 @@ export async function generatePostCopy(
     .map((s) => `- ${s.text ?? ''}${s.reason ? ` (${s.reason})` : ''}`)
     .join('\n');
 
-  const raw = await groqChatJSON<unknown>([
-    {
-      role: 'system',
-      content:
-        'You write viral YouTube Shorts metadata. Given the clips in a short, respond with JSON ' +
-        '{"title": "<hooky, <=90 chars, no clickbait lies>", "description": "<2-3 sentences, ' +
-        'plain human voice, one call to action>", "hashtags": ["<5-8 tags without #>"]}',
-    },
-    { role: 'user', content: `Clips in the short:\n${content}` },
-  ]);
+  const raw = await groqChatJSON<unknown>(
+    [
+      {
+        role: 'system',
+        content:
+          'You write viral YouTube Shorts metadata. Given the clips in a short, respond with JSON ' +
+          '{"title": "<hooky, <=90 chars, no clickbait lies>", "description": "<2-3 sentences, ' +
+          'plain human voice, one call to action>", "hashtags": ["<5-8 tags without #>"]}',
+      },
+      { role: 'user', content: `Clips in the short:\n${content}` },
+    ],
+    undefined,
+    'post_copy'
+  );
 
   const parsed = postSchema.safeParse(raw);
   if (!parsed.success) throw new Error('AI returned unexpected post format');

@@ -12,7 +12,7 @@ import {
   recordDelegation,
   runInMcpTool,
 } from './ai-context.js';
-import { DelegatedGenerationError, groqChatJSON } from './groq.js';
+import { DelegatedGenerationError, groqChatJSON, shapeAnswer } from './groq.js';
 
 describe('MCP tool context', () => {
   beforeEach(() => {
@@ -108,6 +108,70 @@ describe('groqChatJSON refuses to run for an MCP tool', () => {
     });
     expect(fetchSpy).toHaveBeenCalledOnce();
     fetchSpy.mockRestore();
+  });
+});
+
+describe('supplied answers close the handshake', () => {
+  beforeEach(() => {
+    process.env.GROQ_API_KEY = 'gsk_test_key_not_used';
+  });
+
+  it('returns the caller answer instead of delegating again', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const result = await runInMcpTool(
+      'generate_short',
+      () => groqChatJSON([{ role: 'user', content: 'write it' }], undefined, 'narration'),
+      { narration: 'the caller wrote this' }
+    );
+    // Wrapped in the envelope rephraseScript destructures.
+    expect(result).toEqual({ script: 'the caller wrote this' });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
+  });
+
+  it('records nothing to brief when the step was answered', async () => {
+    const pending = await runInMcpTool(
+      'generate_short',
+      async () => {
+        await groqChatJSON([{ role: 'user', content: 'x' }], undefined, 'narration');
+        return pendingDelegations();
+      },
+      { narration: 'answered' }
+    );
+    expect(pending).toEqual([]);
+  });
+
+  it('still delegates the steps the caller did not answer', async () => {
+    const pending = await runInMcpTool(
+      'generate_short',
+      async () => {
+        for (const step of ['narration', 'frame_descriptions'] as const) {
+          try {
+            await groqChatJSON([{ role: 'user', content: step }], undefined, step);
+          } catch {
+            /* swallowed */
+          }
+        }
+        return pendingDelegations();
+      },
+      { narration: 'answered' }
+    );
+    expect(pending.map((p) => p.step)).toEqual(['frame_descriptions']);
+  });
+
+  it('shapes each answer into the envelope its call site reads', () => {
+    expect(shapeAnswer('narration', 'text')).toEqual({ script: 'text' });
+    expect(shapeAnswer('frame_descriptions', ['a'])).toEqual({ descriptions: ['a'] });
+    expect(shapeAnswer('frame_assignment', [0, 1])).toEqual({ assignment: [0, 1] });
+    expect(shapeAnswer('hashtags', ['#a'])).toEqual({ tags: ['#a'] });
+    // Objects already carry the keys their call sites destructure.
+    expect(shapeAnswer('post_copy', { title: 't' })).toEqual({ title: 't' });
+  });
+
+  it('accepts highlights as a bare array or the documented envelope', () => {
+    const clips = [{ start: 0, end: 3 }];
+    expect(shapeAnswer('highlights', clips)).toEqual({ clips });
+    expect(shapeAnswer('highlights', { clips })).toEqual({ clips });
   });
 });
 

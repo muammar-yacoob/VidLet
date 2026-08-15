@@ -13,6 +13,7 @@ import { demo } from '../tools/demo.js';
 import { short } from '../tools/short.js';
 import { timelapse } from '../tools/timelapse.js';
 import { resolveCloneEngine, voiceover } from '../tools/voiceover.js';
+import { AI_PROPERTY } from './ai-param.js';
 import {
   editorBaseUrl,
   fileResult,
@@ -105,6 +106,7 @@ export const STUDIO_TOOLS: ToolDefinition[] = [
     inputSchema: {
       type: 'object',
       properties: {
+        ai: AI_PROPERTY,
         ...PATH_PROPERTY,
         max_duration: {
           type: 'number',
@@ -182,6 +184,7 @@ export const STUDIO_TOOLS: ToolDefinition[] = [
     inputSchema: {
       type: 'object',
       properties: {
+        ai: AI_PROPERTY,
         ...PATH_PROPERTY,
         about: { type: 'string', description: 'One line about the product/feature being shown.' },
         language: { type: 'string', description: 'Narration language code, default en.' },
