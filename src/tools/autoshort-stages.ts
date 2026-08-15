@@ -28,18 +28,23 @@ import { cleanVoice } from './cleanvoice.js';
 
 export async function rephraseScript(raw: string, outputSeconds: number): Promise<string | null> {
   if (!process.env.GROQ_API_KEY?.trim()) return null;
-  const { groqChatJSON } = await import('../lib/groq.js');
+  const { groqChatJSON, rethrowIfDelegated } = await import('../lib/groq.js');
   const targetWords = Math.max(12, Math.round(outputSeconds * TTS_WPS * NARRATION_COVERAGE));
   try {
-    const result = await groqChatJSON<{ script: string }>([
-      {
-        role: 'system',
-        content: `You write voiceover for YouTube Shorts that people actually finish. Rewrite the draft in a warm, upbeat, modern creator voice - how a friendly YouTuber talks to camera. Hook the viewer in the first three words. Short punchy sentences of four to ten words. Mirror the draft's own voice and person: if the draft says "I", stay in first person and keep it personal; if it addresses the viewer, stay in second person. Present tense, contractions. If the draft opens with a specific line, keep that opening intact. Sound genuinely delighted by the thing rather than salesy. Vary the rhythm so it never drones. End on a satisfying payoff line, not a call to action. Never use: "dive in", "unleash", "game-changer", "in this video", "let's explore", "journey", "buckle up". No emojis, no hashtags, no stage directions, no headings, and never an em dash or any dash used as punctuation, because TTS reads it as an odd pause. Use commas or full stops. If you mention a URL or email, write it exactly as it is spoken - the real characters, e.g. "taxducks.com" or "hello@site.com" - never spelled out as the words "dot" or "at"; the caption burns in whatever you write, so spelling it out puts the word "dot" on screen. This is read aloud, so plain spoken words only. Length matters: write ${targetWords} words, and never fewer than ${Math.round(targetWords * 0.9)}, because this is read aloud over a ${Math.round(outputSeconds)} second video and has to carry most of it. Respond with JSON {"script": "<${targetWords} words of spoken narration>"}`,
-      },
-      { role: 'user', content: raw },
-    ]);
+    const result = await groqChatJSON<{ script: string }>(
+      [
+        {
+          role: 'system',
+          content: `You write voiceover for YouTube Shorts that people actually finish. Rewrite the draft in a warm, upbeat, modern creator voice - how a friendly YouTuber talks to camera. Hook the viewer in the first three words. Short punchy sentences of four to ten words. Mirror the draft's own voice and person: if the draft says "I", stay in first person and keep it personal; if it addresses the viewer, stay in second person. Present tense, contractions. If the draft opens with a specific line, keep that opening intact. Sound genuinely delighted by the thing rather than salesy. Vary the rhythm so it never drones. End on a satisfying payoff line, not a call to action. Never use: "dive in", "unleash", "game-changer", "in this video", "let's explore", "journey", "buckle up". No emojis, no hashtags, no stage directions, no headings, and never an em dash or any dash used as punctuation, because TTS reads it as an odd pause. Use commas or full stops. If you mention a URL or email, write it exactly as it is spoken - the real characters, e.g. "taxducks.com" or "hello@site.com" - never spelled out as the words "dot" or "at"; the caption burns in whatever you write, so spelling it out puts the word "dot" on screen. This is read aloud, so plain spoken words only. Length matters: write ${targetWords} words, and never fewer than ${Math.round(targetWords * 0.9)}, because this is read aloud over a ${Math.round(outputSeconds)} second video and has to carry most of it. Respond with JSON {"script": "<${targetWords} words of spoken narration>"}`,
+        },
+        { role: 'user', content: raw },
+      ],
+      undefined,
+      'narration'
+    );
     return result.script?.trim() || null;
-  } catch {
+  } catch (e) {
+    rethrowIfDelegated(e);
     return null; // model trouble - the raw script still works
   }
 }

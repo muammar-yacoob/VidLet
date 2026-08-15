@@ -5,6 +5,7 @@
  */
 
 import { CACHEABLE_TEMP_MAX, cacheKey, withResponseCache } from './ai-cache.js';
+import { currentMcpTool, recordDelegation } from './ai-context.js';
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
 
@@ -63,6 +64,90 @@ export function visionMessage(text: string, jpegsBase64: string[]): GroqMessage 
 const TEMPERATURE = 0.3;
 
 /**
+ * Thrown instead of calling Groq when a request originates from an MCP tool.
+ *
+ * It carries the prompt that was about to be sent, so the handler that
+ * catches it can hand that brief to the client model rather than inventing a
+ * second copy of the instructions. Callers that currently swallow AI failures
+ * (`rephraseScript` returns null, the hashtag helpers return []) must let this
+ * one through - degrading quietly would give the user worse output than Groq,
+ * which is the opposite of the point.
+ */
+/**
+ * Which step of a pipeline wanted writing.
+ *
+ * A tool can need more than one - `preview_short` writes narration, then
+ * describes frames, then assigns them - and each is satisfied by a different
+ * parameter. Keying the hand-back on the tool alone told the caller to resupply
+ * the parameter it had just supplied, which loops.
+ */
+export type GenerationStep =
+  | 'narration'
+  | 'frame_descriptions'
+  | 'frame_assignment'
+  | 'highlights'
+  | 'post_copy'
+  | 'titles'
+  | 'hashtags';
+
+export class DelegatedGenerationError extends Error {
+  readonly tool: string;
+  readonly step: GenerationStep | null;
+  /** The system instructions, if the call had any. */
+  readonly system: string;
+  /** The user-side prompt text, images stripped out. */
+  readonly prompt: string;
+  /** Base64 JPEGs the prompt referred to, in order. */
+  readonly images: string[];
+
+  constructor(tool: string, messages: GroqMessage[], step: GenerationStep | null = null) {
+    super(
+      `Generation for "${tool}"${step ? ` (${step})` : ''} belongs to the calling model, ` +
+        'not Groq. The tool should return this brief and accept the result as a parameter.'
+    );
+    this.name = 'DelegatedGenerationError';
+    this.tool = tool;
+    this.step = step;
+    this.system = textOf(messages.filter((m) => m.role === 'system'));
+    this.prompt = textOf(messages.filter((m) => m.role !== 'system'));
+    this.images = messages.flatMap((m) =>
+      typeof m.content === 'string'
+        ? []
+        : m.content
+            .filter((p) => p.type === 'image_url' && p.image_url)
+            .map((p) => (p.image_url?.url ?? '').replace(/^data:image\/jpeg;base64,/, ''))
+    );
+  }
+}
+
+/**
+ * Rethrow a delegation refusal from a catch block that swallows AI failures.
+ *
+ * The boundary in mcp/delegate.ts catches these regardless, so this is not
+ * what makes delegation correct - it is what makes it cheap. Without it a
+ * pipeline carries on past the refusal and encodes a whole video before the
+ * boundary throws the result away.
+ */
+export function rethrowIfDelegated(e: unknown): void {
+  if (e instanceof DelegatedGenerationError) throw e;
+}
+
+/** Flatten message content to plain text, dropping image parts. */
+function textOf(messages: GroqMessage[]): string {
+  return messages
+    .map((m) =>
+      typeof m.content === 'string'
+        ? m.content
+        : m.content
+            .filter((p) => p.type === 'text')
+            .map((p) => p.text ?? '')
+            .join('\n')
+    )
+    .join('\n\n')
+    .trim();
+}
+
+/**
  * Call Groq chat completions in JSON mode and parse the response object.
  *
  * Every call goes through the response cache, so the same prompt is paid for
@@ -72,8 +157,20 @@ const TEMPERATURE = 0.3;
  */
 export async function groqChatJSON<T>(
   messages: GroqMessage[],
-  model: string = DEFAULT_MODEL
+  model: string = DEFAULT_MODEL,
+  step: GenerationStep | null = null
 ): Promise<T> {
+  // Checked before the cache: a cached Groq answer is still a Groq answer,
+  // and serving one to an MCP caller would hide the delegation entirely.
+  const mcpTool = currentMcpTool();
+  if (mcpTool) {
+    const refusal = new DelegatedGenerationError(mcpTool, messages, step);
+    // Recorded as well as thrown: callers that swallow AI failures would
+    // otherwise turn this into silent degradation. See ai-context.ts.
+    recordDelegation(refusal);
+    throw refusal;
+  }
+
   const content = await withResponseCache(
     cacheKey({ model, messages, temperature: TEMPERATURE }),
     TEMPERATURE <= CACHEABLE_TEMP_MAX,

@@ -14,7 +14,7 @@ import {
   sidecarPathFor,
 } from '../lib/ab-test.js';
 import { executeFFmpegRaw, getMediaDuration } from '../lib/ffmpeg.js';
-import { groqChatJSON } from '../lib/groq.js';
+import { groqChatJSON, rethrowIfDelegated } from '../lib/groq.js';
 import { fetchSharedTrends, type HashtagSuggestion, suggestHashtags } from '../lib/hashtags.js';
 import { getVideoStats, setThumbnail, updateVideoMeta, uploadVideo } from '../lib/youtube.js';
 
@@ -44,25 +44,30 @@ export async function generateTitleVariants(
     ];
   if (!process.env.GROQ_API_KEY?.trim()) return scored(fallbacks);
   try {
-    const result = await groqChatJSON<{ a?: string; b?: string; c?: string }>([
-      {
-        role: 'system',
-        content:
-          'You write YouTube Shorts titles. Rules learned from top performers: 45-65 ' +
-          'characters; strong opener ("How to...", "This tool...", "Why..."); at most ONE ' +
-          'ALL-CAPS power word; include a number when honest; a parenthetical hook like ' +
-          '"(Here\'s How)" works well; no emojis, no exclamation marks, never an em dash. ' +
-          'Return JSON {"a": "<curiosity-driven title>", "b": "<benefit-driven title>", ' +
-          '"c": "<process/transformation-driven title>"} - three genuinely different ' +
-          'angles, not rephrasings.',
-      },
-      {
-        role: 'user',
-        content: `Topic: ${topic}\n${narration ? `Narration: ${narration.slice(0, 600)}` : ''}`,
-      },
-    ]);
+    const result = await groqChatJSON<{ a?: string; b?: string; c?: string }>(
+      [
+        {
+          role: 'system',
+          content:
+            'You write YouTube Shorts titles. Rules learned from top performers: 45-65 ' +
+            'characters; strong opener ("How to...", "This tool...", "Why..."); at most ONE ' +
+            'ALL-CAPS power word; include a number when honest; a parenthetical hook like ' +
+            '"(Here\'s How)" works well; no emojis, no exclamation marks, never an em dash. ' +
+            'Return JSON {"a": "<curiosity-driven title>", "b": "<benefit-driven title>", ' +
+            '"c": "<process/transformation-driven title>"} - three genuinely different ' +
+            'angles, not rephrasings.',
+        },
+        {
+          role: 'user',
+          content: `Topic: ${topic}\n${narration ? `Narration: ${narration.slice(0, 600)}` : ''}`,
+        },
+      ],
+      undefined,
+      'titles'
+    );
     return scored([result.a, result.b, result.c].map((t, i) => (t ?? fallbacks[i]).slice(0, 100)));
-  } catch {
+  } catch (e) {
+    rethrowIfDelegated(e);
     return scored(fallbacks);
   }
 }

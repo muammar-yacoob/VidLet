@@ -13,6 +13,7 @@
  * see getTier in ../lib/spark-pay/index.ts for why that is the right default
  * for a tool that runs on other people's laptops.
  */
+import { runInMcpTool } from '../lib/ai-context.js';
 import {
   accountEmail,
   getEntitlement,
@@ -23,6 +24,7 @@ import {
   tierUnlocking,
 } from '../lib/spark-pay/index.js';
 import { check, record, recordTotal, usedTotal } from '../lib/spark-pay/meter.js';
+import { withDelegation } from './delegate.js';
 import type { ToolHandler, ToolResult } from './shared.js';
 
 /** Tools that need a specific plan limit enabled, and the key that enables it. */
@@ -108,6 +110,7 @@ function quotaMessage(usedToday: number, limit: number, tier: Tier): string {
  * free. "Calls admitted today" is the honest meaning of the limit.
  */
 function gateOne(name: string, handler: ToolHandler): ToolHandler {
+  const run: ToolHandler = (args) => runInMcpTool(name, () => withDelegation(() => handler(args)));
   return async (args) => {
     const { tier, onTrial } = await getEntitlement();
 
@@ -129,7 +132,7 @@ function gateOne(name: string, handler: ToolHandler): ToolHandler {
       }
     }
 
-    if (UNMETERED.has(name)) return handler(args);
+    if (UNMETERED.has(name)) return run(args);
 
     const verdict = check(METER_KEY, planLimit(tier, METER_KEY, -1));
     if (!verdict.allowed) {
@@ -137,7 +140,7 @@ function gateOne(name: string, handler: ToolHandler): ToolHandler {
     }
 
     try {
-      const result = await handler(args);
+      const result = await run(args);
       // Unlike the daily meter, a trial allowance does not come back
       // tomorrow - so a failed upload must not cost one of the five.
       if (spendTrialUpload && result?.isError !== true) recordTotal(spendTrialUpload);

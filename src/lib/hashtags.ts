@@ -16,7 +16,7 @@ import {
   TAG_BLACKLIST,
   type TagHit,
 } from '@spark-apps/video-kit';
-import { groqChatJSON } from './groq.js';
+import { groqChatJSON, rethrowIfDelegated } from './groq.js';
 
 // Vocabulary and normalisation come from the kit: the same video must
 // get the same tags whichever Spark tool posts it.
@@ -111,7 +111,11 @@ Rules:
 Respond with JSON {"tags": ["#tag1", "#tag2", ...]}.`;
 
   try {
-    const result = await groqChatJSON<{ tags: unknown }>([{ role: 'user', content: prompt }]);
+    const result = await groqChatJSON<{ tags: unknown }>(
+      [{ role: 'user', content: prompt }],
+      undefined,
+      'hashtags'
+    );
     if (!Array.isArray(result.tags)) return [];
     const pool = new Set(tagsWithViews.map((t) => t.tag));
     return result.tags
@@ -119,7 +123,8 @@ Respond with JSON {"tags": ["#tag1", "#tag2", ...]}.`;
       .map(normalizeTag)
       .filter((t) => pool.has(t))
       .slice(0, 16);
-  } catch {
+  } catch (e) {
+    rethrowIfDelegated(e);
     return [];
   }
 }
@@ -149,9 +154,11 @@ Rules:
 - The two arrays must not overlap.`;
 
   try {
-    const parsed = await groqChatJSON<{ popular?: unknown; trending?: unknown }>([
-      { role: 'user', content: prompt },
-    ]);
+    const parsed = await groqChatJSON<{ popular?: unknown; trending?: unknown }>(
+      [{ role: 'user', content: prompt }],
+      undefined,
+      'hashtags'
+    );
     const pickSix = (r: unknown): string[] => {
       if (!Array.isArray(r)) return [];
       return r
@@ -169,7 +176,8 @@ Rules:
       ...popular.map((tag) => ({ tag, viewCount: 0, label: null, kind: 'popular' as const })),
       ...trending.map((tag) => ({ tag, viewCount: 0, label: null, kind: 'trending' as const })),
     ];
-  } catch {
+  } catch (e) {
+    rethrowIfDelegated(e);
     return [];
   }
 }
