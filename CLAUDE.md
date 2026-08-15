@@ -134,6 +134,45 @@ path, since `resources/read` over any file:// URI would be an arbitrary-file-rea
 Text-ish outputs (`.vidlet`, `.srt`, `.txt`) come back as text, everything else as a base64 blob
 capped at 32 MB (stdio carries it in one JSON-RPC line, inflated 4/3).
 
+## No Groq from MCP tools
+
+**An MCP tool never calls Groq.** The caller is already a model and a stronger
+one than the llama tiers in `src/lib/groq.ts`, so generation belongs to it. The
+CLI and GUI are unaffected — they have no client to delegate to, and Groq stays
+correct there.
+
+Enforced at runtime, not by convention: `src/mcp/gate.ts` wraps every handler in
+`runInMcpTool` (`src/lib/ai-context.ts`), and `groqChatJSON` refuses inside that
+context — checked *before* the response cache, since a cached Groq answer is
+still a Groq answer. A new tool cannot ship exempt by omission.
+
+The handshake, two calls:
+
+1. The tool runs, reaches generation, and returns a **brief** per step it needs
+   (`src/mcp/delegate.ts`) — the original prompt verbatim, plus the `ai` field to
+   answer on. Vision steps attach their frames as MCP image content. Nothing is
+   encoded.
+2. The caller calls again with `ai: {narration: "...", frame_descriptions: [...]}`.
+   `groqChatJSON` returns those verbatim and the run completes.
+
+Notes for anyone touching this:
+
+- **All briefs are collected in one pass**, not one per round trip. The AI call
+  sites swallow failures and carry on with a fallback, so a single run reaches
+  every step; `abortBeforeExpensiveWork()` (in `autoshort-voice.ts`, after
+  alignment and before TTS) stops it before anything costly. Do not "fix" those
+  swallowing catches — the collection depends on them.
+- **Briefs are keyed on the step, not the tool.** `preview_short` needs
+  narration, frame descriptions and an assignment; keying on the tool told the
+  caller to resupply what it had just supplied, which loops.
+- Adding a Groq call means passing a `GenerationStep` as its third argument and
+  adding that step to `STEPS` in `delegate.ts` and to `AI_PROPERTY`
+  (`src/mcp/ai-param.ts`). An unlabelled call briefs as an unanswerable
+  `unknown` field.
+- MCP sampling would be the obvious mechanism and is not available: no Anthropic
+  client implements it, and it is deprecated protocol-wide as of spec
+  2026-07-28 (SEP-2577).
+
 ## Plan Gating
 
 `src/lib/spark-pay/` holds the SparkPay integration (poll mode, ported from
