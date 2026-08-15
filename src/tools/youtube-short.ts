@@ -14,7 +14,7 @@ import {
   sidecarPathFor,
 } from '../lib/ab-test.js';
 import { executeFFmpegRaw, getMediaDuration } from '../lib/ffmpeg.js';
-import { groqChatJSON, rethrowIfDelegated } from '../lib/groq.js';
+import { groqChatJSON } from '../lib/groq.js';
 import { fetchSharedTrends, type HashtagSuggestion, suggestHashtags } from '../lib/hashtags.js';
 import { getVideoStats, setThumbnail, updateVideoMeta, uploadVideo } from '../lib/youtube.js';
 
@@ -66,8 +66,7 @@ export async function generateTitleVariants(
       'titles'
     );
     return scored([result.a, result.b, result.c].map((t, i) => (t ?? fallbacks[i]).slice(0, 100)));
-  } catch (e) {
-    rethrowIfDelegated(e);
+  } catch {
     return scored(fallbacks);
   }
 }

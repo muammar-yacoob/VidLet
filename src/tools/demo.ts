@@ -15,7 +15,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { checkFFmpeg, executeFFmpegRaw, getVideoInfo, videoEncoderArgs } from '../lib/ffmpeg.js';
-import { GROQ_MODELS, groqChatJSON, rethrowIfDelegated, visionMessage } from '../lib/groq.js';
+import { GROQ_MODELS, groqChatJSON, visionMessage } from '../lib/groq.js';
 import { fmt, header, separator, success } from '../lib/logger.js';
 import { detectIdleSpans, estimateCropX } from '../lib/motion.js';
 import { getOutputPath } from '../lib/paths.js';
@@ -134,8 +134,7 @@ async function describeKeyframes(
         'frame_descriptions'
       );
       return descriptions.map((d, i) => `${i + 1}. ${d}`).join('\n');
-    } catch (e) {
-      rethrowIfDelegated(e);
+    } catch {
       // Model missing/blocked on this account - try the next candidate.
     }
   }

@@ -64,22 +64,12 @@ export function visionMessage(text: string, jpegsBase64: string[]): GroqMessage 
 const TEMPERATURE = 0.3;
 
 /**
- * Thrown instead of calling Groq when a request originates from an MCP tool.
- *
- * It carries the prompt that was about to be sent, so the handler that
- * catches it can hand that brief to the client model rather than inventing a
- * second copy of the instructions. Callers that currently swallow AI failures
- * (`rephraseScript` returns null, the hashtag helpers return []) must let this
- * one through - degrading quietly would give the user worse output than Groq,
- * which is the opposite of the point.
- */
-/**
  * Which step of a pipeline wanted writing.
  *
  * A tool can need more than one - `preview_short` writes narration, then
  * describes frames, then assigns them - and each is satisfied by a different
- * parameter. Keying the hand-back on the tool alone told the caller to resupply
- * the parameter it had just supplied, which loops.
+ * field of the `ai` parameter. Keying the hand-back on the tool alone told the
+ * caller to resupply the field it had just supplied, which loops.
  */
 export type GenerationStep =
   | 'narration'
@@ -90,6 +80,13 @@ export type GenerationStep =
   | 'titles'
   | 'hashtags';
 
+/**
+ * Thrown instead of calling Groq when a request originates from an MCP tool.
+ *
+ * It carries the prompt that was about to be sent, so the boundary can hand
+ * that brief to the client model rather than inventing a second copy of the
+ * instructions that would drift from the one the CLI uses.
+ */
 export class DelegatedGenerationError extends Error {
   readonly tool: string;
   readonly step: GenerationStep | null;
@@ -118,18 +115,6 @@ export class DelegatedGenerationError extends Error {
             .map((p) => (p.image_url?.url ?? '').replace(/^data:image\/jpeg;base64,/, ''))
     );
   }
-}
-
-/**
- * Rethrow a delegation refusal from a catch block that swallows AI failures.
- *
- * The boundary in mcp/delegate.ts catches these regardless, so this is not
- * what makes delegation correct - it is what makes it cheap. Without it a
- * pipeline carries on past the refusal and encodes a whole video before the
- * boundary throws the result away.
- */
-export function rethrowIfDelegated(e: unknown): void {
-  if (e instanceof DelegatedGenerationError) throw e;
 }
 
 /** Flatten message content to plain text, dropping image parts. */

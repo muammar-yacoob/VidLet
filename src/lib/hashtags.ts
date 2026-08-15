@@ -16,7 +16,7 @@ import {
   TAG_BLACKLIST,
   type TagHit,
 } from '@spark-apps/video-kit';
-import { groqChatJSON, rethrowIfDelegated } from './groq.js';
+import { groqChatJSON } from './groq.js';
 
 // Vocabulary and normalisation come from the kit: the same video must
 // get the same tags whichever Spark tool posts it.
@@ -123,8 +123,7 @@ Respond with JSON {"tags": ["#tag1", "#tag2", ...]}.`;
       .map(normalizeTag)
       .filter((t) => pool.has(t))
       .slice(0, 16);
-  } catch (e) {
-    rethrowIfDelegated(e);
+  } catch {
     return [];
   }
 }
@@ -176,8 +175,7 @@ Rules:
       ...popular.map((tag) => ({ tag, viewCount: 0, label: null, kind: 'popular' as const })),
       ...trending.map((tag) => ({ tag, viewCount: 0, label: null, kind: 'trending' as const })),
     ];
-  } catch (e) {
-    rethrowIfDelegated(e);
+  } catch {
     return [];
   }
 }

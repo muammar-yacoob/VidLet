@@ -1,75 +1,71 @@
 import { describe, expect, it } from 'vitest';
-import { runInMcpTool } from '../lib/ai-context.js';
+import { abortBeforeExpensiveWork, runInMcpTool } from '../lib/ai-context.js';
 import { DelegatedGenerationError, groqChatJSON } from '../lib/groq.js';
 import { delegatedBrief, withDelegation } from './delegate.js';
 import type { ToolResult } from './shared.js';
 
 const ok: ToolResult = { content: [{ type: 'text', text: 'done' }] };
 
-describe('delegatedBrief', () => {
-  const err = new DelegatedGenerationError(
-    'generate_short',
-    [
-      { role: 'system', content: 'You write voiceover.' },
-      { role: 'user', content: 'the raw script' },
-    ],
-    'narration'
-  );
+/** The text block of a result, for asserting on. */
+function body(result: ToolResult): string {
+  const first = result.content[0];
+  return first.type === 'text' ? first.text : '';
+}
 
+const narration = new DelegatedGenerationError(
+  'generate_short',
+  [
+    { role: 'system', content: 'You write voiceover.' },
+    { role: 'user', content: 'the raw script' },
+  ],
+  'narration'
+);
+
+const frames = new DelegatedGenerationError(
+  'generate_short',
+  [
+    {
+      role: 'user',
+      content: [
+        { type: 'text', text: 'describe these' },
+        { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,AAAA' } },
+      ],
+    },
+  ],
+  'frame_descriptions'
+);
+
+describe('delegatedBrief', () => {
   it('is not an error result', () => {
     // Nothing failed - marking it isError makes clients render a red step.
-    expect(delegatedBrief(err).isError).toBeUndefined();
+    expect(delegatedBrief([narration]).isError).toBeUndefined();
   });
 
-  it('names the parameter to answer on', () => {
-    const text = delegatedBrief(err).content[0];
-    expect(text.type === 'text' && text.text).toContain('final_script');
+  it('names the ai field to answer on', () => {
+    expect(body(delegatedBrief([narration]))).toContain('"narration": ...');
   });
 
   it('passes the original instructions through verbatim', () => {
-    const text = delegatedBrief(err).content[0];
-    expect(text.type === 'text' && text.text).toContain('You write voiceover.');
-    expect(text.type === 'text' && text.text).toContain('the raw script');
+    const text = body(delegatedBrief([narration]));
+    expect(text).toContain('You write voiceover.');
+    expect(text).toContain('the raw script');
+  });
+
+  it('asks for every step in one object', () => {
+    const text = body(delegatedBrief([narration, frames]));
+    expect(text).toContain('"narration": ..., "frame_descriptions": ...');
+    // Both briefs present, so the caller can answer them together.
+    expect(text).toContain('You write voiceover.');
+    expect(text).toContain('describe these');
+  });
+
+  it('says nothing was rendered, so the caller knows no work was wasted', () => {
+    expect(body(delegatedBrief([narration]))).toContain('Nothing has been rendered yet');
   });
 
   it('attaches vision frames as image content', () => {
-    const withFrames = new DelegatedGenerationError(
-      'create_demo',
-      [
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: 'describe' },
-            { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,AAAA' } },
-          ],
-        },
-      ],
-      'frame_descriptions'
-    );
-    const images = delegatedBrief(withFrames).content.filter((c) => c.type === 'image');
+    const images = delegatedBrief([narration, frames]).content.filter((c) => c.type === 'image');
     expect(images).toEqual([{ type: 'image', data: 'AAAA', mimeType: 'image/jpeg' }]);
-  });
-
-  it('says so when the tool cannot take the answer back yet', () => {
-    // frame_descriptions has no parameter. Telling the caller to retry with
-    // one would loop: the tool would ignore it and return this brief again.
-    const noParam = new DelegatedGenerationError(
-      'preview_short',
-      [{ role: 'user', content: 'describe' }],
-      'frame_descriptions'
-    );
-    const text = delegatedBrief(noParam).content[0];
-    const body = text.type === 'text' ? text.text : '';
-    expect(body).toContain('has no parameter for this yet');
-    expect(body).not.toContain('call `preview_short` again');
-  });
-
-  it('does not invent a parameter for an unlabelled step', () => {
-    const unlabelled = new DelegatedGenerationError('create_short', [
-      { role: 'user', content: 'something' },
-    ]);
-    const text = delegatedBrief(unlabelled).content[0];
-    expect(text.type === 'text' && text.text).toContain('has no parameter for this yet');
   });
 });
 
@@ -79,33 +75,49 @@ describe('withDelegation', () => {
     expect(result).toBe(ok);
   });
 
-  it('converts a thrown refusal into a brief', async () => {
+  it('collects every step a pipeline reaches, not just the first', async () => {
+    // The whole point of the swallowing call sites: one pass discovers all
+    // the writing a run needs, so it costs two round trips rather than four.
     const result = await runInMcpTool('generate_short', () =>
       withDelegation(async () => {
-        await groqChatJSON([{ role: 'user', content: 'write it' }], undefined, 'narration');
-        return ok;
-      })
-    );
-    const text = result.content[0];
-    expect(text.type === 'text' && text.text).toContain('final_script');
-  });
-
-  it('returns the brief even when the handler swallowed the refusal', async () => {
-    // The degradation path this exists for: rephraseScript catches, returns
-    // null, and the pipeline renders a Short with an unwritten script.
-    const result = await runInMcpTool('generate_short', () =>
-      withDelegation(async () => {
-        try {
-          await groqChatJSON([{ role: 'user', content: 'write it' }], undefined, 'narration');
-        } catch {
-          /* swallowed, as the real call sites do */
+        for (const [content, step] of [
+          ['write the script', 'narration'],
+          ['describe the frames', 'frame_descriptions'],
+          ['assign them', 'frame_assignment'],
+        ] as const) {
+          try {
+            await groqChatJSON([{ role: 'user', content }], undefined, step);
+          } catch {
+            /* swallowed, as the real call sites do */
+          }
         }
         return ok;
       })
     );
-    expect(result).not.toBe(ok);
-    const text = result.content[0];
-    expect(text.type === 'text' && text.text).toContain('final_script');
+    const text = body(result);
+    expect(text).toContain('"narration": ..., "frame_descriptions": ..., "frame_assignment": ...');
+    expect(text).toContain('3 pieces of writing');
+  });
+
+  it('does not brief the same step twice when a stage retries', async () => {
+    const result = await runInMcpTool('create_demo', () =>
+      withDelegation(async () => {
+        // describeTimeline loops over candidate models on failure.
+        for (const model of ['vision-a', 'vision-b']) {
+          try {
+            await groqChatJSON(
+              [{ role: 'user', content: 'describe' }],
+              model,
+              'frame_descriptions'
+            );
+          } catch {
+            /* try the next candidate */
+          }
+        }
+        return ok;
+      })
+    );
+    expect(body(result)).toContain('a piece of writing');
   });
 
   it('rethrows unrelated failures', async () => {
@@ -116,5 +128,35 @@ describe('withDelegation', () => {
         })
       )
     ).rejects.toThrow('ffmpeg exited 1');
+  });
+});
+
+describe('abortBeforeExpensiveWork', () => {
+  it('stops a run that is missing its writing', async () => {
+    const result = await runInMcpTool('generate_short', () =>
+      withDelegation(async () => {
+        try {
+          await groqChatJSON([{ role: 'user', content: 'script' }], undefined, 'narration');
+        } catch {
+          /* swallowed */
+        }
+        abortBeforeExpensiveWork();
+        throw new Error('encoder should never be reached');
+      })
+    );
+    expect(body(result)).toContain('"narration": ...');
+  });
+
+  it('does nothing when every step was answered', async () => {
+    await expect(
+      runInMcpTool('generate_short', async () => {
+        abortBeforeExpensiveWork();
+        return 'encoded';
+      })
+    ).resolves.toBe('encoded');
+  });
+
+  it('does nothing outside an MCP call', () => {
+    expect(() => abortBeforeExpensiveWork()).not.toThrow();
   });
 });

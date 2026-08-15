@@ -29,15 +29,15 @@ import type { DelegatedGenerationError } from './groq.js';
 
 interface McpCall {
   tool: string;
-  /** Set when a Groq call was refused during this tool call. */
-  pending: DelegatedGenerationError | null;
+  /** Every generation refused during this tool call, in the order reached. */
+  pending: DelegatedGenerationError[];
 }
 
 const mcpCall = new AsyncLocalStorage<McpCall>();
 
 /** Run a tool handler inside the MCP context. Applied once, in mcp/gate.ts. */
 export function runInMcpTool<T>(tool: string, fn: () => Promise<T>): Promise<T> {
-  return mcpCall.run({ tool, pending: null }, fn);
+  return mcpCall.run({ tool, pending: [] }, fn);
 }
 
 /** The tool currently executing, or null when running from the CLI or GUI. */
@@ -45,15 +45,35 @@ export function currentMcpTool(): string | null {
   return mcpCall.getStore()?.tool ?? null;
 }
 
-/** Record a refused generation so the boundary can surface it. */
+/**
+ * Record a refused generation so the boundary can surface it.
+ *
+ * All of them, not just the first. A pipeline usually needs several - narration,
+ * then frame descriptions, then the assignment between them - and stopping at
+ * the first would cost a round trip per step. The AI call sites already swallow
+ * failures and carry on with a fallback, so one pass reaches every step and
+ * collects the lot; abortBeforeExpensiveWork then stops the run before anything
+ * is encoded around the answers we do not have yet.
+ */
 export function recordDelegation(e: DelegatedGenerationError): void {
   const store = mcpCall.getStore();
-  // First one wins: it is the earliest point the pipeline needed writing, so
-  // it is the step the caller has to satisfy before anything downstream runs.
-  if (store && !store.pending) store.pending = e;
+  // One per step: a retried stage would otherwise brief the same thing twice.
+  if (store && !store.pending.some((p) => p.step === e.step)) store.pending.push(e);
 }
 
-/** The refused generation for this tool call, if there was one. */
-export function pendingDelegation(): DelegatedGenerationError | null {
-  return mcpCall.getStore()?.pending ?? null;
+/** Every generation refused during this tool call. */
+export function pendingDelegations(): DelegatedGenerationError[] {
+  return mcpCall.getStore()?.pending ?? [];
+}
+
+/**
+ * Stop before work that only makes sense once the writing exists.
+ *
+ * Called at the top of the encode. Without it a delegated run renders a whole
+ * Short around an unwritten script and the boundary throws it away - minutes
+ * of ffmpeg for output nobody sees.
+ */
+export function abortBeforeExpensiveWork(): void {
+  const store = mcpCall.getStore();
+  if (store?.pending.length) throw store.pending[0];
 }

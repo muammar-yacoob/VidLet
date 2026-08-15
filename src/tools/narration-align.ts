@@ -19,7 +19,7 @@ import { join } from 'node:path';
 import { execa } from 'execa';
 import { outputTimeToSource } from '../lib/autoshort-plan.js';
 import { executeFFmpegRaw } from '../lib/ffmpeg.js';
-import { GROQ_MODELS, groqChatJSON, rethrowIfDelegated, visionMessage } from '../lib/groq.js';
+import { GROQ_MODELS, groqChatJSON, visionMessage } from '../lib/groq.js';
 import type { TimeSegment } from '../lib/segments.js';
 import { isOcrAvailable, parseTesseractTsv } from './mask.js';
 
@@ -107,8 +107,7 @@ export async function describeTimeline(opts: {
             .slice(0, descriptions.length)
             .map((outputTime, i) => ({ outputTime, description: descriptions[i] }));
         }
-      } catch (e) {
-        rethrowIfDelegated(e);
+      } catch {
         // Model missing or blocked on this account - try the next.
       }
     }
@@ -169,8 +168,7 @@ export async function assignLinesToFrames(
         : (assignment[assignment.length - 1] ?? 0)
     );
     return filled;
-  } catch (e) {
-    rethrowIfDelegated(e);
+  } catch {
     return null;
   }
 }

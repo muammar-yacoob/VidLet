@@ -4,99 +4,100 @@
  * When a tool reaches generation, `groqChatJSON` throws
  * DelegatedGenerationError rather than spending a token (see
  * ../lib/ai-context.ts for why). This module catches that at the tool
- * boundary and returns the prompt that was about to be sent, plus the name of
- * the parameter to hand the answer back on.
+ * boundary and returns the prompts that were about to be sent, together with
+ * the `ai` fields to hand the answers back on.
  *
  * The prompt is reused verbatim rather than rewritten for the client: it is
  * already tuned, and a second copy would drift from the one the CLI uses.
  */
-import { pendingDelegation } from '../lib/ai-context.js';
+import { pendingDelegations } from '../lib/ai-context.js';
 import { DelegatedGenerationError, type GenerationStep } from '../lib/groq.js';
 import type { ToolContent, ToolResult } from './shared.js';
 
 /**
- * How each generation step is handed back.
+ * What each generation step is called in the `ai` parameter, and the JSON
+ * shape the answer takes.
  *
- * Keyed on the step rather than the tool because one tool can need several:
+ * Keyed on the step rather than the tool because one tool needs several:
  * `preview_short` writes narration, then describes frames, then assigns them.
- * Keying on the tool told the caller to resupply the parameter it had just
- * supplied, which loops forever.
- *
- * `param: null` means the tool has no input for that answer yet. Saying so is
- * the honest result - naming a parameter that does not exist sends the caller
- * round again with an argument the tool ignores.
+ * All of them come back in one `ai` object on the next call, so a run costs
+ * two round trips however many steps it turns out to need.
  */
-const STEPS: Record<GenerationStep, { param: string | null; shape: string }> = {
-  narration: {
-    // Already existed for the human approval round: "approved narration, used
-    // verbatim". Delegation reuses that contract rather than adding a parallel one.
-    param: 'final_script',
-    shape: 'the finished narration text',
+const STEPS: Record<GenerationStep, { field: string; shape: string }> = {
+  narration: { field: 'narration', shape: '"<the finished narration text>"' },
+  frame_descriptions: {
+    field: 'frame_descriptions',
+    shape: '["<one short description per frame, in order>"]',
   },
-  titles: {
-    // upload_to_youtube's confirm round already took these.
-    param: 'title_a` / `title_b',
-    shape: 'two title variants to A/B test',
+  frame_assignment: {
+    field: 'frame_assignment',
+    shape: '[<one frame index per narration line, never decreasing>]',
   },
-  hashtags: { param: 'tags', shape: 'the hashtags, as an array of strings' },
-  frame_descriptions: { param: null, shape: 'one short description per frame, in order' },
-  frame_assignment: { param: null, shape: 'which frame belongs to each narration beat' },
-  highlights: { param: null, shape: 'the spans worth keeping' },
-  post_copy: { param: null, shape: 'the post title, description and tags' },
+  highlights: { field: 'highlights', shape: '[{"start": <s>, "end": <s>}]' },
+  post_copy: {
+    field: 'post_copy',
+    shape: '{"title": "...", "description": "...", "tags": ["..."]}',
+  },
+  titles: { field: 'titles', shape: '{"a": "<variant A>", "b": "<variant B>"}' },
+  hashtags: { field: 'hashtags', shape: '["#tag", ...]' },
 };
 
-const UNLABELLED = { param: null, shape: 'the generated text' };
+/** One step's section of the brief. */
+function section(e: DelegatedGenerationError, index: number): string {
+  const step = e.step ? STEPS[e.step] : null;
+  const field = step?.field ?? 'unknown';
+  return [
+    `### ${index}. ${field}`,
+    ``,
+    e.system ? `${e.system}` : '',
+    e.prompt ? `\n${e.prompt}` : '',
+    e.images.length ? `\n(${e.images.length} frame(s) attached below, in order)` : '',
+    ``,
+    `Answer as \`${field}\`: ${step?.shape ?? '<see the instructions above>'}`,
+  ]
+    .filter((line) => line !== '')
+    .join('\n');
+}
 
 /**
- * Format the refusal as a tool result the model can act on.
+ * Format every refused step as one brief the model can answer in a single go.
  *
  * Not an error result: nothing went wrong, and marking it `isError` makes
  * clients surface it as a failure rather than a step.
  */
-export function delegatedBrief(e: DelegatedGenerationError): ToolResult {
-  const { param, shape } = (e.step ? STEPS[e.step] : UNLABELLED) ?? UNLABELLED;
-
-  const next = param
-    ? [
-        `Write ${shape} to the instructions above, then call \`${e.tool}\` again with the`,
-        `same arguments plus \`${param}\`. The tool will use it verbatim and finish the job.`,
-      ]
-    : [
-        `Write ${shape} to the instructions above.`,
-        ``,
-        `\`${e.tool}\` has no parameter for this yet, so it cannot finish this run: report`,
-        `what you wrote to the user rather than calling the tool again, which would only`,
-        `return this same brief.`,
-      ];
+export function delegatedBrief(pending: DelegatedGenerationError[]): ToolResult {
+  const tool = pending[0]?.tool ?? 'this tool';
+  const fields = pending.map((e) => (e.step ? STEPS[e.step].field : 'unknown'));
 
   const content: ToolContent[] = [
     {
       type: 'text',
       text: [
-        `This step needs writing, and you are a stronger model than anything this tool would`,
-        `call, so it is yours to do rather than the server's.`,
+        `\`${tool}\` needs ${pending.length === 1 ? 'a piece of' : pending.length + ' pieces of'} writing,`,
+        `and you are a stronger model than anything it would call, so it is yours to do`,
+        `rather than the server's. Nothing has been rendered yet.`,
         ``,
-        e.system ? `## Instructions\n\n${e.system}` : '',
-        ``,
-        `## Material\n\n${e.prompt}`,
-        ``,
-        e.images.length
-          ? `## Frames\n\n${e.images.length} frame(s) from the video follow this message.`
-          : '',
-        ``,
+        ...pending.map((e, i) => `${section(e, i + 1)}\n`),
         `## Next`,
         ``,
-        ...next,
-      ]
-        .filter((line) => line !== '')
-        .join('\n'),
+        `Call \`${tool}\` again with the same arguments plus \`ai\`, an object carrying`,
+        `every field above:`,
+        ``,
+        '```json',
+        `{ "ai": { ${fields.map((f) => `"${f}": ...`).join(', ')} } }`,
+        '```',
+        ``,
+        `Each value is used verbatim, and no further writing will be asked for.`,
+      ].join('\n'),
     },
   ];
 
   // Vision prompts sent Groq base64 JPEGs; the client gets the same frames as
   // real image blocks so it can look at them rather than take our word.
-  for (const data of e.images) {
-    content.push({ type: 'image', data, mimeType: 'image/jpeg' });
+  for (const e of pending) {
+    for (const data of e.images) {
+      content.push({ type: 'image', data, mimeType: 'image/jpeg' });
+    }
   }
 
   return { content };
@@ -112,15 +113,17 @@ export function delegatedBrief(e: DelegatedGenerationError): ToolResult {
 export async function withDelegation(fn: () => Promise<ToolResult>): Promise<ToolResult> {
   try {
     const result = await fn();
-    const swallowed = pendingDelegation();
-    return swallowed ? delegatedBrief(swallowed) : result;
+    // Checked after a normal return too: the AI call sites swallow failures
+    // and carry on with a fallback, so a handler can finish having quietly
+    // skipped every writing step.
+    const pending = pendingDelegations();
+    return pending.length ? delegatedBrief(pending) : result;
   } catch (e) {
-    if (e instanceof DelegatedGenerationError) return delegatedBrief(e);
-    const pending = pendingDelegation();
-    // A refusal that was caught downstream and then failed for an unrelated
-    // reason still needs the brief - the unrelated failure is usually a
-    // consequence of the missing text.
-    if (pending) return delegatedBrief(pending);
+    const pending = pendingDelegations();
+    // An unrelated failure after a refusal is usually a consequence of the
+    // missing text, so the brief is the more useful answer either way.
+    if (pending.length) return delegatedBrief(pending);
+    if (e instanceof DelegatedGenerationError) return delegatedBrief([e]);
     throw e;
   }
 }

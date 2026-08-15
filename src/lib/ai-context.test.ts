@@ -6,7 +6,12 @@
  * catches AI failures and carries on with a fallback.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { currentMcpTool, pendingDelegation, recordDelegation, runInMcpTool } from './ai-context.js';
+import {
+  currentMcpTool,
+  pendingDelegations,
+  recordDelegation,
+  runInMcpTool,
+} from './ai-context.js';
 import { DelegatedGenerationError, groqChatJSON } from './groq.js';
 
 describe('MCP tool context', () => {
@@ -114,26 +119,51 @@ describe('recorded delegation', () => {
       } catch {
         // exactly what rephraseScript and the hashtag helpers do
       }
-      return pendingDelegation();
+      return pendingDelegations();
     });
-    expect(swallowed).toBeInstanceOf(DelegatedGenerationError);
+    expect(swallowed).toHaveLength(1);
+    expect(swallowed[0]).toBeInstanceOf(DelegatedGenerationError);
   });
 
-  it('keeps the first refusal when a pipeline needs several', async () => {
-    const first = await runInMcpTool('generate_short', async () => {
+  it('keeps every distinct step a pipeline needs, in order', async () => {
+    const all = await runInMcpTool('generate_short', async () => {
       recordDelegation(
-        new DelegatedGenerationError('generate_short', [{ role: 'user', content: 'narration' }])
+        new DelegatedGenerationError(
+          'generate_short',
+          [{ role: 'user', content: 'narration' }],
+          'narration'
+        )
       );
       recordDelegation(
-        new DelegatedGenerationError('generate_short', [{ role: 'user', content: 'hashtags' }])
+        new DelegatedGenerationError(
+          'generate_short',
+          [{ role: 'user', content: 'hashtags' }],
+          'hashtags'
+        )
       );
-      return pendingDelegation();
+      return pendingDelegations();
     });
-    expect(first?.prompt).toBe('narration');
+    expect(all.map((e) => e.prompt)).toEqual(['narration', 'hashtags']);
+  });
+
+  it('deduplicates a step a stage retried', async () => {
+    const all = await runInMcpTool('create_demo', async () => {
+      for (const model of ['a', 'b']) {
+        recordDelegation(
+          new DelegatedGenerationError(
+            'create_demo',
+            [{ role: 'user', content: `describe with ${model}` }],
+            'frame_descriptions'
+          )
+        );
+      }
+      return pendingDelegations();
+    });
+    expect(all).toHaveLength(1);
   });
 
   it('records nothing when no generation was attempted', async () => {
-    const pending = await runInMcpTool('probe_video', async () => pendingDelegation());
-    expect(pending).toBeNull();
+    const pending = await runInMcpTool('probe_video', async () => pendingDelegations());
+    expect(pending).toEqual([]);
   });
 });

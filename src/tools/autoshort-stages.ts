@@ -28,7 +28,7 @@ import { cleanVoice } from './cleanvoice.js';
 
 export async function rephraseScript(raw: string, outputSeconds: number): Promise<string | null> {
   if (!process.env.GROQ_API_KEY?.trim()) return null;
-  const { groqChatJSON, rethrowIfDelegated } = await import('../lib/groq.js');
+  const { groqChatJSON } = await import('../lib/groq.js');
   const targetWords = Math.max(12, Math.round(outputSeconds * TTS_WPS * NARRATION_COVERAGE));
   try {
     const result = await groqChatJSON<{ script: string }>(
@@ -43,8 +43,7 @@ export async function rephraseScript(raw: string, outputSeconds: number): Promis
       'narration'
     );
     return result.script?.trim() || null;
-  } catch (e) {
-    rethrowIfDelegated(e);
+  } catch {
     return null; // model trouble - the raw script still works
   }
 }
