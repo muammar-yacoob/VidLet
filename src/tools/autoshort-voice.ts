@@ -14,6 +14,7 @@
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { SrtEntry } from '@spark-apps/video-kit';
+import { abortBeforeExpensiveWork } from '../lib/ai-context.js';
 import {
   sourceTimeToOutput,
   splitSentences,
@@ -131,6 +132,13 @@ export async function resolveVoiceAndCaptions(ctx: VoiceStageContext): Promise<V
         );
       });
     }
+
+    // Everything the run needs written has been asked for by now: the script,
+    // the frame descriptions and the assignment between them. Under MCP that
+    // means the briefs are collected, and the caller has to answer them before
+    // any of this is worth doing - synthesising speech for an unwritten script
+    // and rendering around it costs minutes for output that gets discarded.
+    abortBeforeExpensiveWork();
 
     const spoken = await time('tts', () =>
       synthesizeNarration(

@@ -21,6 +21,7 @@ import {
   rotateAbTest,
   topicFromFilename,
 } from '../tools/youtube-short.js';
+import { AI_PROPERTY } from './ai-param.js';
 import {
   fileUrl,
   jsonContent,
@@ -65,6 +66,7 @@ export const YOUTUBE_TOOLS: ToolDefinition[] = [
     inputSchema: {
       type: 'object',
       properties: {
+        ai: AI_PROPERTY,
         path: { type: 'string', description: 'The finished video file.' },
         topic: {
           type: 'string',

@@ -130,7 +130,8 @@ async function describeKeyframes(
           },
           visionMessage('Screenshots in chronological order:', frames),
         ],
-        model
+        model,
+        'frame_descriptions'
       );
       return descriptions.map((d, i) => `${i + 1}. ${d}`).join('\n');
     } catch {
@@ -159,13 +160,17 @@ async function writeScript(
     .filter(Boolean)
     .join('\n\n');
 
-  const raw = await groqChatJSON<unknown>([
-    {
-      role: 'system',
-      content: `You write voiceover scripts for silent product screen recordings. Plain human voice, no hype words, no emojis, benefit-first, present tense, as if the maker is casually showing a friend. Respond with JSON {"narration": "<script, about ${fullWords} words, matching the pacing of the visuals>", "short_narration": "<standalone hook-first version, at most ${shortWords} words>"}`,
-    },
-    { role: 'user', content: context },
-  ]);
+  const raw = await groqChatJSON<unknown>(
+    [
+      {
+        role: 'system',
+        content: `You write voiceover scripts for silent product screen recordings. Plain human voice, no hype words, no emojis, benefit-first, present tense, as if the maker is casually showing a friend. Respond with JSON {"narration": "<script, about ${fullWords} words, matching the pacing of the visuals>", "short_narration": "<standalone hook-first version, at most ${shortWords} words>"}`,
+      },
+      { role: 'user', content: context },
+    ],
+    undefined,
+    'demo_script'
+  );
 
   const parsed = scriptSchema.safeParse(raw);
   if (!parsed.success) throw new Error('AI returned an unexpected script format');

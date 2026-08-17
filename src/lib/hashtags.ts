@@ -114,7 +114,8 @@ Respond with JSON {"tags": ["#tag1", "#tag2", ...]}.`;
     // Filtering/ranking against explicit rules, not creative writing - cheap tier is fine.
     const result = await groqChatJSON<{ tags: unknown }>(
       [{ role: 'user', content: prompt }],
-      GROQ_MODELS.FAST
+      GROQ_MODELS.FAST,
+      'hashtags'
     );
     if (!Array.isArray(result.tags)) return [];
     const pool = new Set(tagsWithViews.map((t) => t.tag));
@@ -155,7 +156,8 @@ Rules:
   try {
     const parsed = await groqChatJSON<{ popular?: unknown; trending?: unknown }>(
       [{ role: 'user', content: prompt }],
-      GROQ_MODELS.FAST
+      GROQ_MODELS.FAST,
+      'hashtags'
     );
     const pickSix = (r: unknown): string[] => {
       if (!Array.isArray(r)) return [];

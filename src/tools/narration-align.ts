@@ -99,7 +99,8 @@ export async function describeTimeline(opts: {
             },
             visionMessage('Frames in chronological order:', frames),
           ],
-          model
+          model,
+          'frame_descriptions'
         );
         if (Array.isArray(descriptions) && descriptions.length > 0) {
           return times
@@ -156,7 +157,8 @@ export async function assignLinesToFrames(
         },
         { role: 'user', content: `MOMENTS:\n${shots}\n\nNARRATION:\n${script}` },
       ],
-      GROQ_MODELS.FAST
+      GROQ_MODELS.FAST,
+      'frame_assignment'
     );
     if (!Array.isArray(assignment) || assignment.length === 0) return null;
     // Pad a short answer by repeating the last moment rather than dropping
