@@ -30,6 +30,7 @@ import {
   type ToolDefinition,
   type ToolHandler,
   withSilencedStdout,
+  writeThumbnail,
 } from './shared.js';
 
 export const STUDIO_TOOLS: ToolDefinition[] = [
@@ -375,9 +376,11 @@ async function handleCreateTimelapseShort({
         overlay,
         portrait,
       });
-      return jsonContent({
+      const thumbnail = await writeThumbnail(result.output);
+      return fileResult(result.output, {
         ...result,
-        url: fileUrl(result.output),
+        thumbnail,
+        thumbnailUrl: thumbnail ? fileUrl(thumbnail) : null,
         music: track
           ? {
               title: track.title,
@@ -429,8 +432,10 @@ async function handleCreateDemo({
         captions,
         post: generate_post,
       });
-      return jsonContent({
-        output: result,
+      const thumbnail = await writeThumbnail(result);
+      return fileResult(result, {
+        thumbnail,
+        thumbnailUrl: thumbnail ? fileUrl(thumbnail) : null,
         script: `${output}.script.txt`,
         ...(generate_post ? { post_copy: `${output}.post.txt` } : {}),
       });

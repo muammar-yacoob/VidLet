@@ -18,6 +18,7 @@ import { getMediaDuration, getVideoInfo } from '../lib/ffmpeg.js';
 import type { TimeSegment } from '../lib/segments.js';
 import {
   type MediaEntry,
+  type SubtitleStyle,
   serializeProject,
   sha256File,
   VIDLET_FORMAT_VERSION,
@@ -51,6 +52,12 @@ export interface EmitProjectInput {
     /** Measured per-word timing, when the pipeline burned word-lit captions. */
     words?: Array<{ word: string; start: number; end: number }>;
   }>;
+  /** Keep each clip's own audio (default false: narration carries the audio). */
+  keepClipAudio?: boolean;
+  /** meta.generator tag; default "vidlet generate_short". */
+  generator?: string;
+  /** Overrides merged over the default subtitle style block. */
+  subtitleStyle?: Partial<SubtitleStyle>;
 }
 
 /**
@@ -92,7 +99,7 @@ export async function emitVidletProject(input: EmitProjectInput): Promise<string
       duration: input.introSeconds,
       gain: 1,
       // The intro's own audio is never wanted under a narration.
-      muted: true,
+      muted: !input.keepClipAudio,
       speed: 1,
     });
     timeline = input.introSeconds;
@@ -114,7 +121,7 @@ export async function emitVidletProject(input: EmitProjectInput): Promise<string
         sourceIn: Number(span.start.toFixed(3)),
         duration: Number(onTimeline.toFixed(3)),
         gain: 1,
-        muted: true, // narration carries the audio
+        muted: !input.keepClipAudio, // by default narration carries the audio
         speed: Number(rate.toFixed(4)),
       });
       timeline += onTimeline;
@@ -164,7 +171,7 @@ export async function emitVidletProject(input: EmitProjectInput): Promise<string
       title: input.title,
       createdAt: now,
       modifiedAt: now,
-      generator: 'vidlet generate_short',
+      generator: input.generator ?? 'vidlet generate_short',
     },
     settings: {
       width: input.width,
@@ -186,6 +193,7 @@ export async function emitVidletProject(input: EmitProjectInput): Promise<string
         ...(input.subtitles.some((s) => s.words?.length)
           ? { captionStyle: 'shorts' as const, highlightColor: '&H00FFFF&' }
           : {}),
+        ...input.subtitleStyle,
       },
       entries: input.subtitles.map((s, i) => ({
         id: `s${i + 1}`,

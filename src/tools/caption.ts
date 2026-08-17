@@ -43,6 +43,12 @@ export interface CaptionOptions {
   position?: CaptionPosition;
   // Progress callback (used by GUI)
   onProgress?: (stage: string) => void;
+  /**
+   * Receives the resolved subtitle entries (word timings included when
+   * transcribed) so a caller can persist the transcript — re-captioning
+   * without it means paying whisper again.
+   */
+  onTranscript?: (entries: SrtEntry[]) => void;
 }
 
 // ASS syntax, timing, colour and layout maths live in the kit. What stays
@@ -154,7 +160,7 @@ function generateClassicAss(ctx: AssContext): string {
  * Shows full sentence with current word in highlight color.
  * Base layer = all white, overlay layer = highlighted word per its time window.
  */
-function generateHormoziAss(ctx: AssContext): string {
+export function generateHormoziAss(ctx: AssContext): string {
   const header = buildAssHeader(ctx, 'hormozi');
   const lines: string[] = [];
 
@@ -191,7 +197,7 @@ function generateHormoziAss(ctx: AssContext): string {
  * Karaoke style: Smooth fill effect using ASS \kf tags.
  * Words progressively fill with the highlight color.
  */
-function generateKaraokeAss(ctx: AssContext): string {
+export function generateKaraokeAss(ctx: AssContext): string {
   const header = buildAssHeader(ctx, 'karaoke');
   const lines: string[] = [];
 
@@ -413,6 +419,7 @@ export async function caption(opts: CaptionOptions): Promise<string> {
   if (entries.length === 0) {
     throw new Error('No valid subtitle entries found');
   }
+  opts.onTranscript?.(entries);
 
   logToFile(`Caption: ${entries.length} subtitle entries, generating ${style} ASS`);
 

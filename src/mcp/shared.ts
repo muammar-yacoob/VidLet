@@ -301,3 +301,21 @@ export function maxSafeUrlLength(): number {
 export function editorBaseUrl(): string {
   return process.env.VIDLET_URL || 'https://vidlet.app';
 }
+
+/**
+ * vidlet.app editor link for a `.vidlet` project. The whole file travels in
+ * the #project= hash fragment, which never reaches the server — the site
+ * decodes it client-side, so a signed-in user lands in the editor with the
+ * project loaded under their own account. Null when the file cannot be read
+ * or the encoded URL exceeds the platform launcher's limit (open_in_editor's
+ * manual fallback covers that case).
+ */
+export function editorUrlFor(projectPath: string): string | null {
+  try {
+    const text = readFileSync(projectPath, 'utf8');
+    const url = `${editorBaseUrl()}/app#project=${Buffer.from(text, 'utf8').toString('base64url')}`;
+    return url.length <= maxSafeUrlLength() ? url : null;
+  } catch {
+    return null;
+  }
+}

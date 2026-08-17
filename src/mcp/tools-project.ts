@@ -29,8 +29,8 @@ import {
 } from '../tools/voiceover.js';
 import {
   editorBaseUrl,
+  editorUrlFor,
   jsonContent,
-  maxSafeUrlLength,
   openInBrowser,
   releaseIfEmpty,
   reserveUniqueOutputPath,
@@ -130,6 +130,7 @@ async function handleCreateProject({
         quickpeek = await detectQuickPeek();
       }
 
+      const editUrl = editorUrlFor(output);
       const nextSteps =
         questions.length > 0
           ? [
@@ -139,11 +140,15 @@ async function handleCreateProject({
           : [
               ...voiceNextStep(voice ?? {}, output, sniffed.script.length),
               `Render with render_project (path: ${output}).`,
-              'Preview or hand-edit in the browser with open_in_editor.',
+              editUrl
+                ? 'Preview or hand-edit in the browser: give the user `edit_url` (opens the ' +
+                  'vidlet.app editor, signed-in users edit directly) or call open_in_editor.'
+                : 'Preview or hand-edit in the browser with open_in_editor.',
             ];
 
       return jsonContent({
         project: output,
+        ...(editUrl ? { edit_url: editUrl } : {}),
         title,
         source_kind: sniffed.kind,
         subtitle_cues: project.subtitles.entries.length,
@@ -222,13 +227,24 @@ async function handleRenderProject({
         draft,
         captionStyle: caption_style,
       });
+      const editUrl = editorUrlFor(input);
       return jsonContent({
         output: result.output,
         duration: result.duration,
         encoder: result.encoder,
-        next_steps: draft
-          ? ['Draft quality — re-call render_project without draft for the final render.']
-          : ['Optionally compress_video for upload, or convert_to_gif for a preview.'],
+        project: input,
+        ...(editUrl ? { edit_url: editUrl } : {}),
+        next_steps: [
+          ...(draft
+            ? ['Draft quality — re-call render_project without draft for the final render.']
+            : ['Optionally compress_video for upload, or convert_to_gif for a preview.']),
+          'Amendments are cheap: edit the project' +
+            (editUrl
+              ? ' (give the user `edit_url` — it opens the vidlet.app editor, where signed-in ' +
+                'users edit directly)'
+              : ' (open_in_editor, or edit the JSON)') +
+            ' and re-call render_project — only the encode is paid again.',
+        ],
       });
     })
   );
@@ -241,11 +257,10 @@ async function handleOpenInEditor({ path }: { path?: string }) {
   const text = readFileSync(input, 'utf8');
   parseProject(text); // refuse to ship an invalid/newer-version project to the editor
 
-  const base = editorBaseUrl();
   // The site consumes #project= exactly like #prompter= — hash fragments
   // never reach the server; the editor decodes and strips them.
-  const url = `${base}/app#project=${Buffer.from(text, 'utf8').toString('base64url')}`;
-  if (url.length <= maxSafeUrlLength()) {
+  const url = editorUrlFor(input);
+  if (url) {
     openInBrowser(url);
     return jsonContent({
       opened: true,
@@ -260,7 +275,7 @@ async function handleOpenInEditor({ path }: { path?: string }) {
     opened: false,
     url: null,
     project_chars: text.length,
-    next_steps: [`Open ${base}/app`, `Click Open project and pick ${input}`],
+    next_steps: [`Open ${editorBaseUrl()}/app`, `Click Open project and pick ${input}`],
   });
 }
 
@@ -355,13 +370,18 @@ async function handleAddVoiceoverToProject({
         touchModified(project);
         writeFileSync(projectOut, serializeProject(project), 'utf8');
 
+        const editUrl = editorUrlFor(projectOut);
         return jsonContent({
           project: projectOut,
           narration_audio: audioOut,
           narration_duration: Math.round(duration * 100) / 100,
+          ...(editUrl ? { edit_url: editUrl } : {}),
           next_steps: [
             `Render with render_project (path: ${projectOut}).`,
-            'Preview in the browser with open_in_editor.',
+            editUrl
+              ? 'Preview in the browser: give the user `edit_url` (vidlet.app editor) or call ' +
+                'open_in_editor.'
+              : 'Preview in the browser with open_in_editor.',
           ],
         });
       } catch (e) {

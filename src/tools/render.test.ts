@@ -124,6 +124,20 @@ describe('buildSubtitleAss', () => {
       ) ?? '';
     expect(ass).toContain('&H0000FF&');
   });
+
+  it('renders hormozi with its own layered per-word highlight, not the shorts layout', () => {
+    const ass = buildSubtitleAss(wordLitProject({ captionStyle: 'hormozi' }), canvas) ?? '';
+    // Layer 0 carries the full white sentence; layer 1 overlays the lit word.
+    expect(ass).toContain('Dialogue: 1,');
+    expect(ass).toContain('\\b1');
+    expect(ass).not.toContain('Style: Shorts');
+  });
+
+  it('renders karaoke with progressive \\kf fill, not the shorts layout', () => {
+    const ass = buildSubtitleAss(wordLitProject({ captionStyle: 'karaoke' }), canvas) ?? '';
+    expect(ass).toContain('\\kf');
+    expect(ass).not.toContain('Style: Shorts');
+  });
 });
 
 // Integration: only when a system ffmpeg exists. Fixtures are generated at

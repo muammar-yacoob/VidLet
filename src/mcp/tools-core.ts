@@ -3,18 +3,21 @@
  * extract audio, gif). Schemas and handlers moved verbatim from mcp.js.
  */
 import { statSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { basename, resolve } from 'node:path';
 import { checkFFmpeg, getVideoInfo } from '../lib/ffmpeg.js';
 import { changeExtension, getOutputPath } from '../lib/paths.js';
 import { extractAudio } from '../tools/audio.js';
-import { caption } from '../tools/caption.js';
+import { caption, type SrtEntry } from '../tools/caption.js';
 import { compress } from '../tools/compress.js';
+import { emitVidletProject, projectPathFor } from '../tools/emit-project.js';
 import { jumpcut } from '../tools/jumpcut.js';
 import { speedup } from '../tools/speedup.js';
 import { togif } from '../tools/togif.js';
 import { trim } from '../tools/trim.js';
 import {
+  editorUrlFor,
   fileResult,
+  fileUrl,
   jsonContent,
   PATH_PROPERTY,
   resolveInputPath,
@@ -37,7 +40,9 @@ export const CORE_TOOLS: ToolDefinition[] = [
     description:
       'Auto-transcribe locally with whisper.cpp (English only) and burn styled captions in. ' +
       'Never overwrites input; default output is "<name>_captioned.<ext>" in a VidLet/ subfolder ' +
-      'beside the source, numbered (-1, -2, ...) if that already exists.',
+      'beside the source, numbered (-1, -2, ...) if that already exists. Also saves the ' +
+      'transcript as a "<name>_captioned.vidlet" project: amend captions by editing it (or via ' +
+      'the returned edit_url on vidlet.app) and calling render_project — no re-transcription.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -190,6 +195,48 @@ async function handleProbeVideo({ path }: { path?: string }) {
   });
 }
 
+/**
+ * The transcription is the expensive half of generate_captions. Persist it
+ * as a `.vidlet` project referencing the ORIGINAL video (full length, audio
+ * kept) so any caption amendment is an edit + render_project, not a second
+ * whisper run. Best-effort: a finished render never fails over its sidecar.
+ */
+async function emitCaptionProject(
+  input: string,
+  output: string,
+  transcript: SrtEntry[]
+): Promise<string | null> {
+  try {
+    const info = await getVideoInfo(input);
+    const project = projectPathFor(output);
+    await emitVidletProject({
+      output: project,
+      title: basename(output).replace(/\.[^.]+$/, ''),
+      width: info.width,
+      height: info.height,
+      fps: info.fps || 30,
+      clips: [{ source: input, spans: [{ start: 0, end: info.duration }] }],
+      speed: 1,
+      introSeconds: 0,
+      narration: null,
+      music: null,
+      subtitles: transcript.map((e) => ({
+        start: e.startTime,
+        end: e.endTime,
+        text: e.text,
+        words: e.words,
+      })),
+      keepClipAudio: true,
+      generator: 'vidlet generate_captions',
+      // What the burn below actually uses (caption() defaults).
+      subtitleStyle: { captionStyle: 'hormozi', highlightColor: '&H00FFFF&' },
+    });
+    return project;
+  } catch {
+    return null;
+  }
+}
+
 async function handleGenerateCaptions({
   path,
   language,
@@ -211,13 +258,39 @@ async function handleGenerateCaptions({
     withSilencedStdout(async () => {
       if (!(await checkFFmpeg()))
         throw new Error('FFmpeg not found. Install with: sudo apt install ffmpeg');
+      let transcript: SrtEntry[] = [];
       const result = await caption({
         input,
         output,
         autoTranscribe: true,
         whisperModel: 'base.en',
+        onTranscript: (entries) => {
+          transcript = entries;
+        },
       });
-      return fileResult(result);
+      const project = await emitCaptionProject(input, output, transcript);
+      const editUrl = project ? editorUrlFor(project) : null;
+      return fileResult(
+        result,
+        project
+          ? {
+              project,
+              projectUrl: fileUrl(project),
+              ...(editUrl ? { edit_url: editUrl } : {}),
+              next_steps: [
+                'To amend the captions (wording, timing, style) do NOT re-run this tool: the ' +
+                  'transcript is saved in `project`. Edit its subtitles block' +
+                  (editUrl
+                    ? ' — or give the user `edit_url`, which opens it in the vidlet.app editor ' +
+                      'under their own signed-in account'
+                    : ' (open_in_editor loads it in the vidlet.app editor)') +
+                  ' — then call render_project to re-burn from the original video with no ' +
+                  're-transcription.',
+              ],
+            }
+          : {},
+        project ? [project] : []
+      );
     })
   );
 }

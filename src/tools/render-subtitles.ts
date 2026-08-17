@@ -8,7 +8,7 @@
  */
 import { assTime, buildAssHeader, type CaptionWord, hexToAss } from '@spark-apps/video-kit';
 import type { VidletProject } from '../lib/vidlet-project.js';
-import { generateShortsAss } from './caption.js';
+import { generateHormoziAss, generateKaraokeAss, generateShortsAss } from './caption.js';
 
 export interface Canvas {
   width: number;
@@ -84,11 +84,13 @@ export function buildSubtitleAss(
 }
 
 /**
- * The Shorts caption: one line at a time, only the spoken word lit. Matches
- * what the short pipeline burns (autoshort-voice.ts), so a project rendered
- * this way looks like the Short it came from.
+ * Word-lit captions, rendered by the SAME generator that burned them: shorts
+ * (one line at a time, spoken word lit — what autoshort-voice.ts burns),
+ * hormozi (full sentence, layered per-word highlight) and karaoke
+ * (progressive \kf fill) each keep their own look, so a re-render matches
+ * the original instead of degrading every style to the shorts layout.
  *
- * Entries without `words` fall through to generateShortsAss's own even
+ * Entries without `words` fall through to each generator's own even
  * distribution across the entry span. That is interpolation, not the original
  * measured timing - close enough to read as karaoke, but a project that
  * recorded its words will always be truer.
@@ -96,7 +98,13 @@ export function buildSubtitleAss(
 function buildWordLitAss(project: VidletProject, canvas: Canvas, captionStyle: string): string {
   const { style, entries } = project.subtitles;
   const scale = canvas.height / project.settings.height;
-  return generateShortsAss({
+  const generator =
+    captionStyle === 'hormozi'
+      ? generateHormoziAss
+      : captionStyle === 'karaoke'
+        ? generateKaraokeAss
+        : generateShortsAss;
+  return generator({
     entries: [...entries]
       .sort((a, b) => a.start - b.start)
       .map((entry, i) => ({

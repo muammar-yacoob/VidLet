@@ -37,6 +37,7 @@ import {
 import { previewMusic } from '../tools/music-preview.js';
 import { suggestPublish } from '../tools/youtube-short.js';
 import {
+  editorUrlFor,
   fileResult,
   fileUrl,
   jsonContent,
@@ -136,6 +137,7 @@ async function handlePreviewShort(args: {
           thumbnail,
           thumbnailUrl: thumbnail ? fileUrl(thumbnail) : null,
           projectUrl: result.project ? fileUrl(result.project) : null,
+          edit_url: result.project ? editorUrlFor(result.project) : null,
           next_steps: [
             'Show the user this draft url and ask whether the timing, narration and captions ' +
               'are right. On approval, call generate_short with the SAME paths and script - the ' +
@@ -343,6 +345,7 @@ async function handleGenerateShort(args: {
           thumbnail,
           thumbnailUrl: thumbnail ? fileUrl(thumbnail) : null,
           projectUrl: result.project ? fileUrl(result.project) : null,
+          edit_url: result.project ? editorUrlFor(result.project) : null,
           music: result.music
             ? {
                 title: result.music.title,
@@ -387,7 +390,10 @@ async function handleGenerateShort(args: {
             'Show the user the video `name`, its `url`, `elapsedSeconds`, and the ' +
               '`thumbnailUrl` as a preview. Mention `projectUrl`: the same edit as a .vidlet ' +
               'project they can open with open_in_editor to tweak cuts, narration timing or ' +
-              'captions, then re-render with render_project.',
+              'captions, then re-render with render_project — the analysis is already in the ' +
+              'project, so amendments only pay for the encode. When `edit_url` is set, give ' +
+              'it to the user too: it opens the project in the vidlet.app editor directly, ' +
+              'under their own signed-in account.',
             ...(publish
               ? [
                   'Then show the `youtube` block IN FULL: all three graded titles, all three ' +
