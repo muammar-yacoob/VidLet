@@ -19,6 +19,9 @@ export interface FFmpegOptions {
   input: string;
   output: string;
   args?: string[];
+  // Options that must precede -i to apply to the input, e.g. -ss for a seek
+  // that ffmpeg resolves against the source rather than the output stream.
+  inputArgs?: string[];
   overwrite?: boolean;
 }
 
@@ -231,7 +234,7 @@ async function runFFmpeg(args: string[], label: string) {
  * Execute an ffmpeg command
  */
 export async function executeFFmpeg(options: FFmpegOptions): Promise<void> {
-  const { input, output, args = [], overwrite = true } = options;
+  const { input, output, args = [], inputArgs = [], overwrite = true } = options;
 
   try {
     await fs.access(input);
@@ -242,6 +245,7 @@ export async function executeFFmpeg(options: FFmpegOptions): Promise<void> {
   const ffmpegArgs = [
     '-nostdin',
     ...(overwrite ? ['-y'] : ['-n']),
+    ...inputArgs,
     '-i',
     input,
     ...args,

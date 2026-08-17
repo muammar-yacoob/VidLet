@@ -47,11 +47,10 @@ export async function trim(options: TrimOptions): Promise<string> {
   separator();
   console.log(fmt.dim('Processing...'));
 
-  // Use -ss before -i for fast seeking, then -t for duration
-  // Using stream copy for speed when possible
+  // -ss must reach ffmpeg before -i: as an output option it seeks the decoded
+  // stream instead of the source, which under -c copy silently truncates the
+  // tail by the distance to the next keyframe.
   const args = [
-    '-ss',
-    start.toString(),
     '-t',
     trimDuration.toString(),
     '-c',
@@ -60,7 +59,7 @@ export async function trim(options: TrimOptions): Promise<string> {
     'make_zero', // Fix timestamp issues
   ];
 
-  await executeFFmpeg({ input, output, args });
+  await executeFFmpeg({ input, output, inputArgs: ['-ss', start.toString()], args });
 
   success(`Output: ${output}`);
 
@@ -106,8 +105,6 @@ export async function trimAccurate(options: TrimOptions): Promise<string> {
 
   // Re-encode for frame-accurate cuts
   const args = [
-    '-ss',
-    start.toString(),
     '-t',
     trimDuration.toString(),
     '-c:v',
@@ -124,7 +121,7 @@ export async function trimAccurate(options: TrimOptions): Promise<string> {
     '+faststart',
   ];
 
-  await executeFFmpeg({ input, output, args });
+  await executeFFmpeg({ input, output, inputArgs: ['-ss', start.toString()], args });
 
   success(`Output: ${output}`);
 
