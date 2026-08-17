@@ -25,6 +25,10 @@ jobs:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
 
+      # Trusted publishing (OIDC) needs npm >= 11.5.1; Node 20 ships npm 10.x.
+      - name: Upgrade npm
+        run: npm install -g npm@latest
+
       # --ignore-scripts: the postinstall hook runs `node dist/cli.js install`,
       # which doesn't exist until the build step below. Without this, CI dies
       # during install and never publishes (broken for 26+ days). End users are
@@ -48,11 +52,12 @@ jobs:
             echo "Version unchanged: $PACKAGE_VERSION"
           fi
 
+      # Authenticated by OIDC trusted publishing, not a long-lived NPM_TOKEN:
+      # 2FA-bypass granular tokens lose direct-publish rights in Jan 2027.
+      # Provenance is implied by trusted publishing, so no --provenance flag.
       - name: Publish to npm
         if: steps.version_check.outputs.should_publish == 'true'
-        run: npm publish --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public
 
       - name: Skip publish (version unchanged)
         if: steps.version_check.outputs.should_publish == 'false'
