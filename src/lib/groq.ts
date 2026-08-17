@@ -15,9 +15,9 @@ const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
  *  - VISION for describing keyframes (cheap multimodal)
  */
 export const GROQ_MODELS = {
-  CREATIVE: 'llama-3.3-70b-versatile',
-  FAST: 'llama-3.1-8b-instant',
-  VISION: 'meta-llama/llama-4-scout-17b-16e-instruct',
+  CREATIVE: 'openai/gpt-oss-120b',
+  FAST: 'openai/gpt-oss-20b',
+  VISION: 'qwen/qwen3.6-27b',
 } as const;
 
 const DEFAULT_MODEL = GROQ_MODELS.CREATIVE;
