@@ -162,6 +162,10 @@ vidlet install     # adds VidLet to the right-click menu (registry import, needs
 vidlet uninstall    # removes it
 ```
 
+> **npm 12+:** lifecycle scripts are disabled by default, so the context menu is no
+> longer added automatically during `npm install -g`. Run `vidlet install` once after
+> installing (the CLI reminds you until you do).
+
 ## Configuration
 
 Config location: `~/.config/vidlet/config.json`
