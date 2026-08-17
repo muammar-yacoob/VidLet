@@ -1,4 +1,5 @@
 import { printBanner } from './banner.js';
+import { printInstallHintIfNeeded } from './install-marker.js';
 import { fmt } from './logger.js';
 
 /**
@@ -89,4 +90,6 @@ export function showHelp(): void {
   console.log(head('  Requirements'));
   console.log('    - WSL (Windows Subsystem for Linux)');
   console.log('    - FFmpeg: sudo apt install ffmpeg');
+  console.log();
+  printInstallHintIfNeeded();
 }

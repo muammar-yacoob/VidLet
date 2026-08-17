@@ -1,5 +1,6 @@
 import type { Command } from 'commander';
 import { printBanner } from '../../lib/banner.js';
+import { markContextMenuInstalled } from '../../lib/install-marker.js';
 import { fmt } from '../../lib/logger.js';
 import { isWSL, isWSLInteropEnabled, wslToWindows } from '../../lib/paths.js';
 import { generateRegFile, registerAllTools, unregisterAllTools } from '../registry.js';
@@ -24,6 +25,8 @@ export function registerInstallCommand(program: Command): void {
         const winPath = wslToWindows(regPath);
         console.log(fmt.green('✓ Generated:'), winPath);
         console.log(fmt.dim(`  Double-click to install, or: reg import "${winPath}"`));
+        // The user has been handed the .reg file — stop hinting either way.
+        markContextMenuInstalled();
         return;
       }
 
@@ -32,6 +35,7 @@ export function registerInstallCommand(program: Command): void {
       const success = results.some((r) => r.success);
 
       if (success) {
+        markContextMenuInstalled();
         console.log(
           fmt.green('✓ Windows Context menu installed, right-click video files to open VidLet\n')
         );

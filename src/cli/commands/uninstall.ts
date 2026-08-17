@@ -1,5 +1,6 @@
 import type { Command } from 'commander';
 import { printBanner } from '../../lib/banner.js';
+import { clearContextMenuMarker } from '../../lib/install-marker.js';
 import { fmt } from '../../lib/logger.js';
 import { isWSL, isWSLInteropEnabled, wslToWindows } from '../../lib/paths.js';
 import { generateUninstallRegFile, unregisterAllTools } from '../registry.js';
@@ -33,10 +34,12 @@ export function registerUninstallCommand(program: Command): void {
         console.log(fmt.dim('  1. Double-click the .reg file in Windows Explorer'));
         console.log(fmt.dim(`  2. Run in elevated PowerShell: reg import "${winPath}"`));
         console.log();
+        clearContextMenuMarker();
         return;
       }
 
       const results = await unregisterAllTools();
+      clearContextMenuMarker();
 
       // Group results by tool name
       const grouped = new Map<string, { extensions: string[]; allSuccess: boolean }>();
