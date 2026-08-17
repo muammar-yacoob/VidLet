@@ -16,7 +16,7 @@ import {
   TAG_BLACKLIST,
   type TagHit,
 } from '@spark-apps/video-kit';
-import { groqChatJSON } from './groq.js';
+import { GROQ_MODELS, groqChatJSON } from './groq.js';
 
 // Vocabulary and normalisation come from the kit: the same video must
 // get the same tags whichever Spark tool posts it.
@@ -111,7 +111,11 @@ Rules:
 Respond with JSON {"tags": ["#tag1", "#tag2", ...]}.`;
 
   try {
-    const result = await groqChatJSON<{ tags: unknown }>([{ role: 'user', content: prompt }]);
+    // Filtering/ranking against explicit rules, not creative writing - cheap tier is fine.
+    const result = await groqChatJSON<{ tags: unknown }>(
+      [{ role: 'user', content: prompt }],
+      GROQ_MODELS.FAST
+    );
     if (!Array.isArray(result.tags)) return [];
     const pool = new Set(tagsWithViews.map((t) => t.tag));
     return result.tags
@@ -149,9 +153,10 @@ Rules:
 - The two arrays must not overlap.`;
 
   try {
-    const parsed = await groqChatJSON<{ popular?: unknown; trending?: unknown }>([
-      { role: 'user', content: prompt },
-    ]);
+    const parsed = await groqChatJSON<{ popular?: unknown; trending?: unknown }>(
+      [{ role: 'user', content: prompt }],
+      GROQ_MODELS.FAST
+    );
     const pickSix = (r: unknown): string[] => {
       if (!Array.isArray(r)) return [];
       return r
