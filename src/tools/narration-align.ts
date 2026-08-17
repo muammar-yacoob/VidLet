@@ -99,7 +99,8 @@ export async function describeTimeline(opts: {
             },
             visionMessage('Frames in chronological order:', frames),
           ],
-          model
+          model,
+          'frame_descriptions'
         );
         if (Array.isArray(descriptions) && descriptions.length > 0) {
           return times
@@ -141,19 +142,23 @@ export async function assignLinesToFrames(
   const script = lines.map((l, i) => `${i}: ${l}`).join('\n');
 
   try {
-    const { assignment } = await groqChatJSON<{ assignment: number[] }>([
-      {
-        role: 'system',
-        content:
-          'You are syncing a voiceover to a screen recording. Given numbered moments from ' +
-          'the video and numbered lines of narration, say which moment each line should be ' +
-          'spoken over, so the words describe what is visible. The narration follows the ' +
-          'video in order, so your numbers must never decrease. Several lines may share a ' +
-          'moment. Respond with JSON {"assignment": [<one moment index per line, in line ' +
-          'order>]}',
-      },
-      { role: 'user', content: `MOMENTS:\n${shots}\n\nNARRATION:\n${script}` },
-    ]);
+    const { assignment } = await groqChatJSON<{ assignment: number[] }>(
+      [
+        {
+          role: 'system',
+          content:
+            'You are syncing a voiceover to a screen recording. Given numbered moments from ' +
+            'the video and numbered lines of narration, say which moment each line should be ' +
+            'spoken over, so the words describe what is visible. The narration follows the ' +
+            'video in order, so your numbers must never decrease. Several lines may share a ' +
+            'moment. Respond with JSON {"assignment": [<one moment index per line, in line ' +
+            'order>]}',
+        },
+        { role: 'user', content: `MOMENTS:\n${shots}\n\nNARRATION:\n${script}` },
+      ],
+      undefined,
+      'frame_assignment'
+    );
     if (!Array.isArray(assignment) || assignment.length === 0) return null;
     // Pad a short answer by repeating the last moment rather than dropping
     // the tail of the script.

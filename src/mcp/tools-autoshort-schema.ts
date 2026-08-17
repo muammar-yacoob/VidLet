@@ -7,6 +7,8 @@
  * produces a wrong call) and they change for prompt-engineering reasons,
  * on a completely different rhythm from the code that runs underneath.
  */
+
+import { AI_PROPERTY } from './ai-param.js';
 import type { ToolDefinition } from './shared.js';
 
 export const AUTOSHORT_TOOLS: ToolDefinition[] = [
@@ -118,6 +120,7 @@ export const AUTOSHORT_TOOLS: ToolDefinition[] = [
     inputSchema: {
       type: 'object',
       properties: {
+        ai: AI_PROPERTY,
         paths: {
           type: 'array',
           items: { type: 'string' },
@@ -158,6 +161,7 @@ export const AUTOSHORT_TOOLS: ToolDefinition[] = [
     inputSchema: {
       type: 'object',
       properties: {
+        ai: AI_PROPERTY,
         paths: {
           type: 'array',
           items: { type: 'string' },

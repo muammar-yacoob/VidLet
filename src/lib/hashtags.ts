@@ -111,7 +111,11 @@ Rules:
 Respond with JSON {"tags": ["#tag1", "#tag2", ...]}.`;
 
   try {
-    const result = await groqChatJSON<{ tags: unknown }>([{ role: 'user', content: prompt }]);
+    const result = await groqChatJSON<{ tags: unknown }>(
+      [{ role: 'user', content: prompt }],
+      undefined,
+      'hashtags'
+    );
     if (!Array.isArray(result.tags)) return [];
     const pool = new Set(tagsWithViews.map((t) => t.tag));
     return result.tags
@@ -149,9 +153,11 @@ Rules:
 - The two arrays must not overlap.`;
 
   try {
-    const parsed = await groqChatJSON<{ popular?: unknown; trending?: unknown }>([
-      { role: 'user', content: prompt },
-    ]);
+    const parsed = await groqChatJSON<{ popular?: unknown; trending?: unknown }>(
+      [{ role: 'user', content: prompt }],
+      undefined,
+      'hashtags'
+    );
     const pickSix = (r: unknown): string[] => {
       if (!Array.isArray(r)) return [];
       return r
