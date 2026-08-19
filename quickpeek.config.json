@@ -1,0 +1,28 @@
+{
+  "lang": "en",
+  "plan": {
+    "maxSteps": 8
+  },
+  "video": {
+    "width": 1080,
+    "height": 1920,
+    "fps": 30,
+    "quality": 0.5,
+    "preset": "fast",
+    "cursor": true,
+    "highlight": false,
+    "fadeIn": 500,
+    "fadeOut": 500,
+    "contrast": 0.25
+  },
+  "audio": {
+    "speed": 1
+  },
+  "music": {
+    "path": "",
+    "volume": 0.3
+  },
+  "output": {
+    "dir": "./demo"
+  }
+}
